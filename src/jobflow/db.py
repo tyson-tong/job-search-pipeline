@@ -118,8 +118,9 @@ def job_status(job_id: int, status: str | None = None, note: str | None = None) 
                        updated_at=now()""", (note_line, job_id))
         row = conn.execute(
             """SELECT j.id, j.title, j.company, j.status, j.status_updated_at,
-                      a.applied_at, a.notes
+                      a.applied_at, a.notes, j.filter_reason
                FROM jobs j LEFT JOIN applications a ON a.job_id = j.id
                WHERE j.id=%s""", (job_id,)).fetchone()
-    keys = ("id", "title", "company", "status", "status_updated_at", "applied_at", "notes")
+    keys = ("id", "title", "company", "status", "status_updated_at", "applied_at", "notes",
+            "filter_reason")
     return dict(zip(keys, row))

@@ -101,6 +101,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         print(f"{job['id']}\t{job['company'] or ''} — {job['title']}")
         print(f"status: {job['status']} (since {job['status_updated_at']:%Y-%m-%d})"
               + (f", applied {job['applied_at']:%Y-%m-%d}" if job["applied_at"] else ""))
+        if job["status"] == "filtered" and job["filter_reason"]:
+            print(f"filtered on import: {job['filter_reason']}")
         if job["notes"]:
             print("notes:\n" + "\n".join(f"  {line}" for line in job["notes"].splitlines()))
     elif args.command == "match":

@@ -106,6 +106,8 @@ def parse_search(raw: dict, defaults: dict) -> Search:
             raise SearchConfigError(f"{where}: cities for {country} must be a list of names")
         locations[code] = tuple(c.strip() for c in cities)
     sites = _choices(f"{where} sites", merged.get("sites"), opt.SITES)
+    if not sites:
+        raise SearchConfigError(f"{where}: sites must list at least one of {list(opt.SITES)}")
     days = int(merged.get("posted_within_days") or 0)
     if days < 1:
         raise SearchConfigError(f"{where}: posted_within_days must be at least 1")

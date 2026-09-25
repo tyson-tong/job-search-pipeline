@@ -1,6 +1,6 @@
 # Job Search Workflow
 
-A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and Seek (through Apify scrapers) into your own PostgreSQL database, merging the same job found on several sites. On your machine, it then scores each job against your CVs, drafts tailored CVs, and builds interview briefings.
+A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and/or Seek (through Apify scrapers; use any combination) into your own PostgreSQL database, merging the same job found on several sites. On your machine, it then scores each job against your CVs, drafts tailored CVs, and builds interview briefings.
 
 It is a template: each person makes their own private copy with their own database, credentials, and CVs. This repository contains no CVs or credentials.
 
@@ -27,7 +27,7 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
    jobflow match --new
    ```
 
-   This checks every job that hasn't been scored against your current CVs (up to 50 per run; use `--limit`). It makes one LLM call per job per CV. Unchanged CVs are not re-scored.
+   This checks every open job (not rejected, withdrawn, ignored, or filtered) that hasn't been scored against your current CVs, up to 50 per run (`--limit` changes that). It makes one LLM call per job per CV. Unchanged CVs are not re-scored.
 
 2. **Find the best matches.**
 
@@ -35,7 +35,7 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
    jobflow list --by-score --limit 30
    ```
 
-   Columns: job ID, best score (and which CV), posted date, company, title, location, status. The job ID in the first column is what the other commands take. Rejected, withdrawn, and ignored jobs are hidden; add `--all` to see them, or `--status applied` (repeatable) to see one status.
+   Columns: job ID, best score (and which CV), posted date, company, title, location, status. The job ID in the first column is what the other commands take. Rejected, withdrawn, ignored, and filtered jobs are hidden; add `--all` to see them, or `--status applied` (repeatable) to see one status.
 
 3. **Look at why a job scored as it did.**
 
@@ -57,7 +57,7 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
    - `REVIEW_REQUIRED.md`: the automated fact check. Errors mean something factual changed, and the PDF is not rendered.
    - The rendered PDF, if RenderCV is installed and the check found no errors.
 
-   Read the draft line by line. After fixing it, render it from its folder so the PDF lands next to it:
+   Read the draft line by line. After fixing it, render it from its folder, so RenderCV's output (a `rendercv_output/` folder by default) is created there:
 
    ```
    cd output/tailored-cvs/<folder> && rendercv render CV_<variant>_draft.yaml
@@ -81,20 +81,20 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
    jobflow status 123                  # show status, date applied, and notes
    ```
 
-   Statuses: `new` (default), `interested`, `applied`, `interviewing`, `offer`, `rejected`, `withdrawn`, `ignored`, and `filtered` (set on import when a job fails your search filters; see why with `jobflow list --status filtered` and the `filter_reason` column). Notes are dated and added to earlier ones; the date you first marked a job `applied` is kept.
+   Statuses: `new` (default), `interested`, `applied`, `interviewing`, `offer`, `rejected`, `withdrawn`, `ignored`, and `filtered` (set on import when a job fails your search filters; list them with `jobflow list --status filtered`, and `jobflow status ID` shows the reason). Notes are dated and added to earlier ones; the date you first marked a job `applied` is kept.
 
 ## Commands
 
 | Command | What it does | Needs |
 |---|---|---|
 | `jobflow migrate` | Creates or updates the database tables. Safe to rerun. | Database |
-| `jobflow searches [--search NAME] [--site SITE] [--json]` | Checks `searches.toml` and lists the Apify runs it would make. Free. | Nothing |
+| `jobflow searches [--search NAME] [--site SITE] [--json]` | Checks `searches.toml` and lists the Apify runs it would make. Free. | `searches.toml` |
 | `jobflow options [countries\|classifications]` | Lists allowed search values and which site applies which filter. | Nothing |
-| `jobflow ingest [--search NAME] [--site SITE]` | Runs your searches on Apify now and imports the results. GitHub Actions runs this daily. It uses Apify credits. | Database, Apify |
+| `jobflow ingest [--search NAME] [--site SITE]` | Runs your searches on Apify now and imports the results. GitHub Actions runs this daily. It uses Apify credits. | Database, Apify, `searches.toml` |
 | `jobflow import-json FILE` | Imports a JSON file of jobs exported from any of the three scrapers (`-` reads stdin). | Database |
 | `jobflow list [--by-score] [--limit N] [--status S] [--all]` | Lists jobs with their best match score and status. | Database |
-| `jobflow status ID [STATUS] [--note TEXT]` | Shows or sets a job's application status and notes. | Database |
-| `jobflow match ID` / `match --new` | Scores one job, or every open job not yet scored. `--force` re-scores. | Database, LLM, CVs |
+| `jobflow status ID [STATUS] [--note TEXT]` | Shows or sets a job's application status and notes, and why it was filtered. | Database |
+| `jobflow match ID` / `match --new [--limit N]` | Scores one job, or every open job not yet scored. `--force` re-scores. | Database, LLM, CVs |
 | `jobflow tailor-cv ID [--cv VARIANT]` | Writes a tailored CV draft and fact check. | Database, LLM, CVs |
 | `jobflow interview-prep ID [--email-file FILE]` | Writes an interview briefing HTML. | Database, LLM, CVs, Tavily |
 
@@ -110,7 +110,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    uv sync --extra documents
    ```
 
-3. **Point it at your CVs.** Copy `profile.example.toml` to `profile.toml` and set `cv_directory` to the folder containing your RenderCV files. Keep that folder outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. `profile.toml` also sets the output folders, the scoring weights, and your timezone.
+3. **Point it at your CVs.** Copy `profile.example.toml` to `profile.toml` and set `cv_directory` to the folder containing your RenderCV files. Keep that folder outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. `profile.toml` also sets where `searches.toml` lives, the output folders, the scoring weights, and your timezone.
 
 4. **Add credentials.** Copy `.env.example` to `.env` and fill in:
 
@@ -121,8 +121,9 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `LLM_API_KEY`, `LLM_MODEL` | match, tailor-cv, interview-prep |
    | `LLM_BASE_URL` | Only for providers other than OpenAI |
    | `WEB_SEARCH_API_KEY` | interview-prep (Tavily) |
+   | `APIFY_MAX_WAIT_MINUTES` | Optional: how long to wait for each Apify run (default 60) |
 
-   `jobflow` reads `.env` from the current folder automatically. Variables already set in your shell take precedence.
+   `jobflow` reads `.env` from the current folder (or this repository's folder) automatically. Variables already set in your shell take precedence.
 
 5. **Create the tables.**
 
@@ -134,13 +135,29 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
    | Setting | Example | Notes |
    |---|---|---|
+   | `name` | `"data-analyst"` | Required and unique; used by `--search` and in run history |
    | `terms` | `["data analyst", "bi analyst"]` | Each term is searched separately |
    | `locations` | `{ AU = ["Sydney", "Melbourne"], NZ = [] }` | ISO country code → cities; `[]` = whole country |
    | `salary_min`, `salary_max`, `salary_period` | `100000`, `160000`, `"annual"` | Local currency. Jobs without a listed salary are kept |
    | `job_types` | `["full-time", "contract"]` | full-time, part-time, contract, casual |
    | `work_arrangements` | `["hybrid", "remote"]` | on-site, hybrid, remote |
    | `classifications` | `["information-communication-technology"]` | Seek only; `jobflow options classifications` |
-   | `sites`, `posted_within_days`, `max_results`, `max_cost_usd`, `radius_km` | | Usually set once under `[defaults]` |
+   | `sites` | `["seek", "linkedin"]` | Which job sites to search; see below |
+   | `posted_within_days`, `max_results`, `max_cost_usd`, `radius_km` | `1`, `30`, `0.50`, `25` | Usually set once under `[defaults]` |
+
+   **Choosing job sites.** Use any combination of `linkedin`, `indeed`, and `seek`. Set `sites` under `[defaults]` for all searches, and override it in a search that needs different sites. If `sites` is left out everywhere, all three are used. For example, to use only Seek and Indeed, except LinkedIn too for one search:
+
+   ```toml
+   [defaults]
+   sites = ["seek", "indeed"]
+
+   [[search]]
+   name = "data-analyst"
+   sites = ["seek", "indeed", "linkedin"]
+   ...
+   ```
+
+   A site you don't list is never called, so it costs nothing. You don't need an account per site; all three scrapers run on your one Apify account. To try a single site once without editing the file, use `jobflow ingest --site seek`.
 
    The three sites don't support the same filters, so each is translated to what the site can do:
 
@@ -150,7 +167,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | Salary, job type, work arrangement | after import | after import | on site |
    | Classification | no | no | on site |
 
-   "On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match; the job is stored with status `filtered` and the reason. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. Seek applies its salary filter to the range the advertiser entered, even when that range is hidden on the ad.
+   "On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match; the job is stored with status `filtered` and the reason. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. LinkedIn results rarely list a salary and never say whether a job is remote, so in practice those filters seldom remove LinkedIn jobs. Seek applies its salary filter to the range the advertiser entered, even when that range is hidden on the ad.
 
    Check the result with `jobflow searches`: it validates every value (listing the allowed ones if something is wrong) and shows each Apify run, without running anything. Add `--json` to see the exact input each actor receives. All option values are constants in `src/jobflow/search_options.py`.
 
@@ -166,7 +183,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 ## How it decides
 
 **Duplicates.** Each scraper's output is first converted to the same fields (`src/jobflow/sources.py`). A job then counts as already seen if any of these match, in order:
-1. Same site and job ID, or the same URL without tracking parameters.
+1. Same site and job ID (or, for a posting without an ID, the same URL without tracking parameters).
 2. Identical company, title, location, and description.
 3. Same employer and title, ignoring suffixes like "Pty Ltd", first seen in the last 90 days, with descriptions that share at least half their words. This catches the same job on LinkedIn, Indeed, and Seek, and reposts with a new ID.
 
@@ -186,7 +203,7 @@ New capitalised or technical terms, such as a tool name, are warnings. The check
 
 ## Privacy
 
-- `profile.toml`, `.env`, `output/`, and `private/` are ignored by Git. Never commit them.
+- `.env`, `profile.toml`, `searches.toml`, `output/`, and `private/` are ignored by Git. Never commit them.
 - The database holds job postings, scraper history, and match results. Match results include short quotes from your CVs, so keep the database private.
 - Interview emails are never stored. CV, job, and email text is sent to your LLM provider, and company names to Tavily, when you run the commands; choose providers whose data handling you accept.
 - If you ever move CV processing to the cloud, keep CVs in a private per-person storage bucket, not in PostgreSQL or GitHub variables.

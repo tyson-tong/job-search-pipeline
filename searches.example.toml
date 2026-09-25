@@ -6,6 +6,8 @@
 
 # Settings every search inherits unless it sets its own.
 [defaults]
+# Job sites to search: any of "linkedin", "indeed", "seek". Unlisted sites are never
+# called (so cost nothing). A search can override this with its own sites = [...].
 sites = ["linkedin", "indeed", "seek"]
 posted_within_days = 1     # match the daily schedule: only jobs posted since yesterday
 max_results = 50           # per Apify run (LinkedIn: per term and location). Caps cost.

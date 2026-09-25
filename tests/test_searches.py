@@ -50,6 +50,7 @@ def test_defaults_are_inherited_and_overridden():
     ("salary_min = 200\nsalary_max = 100", "salary_min is greater"),
     ("keywords = 'x'", "unknown setting"),  # a typo'd setting must not be silently ignored
     ('locations = ["Sydney"]', "locations must map"),
+    ("sites = []", "at least one"),  # an empty list would silently run nothing
 ])
 def test_invalid_config_is_rejected(bad, message):
     base = '[[search]]\nname = "x"\nterms = ["a"]\n'
