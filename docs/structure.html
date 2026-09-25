@@ -113,7 +113,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
 <div class="flow">
   <div class="lane cloud">
     <div class="lane-title">Daily, in GitHub Actions</div>
-    <div class="lane-sub">06:30 Sydney time · <code>jobflow migrate</code> then <code>jobflow ingest</code></div>
+    <div class="lane-sub">06:30 Sydney time · <code>jobflow ingest</code></div>
     <div class="step"><b>Your searches</b><span class="mod">JOBFLOW_SEARCHES variable (= config/searches.toml)</span>
       <div class="what">Terms, countries and cities, sites, salary, job type, work arrangement, classification, posted window.</div></div>
     <div class="step"><b>Plan runs per site</b><span class="mod">ingest/searches.py · ingest/options.py</span>
@@ -152,7 +152,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><th>File</th><th>Responsibility</th></tr>
   <tr><td><code>cli.py</code></td><td>The <code>jobflow</code> command: parses arguments, loads <code>config/.env</code>, calls the modules below, prints one-line errors.</td></tr>
   <tr><td><code>settings.py</code></td><td>Reads <code>config/.env</code> (never overriding real environment variables) and <code>config/profile.toml</code>: CV folder, output folders, searches file, scoring weights, timezone.</td></tr>
-  <tr><td><code>db.py</code> · <code>migrations/</code></td><td>Connection, schema migrations (applied once each, in order), job lookups, list queries, and <code>set_job_state</code>: the one place status, notes, and follow-ups are changed and history recorded.</td></tr>
+  <tr><td><code>db.py</code> · <code>migrations/</code></td><td>Connection, schema migrations (applied once each, in order), job lookup, and <code>set_job_state</code>: the one place status, notes, and follow-ups are changed and history recorded.</td></tr>
   <tr><td><code>llm.py</code></td><td>One call to any OpenAI-compatible chat-completions endpoint.</td></tr>
   <tr><td><code>ingest/options.py</code></td><td>Constants: allowed search values and how each site's actor expresses them.</td></tr>
   <tr><td><code>ingest/searches.py</code></td><td>Loads and validates searches, builds actor inputs, and applies filters after import.</td></tr>
@@ -200,7 +200,7 @@ job_observations  42 × run 118 (LinkedIn), 42 × run 119 (Seek)   original reco
 applications      42   applied   2026-09-25: Applied via referral</div>
 
 <h2 id="database">Database</h2>
-<p>Defined by the SQL files in <code>migrations/</code>; each file can hold ordered, file-scoped migration IDs (starting at <code>01</code>). <code>jobflow migrate</code> applies each file/ID once, in filename and ID order, tracking it in <code>schema_migrations</code>.</p>
+<p>Defined by the SQL files in <code>migrations/</code>; each file can hold ordered, file-scoped migration IDs (starting at <code>01</code>). Every command except <code>init</code> applies each file/ID once on start, in filename and ID order, tracking it in <code>schema_migrations</code>.</p>
 <div class="db-grid">
   <div class="tbl"><h3>scraper_runs</h3><p>One per Apify run.</p><ul>
     <li><span class="k">id</span>, apify_run_id, dataset_id</li><li>actor_id <span class="muted">site:actor</span></li>
@@ -223,7 +223,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="tbl"><h3>status_history</h3><p>Every status change.</p><ul>
     <li>job_id → jobs</li><li>from_status, to_status</li><li>via, changed_at</li></ul></div>
   <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, interview-prep.</p><ul>
-    <li>job_id → jobs, kind, status</li><li>model_name, started_at, finished_at</li></ul></div>
+    <li>job_id → jobs, kind, status</li><li>model_name, error, started_at, finished_at</li></ul></div>
 </div>
 <p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered. Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the tracker's default view and never scored. Filtered is only set by imports.</p>
 
@@ -256,7 +256,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><td>CV folder, output root, weights, timezone</td><td><code>config/profile.toml</code></td><td>not needed</td></tr>
 </table></div>
 <p class="small muted" style="margin-top:8px"><code>jobflow init</code> creates <code>config/.env</code>, <code>config/profile.toml</code>, and <code>config/searches.toml</code> from the templates, never overwriting existing files.</p>
-<p class="small muted" style="margin-top:8px"><code>config/.env</code>, <code>config/profile.toml</code>, <code>config/searches.toml</code>, and <code>output/</code> are ignored by Git; the <code>.example</code> files show what goes in them.</p>
+<p class="small muted" style="margin-top:8px"><code>config/.env</code>, <code>config/profile.toml</code>, <code>config/searches.toml</code>, <code>output/</code>, and <code>private/</code> are ignored by Git; the <code>.example</code> files show what goes in them.</p>
 
 <h2 id="cost">Keeping Apify cost down</h2>
 <div class="grid">
@@ -269,7 +269,6 @@ applications      42   applied   2026-09-25: Applied via referral</div>
 <h2 id="commands">Commands</h2>
 <div class="table-wrap"><table>
   <tr><th>Command</th><th>Does</th><th>Module</th></tr>
-  <tr><td><code>jobflow migrate</code> <span class="muted">(daily Action)</span></td><td>Create or update tables; the other commands also do it on start</td><td>db.py</td></tr>
   <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv ID</code></td><td>Tailored, fact-checked CV draft</td><td>candidate/tailoring.py</td></tr>

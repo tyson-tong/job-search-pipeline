@@ -13,12 +13,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="jobflow",
         description="First time: init. Everyday: web (job tracker, including your searches), "
-        "tailor-cv, and interview-prep. The daily GitHub Action runs migrate and ingest.")
+        "tailor-cv, and interview-prep. The daily GitHub Action runs ingest.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Create config/.env, config/profile.toml, and config/searches.toml from the "
                    "templates (never overwrites existing files)")
-    sub.add_parser("migrate", help="Create or update database tables (the daily Action runs "
-                   "this; the other commands do it automatically)")
     ingest = sub.add_parser("ingest", help="Run the searches in config/searches.toml on Apify now and "
                             "import the results (the daily Action runs this; costs Apify credits)")
     ingest.add_argument("--search", help="Only this search name")
@@ -83,11 +81,10 @@ Next:
 def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     if args.command == "init":
         init()
-    elif args.command == "migrate":
-        from .db import migrate
-        migrate()
     elif args.command == "ingest":
+        from .db import migrate
         from .ingest.apify import ingest_searches
+        migrate()
         ingest_searches(args.search, args.site)
     elif args.command == "web":
         from .db import migrate

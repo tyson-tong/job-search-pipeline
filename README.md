@@ -84,13 +84,12 @@ Everyday:
 | `jobflow tailor-cv ID [--cv VARIANT]` | Writes a tailored CV draft and fact check. | Database, LLM, CVs |
 | `jobflow interview-prep ID [--email-file FILE]` | Writes an interview briefing HTML. | Database, LLM, CVs, Tavily |
 
-These three bring the database tables up to date themselves when they start.
+Every command except `init` brings the database tables up to date itself when it starts.
 
-Run by the daily GitHub Action (you rarely need them):
+Run by the daily GitHub Action (you rarely need it):
 
 | Command | What it does | Needs |
 |---|---|---|
-| `jobflow migrate` | Creates or updates the database tables. Safe to rerun. | Database |
 | `jobflow ingest [--search NAME] [--site SITE]` | Runs your searches on Apify and imports the results. Run it yourself only to test a changed search now instead of waiting for tomorrow; it uses Apify credits. | Database, Apify, `config/searches.toml` |
 
 ## One-time setup
@@ -123,7 +122,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
    `jobflow` reads `config/.env` from the current folder (or this repository's folder) automatically. Variables already set in your shell take precedence.
 
-   The database tables are created automatically the first time you run `jobflow web`.
+   The database tables are created automatically the first time you run any command other than `init`, such as `jobflow web`.
 
 5. **Define your searches.** Edit `config/searches.toml`: it starts with example searches, so replace them before the daily import runs. Each `[[search]]` has:
 
@@ -140,7 +139,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `posted_within_days` | `1` | 1 (24 hours), 7 (1 week), 14 (2 weeks), or 30 (1 month); see below |
    | `max_results`, `max_cost_usd`, `radius_km` | `30`, `0.50`, `25` | Usually set once under `[defaults]` |
 
-   **Major city options for `locations`:** Australia: Sydney, Melbourne, Brisbane, Perth, Adelaide, Gold Coast, Canberra, Newcastle, Sunshine Coast, Central Coast (NSW), Wollongong, Geelong, Hobart, Townsville, Cairns, Darwin, Toowoomba, Ballarat, Bendigo, Launceston, Albury–Wodonga, Mackay, Rockhampton, Bundaberg, Hervey Bay, Wagga Wagga, Shepparton, Mildura, Bunbury, Port Macquarie, and Coffs Harbour. New Zealand: Auckland, Wellington, Lower Hutt, Upper Hutt, Porirua, Christchurch, Hamilton, Tauranga, Dunedin, Palmerston North, Napier–Hastings, Nelson, Rotorua, New Plymouth, Whangārei, Invercargill, Whanganui, Gisborne, and Timaru. Add the cities you want to the corresponding country arrays; use `[]` to search the whole country. The defaults above stay focused on Sydney, Singapore, and Hong Kong.
+   **Cities for `locations`** are free text, passed to each site as written, so use the name the sites use. Common ones: Australia: Sydney, Melbourne, Brisbane, Perth, Adelaide, Gold Coast, Canberra, Newcastle, Sunshine Coast, Central Coast (NSW), Wollongong, Geelong, Hobart, Townsville, Cairns, Darwin, Toowoomba, Ballarat, Bendigo, Launceston, Albury–Wodonga, Mackay, Rockhampton, Bundaberg, Hervey Bay, Wagga Wagga, Shepparton, Mildura, Bunbury, Port Macquarie, and Coffs Harbour. New Zealand: Auckland, Wellington, Lower Hutt, Upper Hutt, Porirua, Christchurch, Hamilton, Tauranga, Dunedin, Palmerston North, Napier–Hastings, Nelson, Rotorua, New Plymouth, Whangārei, Invercargill, Whanganui, Gisborne, and Timaru. Add the cities you want to the corresponding country arrays; use `[]` to search the whole country. The template's active search covers Sydney, with Singapore and Hong Kong searches commented out.
 
    For different salary cutoffs in AUD, SGD, and HKD, make one `[[search]]` entry per country and put `salary_min`, `salary_max`, and `salary_period` inside that country’s entry. The amounts are interpreted in the posting’s local currency; the workflow does not convert currencies. Leave salary fields out to disable salary filtering for that country. Separate searches may increase LinkedIn scraper runs because LinkedIn runs once per search.
 
@@ -217,7 +216,7 @@ New capitalised or technical terms, such as a tool name, are warnings. The check
 
 - `config/.env`, `config/profile.toml`, `config/searches.toml`, `output/`, and `private/` are ignored by Git. Never commit them.
 - The database holds job postings, scraper history, and match results. Match results include short quotes from your CVs, so keep the database private.
-- Interview emails are never stored. CV, job, and email text is sent to your LLM provider, and company names to Tavily, when you run the commands; choose providers whose data handling you accept.
+- Interview emails are never stored. CV, job, and email text is sent to your LLM provider, and the company name and job title to Tavily, when you run the commands; choose providers whose data handling you accept.
 - If you ever move CV processing to the cloud, keep CVs in a private per-person storage bucket, not in PostgreSQL or GitHub variables.
 
 ## Development

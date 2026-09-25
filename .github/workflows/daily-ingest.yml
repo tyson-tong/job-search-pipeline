@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --frozen --no-dev
-      - run: uv run --no-sync jobflow migrate && uv run --no-sync jobflow ingest
+      - run: uv run --no-sync jobflow ingest
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
