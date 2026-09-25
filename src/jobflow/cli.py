@@ -25,6 +25,9 @@ def main() -> None:
     preview.add_argument("--search", help="Only this search name")
     preview.add_argument("--site", choices=SITES, help="Only this job site")
     preview.add_argument("--json", action="store_true", help="Print full actor inputs")
+    web = sub.add_parser("web", help="Open the job tracker in your browser (local only)")
+    web.add_argument("--port", type=int, default=8765)
+    web.add_argument("--no-browser", action="store_true", help="Don't open a browser tab")
     options = sub.add_parser("options", help="List allowed search option values")
     options.add_argument("topic", nargs="?", choices=("countries", "classifications"),
                          help="Show all countries per site, or all Seek classifications")
@@ -36,7 +39,7 @@ def main() -> None:
     listing.add_argument("--status", action="append", choices=STATUSES,
                          help="Only jobs with this status (repeatable)")
     listing.add_argument("--all", action="store_true",
-                         help="Include rejected, withdrawn, and ignored jobs")
+                         help="Include not-interested, filtered, and finished jobs")
     status = sub.add_parser("status", help="Show or set a job's application status")
     status.add_argument("job_id", type=int)
     status.add_argument("status", nargs="?", choices=STATUSES)
@@ -65,6 +68,25 @@ def main() -> None:
         raise SystemExit(f"error: {exc}") from None
 
 
+def warn_possible_duplicates(job_id: int, about_to_apply: bool) -> None:
+    """List jobs that may be this role under another employer name or place, loudly if
+    one is already in progress, so the same role isn't applied for twice."""
+    from .ingest.store import IN_PROGRESS, possible_duplicates
+
+    matches = possible_duplicates(job_id)
+    if not matches:
+        return
+    started = [m for m in matches if m["status"] in IN_PROGRESS]
+    if started and about_to_apply:
+        print(f"WARNING: this may be the same role as job {started[0]['id']}, which is "
+              f"already {started[0]['status']}.")
+    print("possible duplicates (similar title and ad text; not merged):")
+    for m in matches:
+        print(f"  {m['id']}\t{m['status']}\t{m['company'] or ''} — {m['title']}"
+              f" ({m['location'] or 'no location'}), {m['similarity']:.0%} same text"
+              + (f"\n\t{m['url']}" if m["url"] else ""))
+
+
 def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     if args.command == "migrate":
         from .db import migrate
@@ -76,6 +98,9 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         from .ingest.report import print_plan
         from .ingest.searches import load_searches, plan
         print_plan(plan(load_searches(), args.search, args.site), show_json=args.json)
+    elif args.command == "web":
+        from .web.server import serve
+        serve(args.port, open_browser=not args.no_browser)
     elif args.command == "options":
         from .ingest.report import print_options
         print_options(args.topic)
@@ -105,6 +130,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
             print(f"filtered on import: {job['filter_reason']}")
         if job["notes"]:
             print("notes:\n" + "\n".join(f"  {line}" for line in job["notes"].splitlines()))
+        warn_possible_duplicates(args.job_id, about_to_apply=args.status in
+                                 ("interested", "applied"))
     elif args.command == "match":
         from .candidate.matching import (best_variant, format_result, jobs_needing_match,
                                          match_job)
@@ -127,6 +154,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
             raise SystemExit(f"{failures} job(s) could not be matched")
     elif args.command == "tailor-cv":
         from .candidate.tailoring import tailor_cv
+        warn_possible_duplicates(args.job_id, about_to_apply=True)
         target, errors, warnings = tailor_cv(args.job_id, args.cv)
         print(target)
         for message in errors:

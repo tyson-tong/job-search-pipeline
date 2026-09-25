@@ -2,7 +2,7 @@ from datetime import date
 
 from jobflow.ingest.sources import normalise, to_date
 from jobflow.ingest.store import (canonical_url, description_similarity, fingerprint, identity,
-                                  match_key, same_place)
+                                  looks_like_same_role, match_key, same_place)
 
 DESCRIPTION = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate "
                "reporting in Python for our finance and operations teams.")
@@ -84,3 +84,18 @@ def test_same_role_in_different_cities_is_not_merged():
     assert not same_place("Sydney, NSW", "Melbourne VIC")
     # Unknown or country-only locations never block a match.
     assert same_place(None, "Perth WA") and same_place("Singapore, Singapore", "Sydney NSW")
+
+
+def test_possible_duplicate_catches_a_recruiter_repost_the_merge_misses():
+    # A recruiter re-posts the employer's ad on another site under its own name, with a
+    # slightly different title: the merge can't link it (different employer), the
+    # warning must.
+    repost = normalise({**SEEK, "advertiser": {"name": "Hays Recruitment"},
+                        "title": "Data Analyst - Finance"})
+    original = normalise(LINKEDIN)
+    assert match_key(repost) != match_key(original)
+    assert looks_like_same_role(original.title, original.description,
+                                repost.title, repost.description) is not None
+    # Same title but a different job is not flagged.
+    assert looks_like_same_role("Data Analyst", DESCRIPTION, "Data Analyst",
+                                "Lead our retail store team, manage rosters and stock.") is None

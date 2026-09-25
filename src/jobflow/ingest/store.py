@@ -22,6 +22,13 @@ COMPANY_NOISE = {"pty", "ltd", "limited", "inc", "llc", "co", "corp", "corporati
 # description word sets overlap at least this much (Jaccard similarity).
 SIMILAR_DESCRIPTION = 0.5
 FUZZY_WINDOW_DAYS = 90
+# Possible duplicates the merge didn't catch, e.g. a recruiter re-posting an employer's
+# ad under its own name. Only reported, never merged, so the bar is lower and employer
+# and city are ignored.
+POSSIBLE_TITLE = 0.6
+POSSIBLE_DESCRIPTION = 0.4
+POSSIBLE_WINDOW_DAYS = 180
+IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
 # Location words that don't identify a city: states, countries, and generic terms.
 NOT_PLACE_WORDS = ({"nsw", "vic", "qld", "tas", "act", "wa", "sa", "nt", "area", "greater",
                     "metropolitan", "metro", "region", "remote", "hybrid", "onsite", "site",
@@ -81,6 +88,93 @@ def description_similarity(a: str | None, b: str | None) -> float:
     if not words_a or not words_b:
         return 0.0
     return len(words_a & words_b) / len(words_a | words_b)
+
+
+def title_similarity(a: str | None, b: str | None) -> float:
+    words_a, words_b = set(_normalise(a).split()), set(_normalise(b).split())
+    if not words_a or not words_b:
+        return 0.0
+    return len(words_a & words_b) / len(words_a | words_b)
+
+
+def looks_like_same_role(title_a: str | None, description_a: str | None,
+                         title_b: str | None, description_b: str | None) -> float | None:
+    """Description similarity if two ads look like the same role whoever posted it and
+    wherever it is, else None."""
+    if title_similarity(title_a, title_b) < POSSIBLE_TITLE:
+        return None
+    similarity = description_similarity(description_a, description_b)
+    return similarity if similarity >= POSSIBLE_DESCRIPTION else None
+
+
+def possible_duplicates(job_id: int, limit: int = 5) -> list[dict]:
+    """Other jobs that may be the same role as this one but weren't merged."""
+    from ..db import connect
+
+    with connect() as conn:
+        job = conn.execute("SELECT title, description FROM jobs WHERE id=%s",
+                           (job_id,)).fetchone()
+        if not job or not job[1]:
+            return []
+        title, description = job
+        words = [w for w in _normalise(title).split() if len(w) > 3] or _normalise(title).split()
+        if not words:
+            return []
+        # Cheap title prefilter in SQL; descriptions are only loaded for close titles.
+        rows = conn.execute(
+            """SELECT id, title FROM jobs
+               WHERE id <> %s AND first_seen_at > now() - make_interval(days => %s)
+                 AND title ILIKE ANY(%s)""",
+            (job_id, POSSIBLE_WINDOW_DAYS, [f"%{w}%" for w in words])).fetchall()
+        close = [pk for pk, other in rows if title_similarity(title, other) >= POSSIBLE_TITLE]
+        if not close:
+            return []
+        rows = conn.execute(
+            """SELECT j.id, j.title, j.company, j.location, j.status, j.description,
+                      (SELECT url FROM job_sources s WHERE s.job_id = j.id
+                       ORDER BY s.first_seen_at LIMIT 1)
+               FROM jobs j WHERE j.id = ANY(%s)""", (close[:100],)).fetchall()
+    matches = []
+    for pk, other_title, company, location, status, other_description, url in rows:
+        similarity = looks_like_same_role(title, description, other_title, other_description)
+        if similarity is not None:
+            matches.append({"id": pk, "title": other_title, "company": company,
+                            "location": location, "status": status, "url": url,
+                            "similarity": similarity})
+    return sorted(matches, key=lambda m: m["similarity"], reverse=True)[:limit]
+
+
+def possible_duplicate_map(conn, job_ids: list[int]) -> dict[int, list[dict]]:
+    """possible_duplicates for many jobs at once: {job id: [{id, status}]}, using two
+    queries in total (titles first, then descriptions only for close titles)."""
+    if not job_ids:
+        return {}
+    rows = conn.execute(
+        """SELECT id, title FROM jobs
+           WHERE first_seen_at > now() - make_interval(days => %s) OR id = ANY(%s)""",
+        (POSSIBLE_WINDOW_DAYS, job_ids)).fetchall()
+    titles = {pk: title for pk, title in rows}
+    by_word: dict[str, set[int]] = {}
+    for pk, title in titles.items():
+        for word in _normalise(title).split():
+            if len(word) > 3:
+                by_word.setdefault(word, set()).add(pk)
+    pairs = set()
+    for pk in job_ids:
+        words = [w for w in _normalise(titles.get(pk)).split() if len(w) > 3]
+        candidates = set().union(*(by_word.get(w, set()) for w in words)) - {pk}
+        pairs.update((pk, other) for other in candidates
+                     if title_similarity(titles[pk], titles[other]) >= POSSIBLE_TITLE)
+    if not pairs:
+        return {}
+    needed = sorted({pk for pair in pairs for pk in pair})
+    details = {pk: (description, status) for pk, description, status in conn.execute(
+        "SELECT id, description, status FROM jobs WHERE id = ANY(%s)", (needed,)).fetchall()}
+    found: dict[int, list[dict]] = {}
+    for pk, other in sorted(pairs):
+        if description_similarity(details[pk][0], details[other][0]) >= POSSIBLE_DESCRIPTION:
+            found.setdefault(pk, []).append({"id": other, "status": details[other][1]})
+    return found
 
 
 def place_words(location: str | None) -> set[str]:

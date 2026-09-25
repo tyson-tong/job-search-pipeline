@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Job Tracker</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #fff; --ink: #18202b; --muted: #5d6876; --line: #dde2e8;
+  --accent: #1f5fae; --accent-ink: #fff; --soft: #e8effa; --dirty: #fff6dd; --dirty-line: #e7c35a;
+  --warn: #a14e00; --warn-soft: #fdeede; --bad: #b3261e; --good: #2f7d43; --chip: #eef1f5;
+  --shadow: 0 8px 30px #0f172a26;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121519; --panel: #1b2027; --ink: #e6e9ed; --muted: #9aa4b0; --line: #2e3640;
+    --accent: #6ea6ee; --accent-ink: #0d1117; --soft: #1e2b3d; --dirty: #33291299; --dirty-line: #8a6d1f;
+    --warn: #f0a560; --warn-soft: #3a2a18; --bad: #ff8a80; --good: #7fd08f; --chip: #252c35;
+    --shadow: 0 8px 30px #0008;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: var(--accent); }
+header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+header h1 { font-size: 1.1rem; margin: 0 8px 0 0; }
+.pipeline { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.chip { border: 1px solid var(--line); background: var(--chip); border-radius: 999px; padding: 2px 10px;
+  font-size: 0.82rem; }
+.chip b { font-variant-numeric: tabular-nums; }
+.chip.on { background: var(--soft); border-color: var(--accent); }
+.chip.alert { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+.save-bar { display: flex; gap: 8px; align-items: center; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.small { padding: 2px 8px; font-size: 0.82rem; }
+main { padding: 12px 16px 60px; max-width: 1500px; margin: 0 auto; }
+.tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+.tab { border: 0; background: none; padding: 8px 14px; border-bottom: 2px solid transparent; font-weight: 600; color: var(--muted); }
+.tab.on { color: var(--ink); border-color: var(--accent); }
+.count { background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 7px; font-size: 0.75rem; margin-left: 4px; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.filters input, .filters select { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 9px; }
+.filters input[type=search] { min-width: 220px; flex: 1; max-width: 360px; }
+details.multi { position: relative; }
+details.multi summary { list-style: none; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+details.multi summary::-webkit-details-marker { display: none; }
+details.multi .menu { position: absolute; z-index: 6; top: calc(100% + 4px); left: 0; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; padding: 8px; box-shadow: var(--shadow); min-width: 210px; }
+details.multi label { display: flex; gap: 8px; padding: 4px 6px; border-radius: 6px; }
+details.multi label:hover { background: var(--soft); }
+.menu .row { display: flex; gap: 6px; margin-top: 6px; }
+.meta { color: var(--muted); font-size: 0.85rem; }
+.table-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); background: var(--panel); position: sticky; top: 0; }
+tr:last-child td { border-bottom: 0; }
+tr.dirty td { background: var(--dirty); }
+tr.dirty td:first-child { box-shadow: inset 3px 0 0 var(--dirty-line); }
+.score { display: inline-block; min-width: 36px; text-align: center; border-radius: 6px; padding: 1px 6px; font-weight: 700; font-variant-numeric: tabular-nums; background: var(--chip); }
+.score.hi { background: #d9f2df; color: #1d5e30; } .score.mid { background: #fdf1d4; color: #7a5300; } .score.lo { background: #f6dede; color: #8a1f1a; }
+@media (prefers-color-scheme: dark) { .score.hi { background: #1f3b27; color: #9ee0ad; } .score.mid { background: #3b3119; color: #f3cf7a; } .score.lo { background: #3c2222; color: #ffb4ad; } }
+.title-btn { border: 0; background: none; padding: 0; text-align: left; font-weight: 600; color: var(--ink); }
+.title-btn:hover { color: var(--accent); text-decoration: underline; }
+.flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.flag { font-size: 0.72rem; border-radius: 4px; padding: 0 5px; background: var(--chip); color: var(--muted); }
+.flag.warn { background: var(--warn-soft); color: var(--warn); }
+.flag.bad { background: var(--warn-soft); color: var(--bad); font-weight: 600; }
+.site { font-size: 0.72rem; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-right: 3px; }
+td select, td input[type=date] { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 3px 5px; }
+.quick { display: flex; gap: 4px; flex-wrap: wrap; }
+.empty { padding: 40px; text-align: center; color: var(--muted); }
+/* Drawer */
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: var(--panel);
+  border-left: 1px solid var(--line); box-shadow: var(--shadow); z-index: 10; overflow-y: auto; padding: 18px 20px 40px; }
+.drawer[hidden] { display: none; }
+.drawer h2 { margin: 0 30px 2px 0; font-size: 1.2rem; }
+.drawer h3 { font-size: 0.95rem; margin: 18px 0 6px; }
+.drawer-actions { position: sticky; bottom: -40px; margin: 20px -20px -40px; padding: 12px 20px;
+  background: var(--panel); border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.close { position: absolute; top: 12px; right: 14px; border: 0; background: none; font-size: 1.4rem; line-height: 1; color: var(--muted); }
+.edit { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; background: var(--soft); border-radius: 10px; padding: 12px; margin-top: 12px; }
+.edit textarea { grid-column: 1 / -1; min-height: 70px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--panel); resize: vertical; }
+.edit select, .edit input { border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; background: var(--panel); }
+.banner { border-radius: 8px; padding: 8px 10px; margin-top: 10px; background: var(--warn-soft); color: var(--warn); }
+.notes { white-space: pre-wrap; background: var(--chip); border-radius: 8px; padding: 8px 10px; font-size: 0.88rem; }
+.match { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+.match ul { margin: 4px 0 0; padding-left: 18px; font-size: 0.86rem; }
+.match .q { color: var(--muted); }
+.history li, .dups li { margin: 3px 0; }
+.description { white-space: pre-wrap; font-size: 0.88rem; max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+  padding: 9px 16px; border-radius: 8px; z-index: 20; box-shadow: var(--shadow); max-width: 90vw; }
+.toast.error { background: var(--bad); color: #fff; }
+@media (max-width: 760px) {
+  th.hide-sm, td.hide-sm { display: none; }
+  .filters input[type=search] { min-width: 0; max-width: none; flex: 1 1 100%; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Job Tracker</h1>
+  <div class="pipeline" id="pipeline"></div>
+  <div class="save-bar">
+    <span class="meta" id="unsaved"></span>
+    <button class="btn" id="discard" disabled>Discard</button>
+    <button class="btn primary" id="save" disabled>Save</button>
+  </div>
+</header>
+<main>
+  <div class="tabs">
+    <button class="tab" data-view="inbox">Inbox<span class="count" id="inbox-count">0</span></button>
+    <button class="tab" data-view="jobs">My jobs</button>
+  </div>
+  <div class="filters">
+    <details class="multi" id="status-filter">
+      <summary id="status-summary">Statuses</summary>
+      <div class="menu" id="status-menu"></div>
+    </details>
+    <input type="search" id="q" placeholder="Search title, company, location">
+    <select id="site"><option value="">All sites</option><option value="linkedin">LinkedIn</option>
+      <option value="indeed">Indeed</option><option value="seek">Seek</option></select>
+    <input type="number" id="salary" placeholder="Min salary / yr" min="0" step="5000" style="width:150px">
+    <select id="sort">
+      <option value="score">Best match first</option><option value="posted">Newest posted</option>
+      <option value="added">Recently added</option><option value="follow_up">Follow-up date</option>
+    </select>
+    <a class="btn" id="export" href="#">Export CSV</a>
+    <span class="meta" id="shown"></span>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Match</th><th>Job</th><th class="hide-sm">Sites</th><th class="hide-sm">Posted</th>
+      <th class="hide-sm">Salary</th><th>Status</th><th class="hide-sm">Follow up</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+</main>
+<aside class="drawer" id="drawer" hidden></aside>
+
+<script>
+"use strict";
+const TOKEN = "__JOBFLOW_TOKEN__";
+const LABELS = { new: "New", interested: "Interested", not_interested: "Not interested", applied: "Applied",
+  interviewing: "Interviewing", offered: "Offered", accepted: "Accepted", declined: "Declined",
+  rejected: "Rejected", withdrawn: "Withdrawn", filtered: "Filtered" };
+const SITE_NAMES = { linkedin: "LinkedIn", indeed: "Indeed", seek: "Seek" };
+const AUTO_REFRESH_MS = 3 * 60 * 1000;
+// versions: each edited job's tracking version when you started editing it, sent with
+// Save so changes made elsewhere in the meantime are caught instead of overwritten.
+const state = { view: "jobs", statuses: new Set(["interested", "applied"]), jobs: [], summary: null,
+  pending: new Map(), versions: new Map(), detail: null, loadedAt: null };
+
+// ---- Helpers -------------------------------------------------------------------------
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === undefined || value === null || value === false) continue;
+    if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else if (key === "className") node.className = value;
+    else node.setAttribute(key, value === true ? "" : value);
+  }
+  return fill(node, children, false);
+}
+// Append children (nested arrays allowed), skipping null/undefined/false; text is never parsed as HTML.
+function fill(node, children, replace = true) {
+  const nodes = [children].flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false)
+    .map((c) => c instanceof Node ? c : document.createTextNode(String(c)));
+  if (replace) node.replaceChildren(...nodes); else node.append(...nodes);
+  return node;
+}
+const safeUrl = (url) => /^https?:\/\//i.test(url || "") ? url : null;
+const label = (status) => LABELS[status] || status;
+const fmtDate = (value) => value ? String(value).slice(0, 10) : "";
+function fmtSalary(min, max) {
+  if (min == null) return "";
+  const k = (n) => `${Math.round(n / 1000)}k`;
+  return (min === max ? k(min) : `${k(min)}–${k(max)}`) + " /yr";
+}
+function toast(message, isError = false) {
+  const node = el("div", { className: "toast" + (isError ? " error" : ""), role: "status" }, message);
+  document.body.append(node);
+  setTimeout(() => node.remove(), isError ? 7000 : 3000);
+}
+async function api(path, options = {}) {
+  const response = await fetch(path, { ...options,
+    headers: { "X-Jobflow-Token": TOKEN, ...(options.headers || {}) } });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(new Error(data.error || `Request failed (${response.status})`),
+      { status: response.status, data });
+  }
+  return data;
+}
+function remember() {
+  try { localStorage.setItem("jobflow.filters", JSON.stringify({ statuses: [...state.statuses],
+    sort: sortInput.value, site: siteInput.value, view: state.view })); } catch (e) { /* optional */ }
+}
+function recall() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("jobflow.filters") || "null");
+    if (!saved) return;
+    if (Array.isArray(saved.statuses) && saved.statuses.length) state.statuses = new Set(saved.statuses);
+    if (saved.sort) sortInput.value = saved.sort;
+    if (saved.site !== undefined) siteInput.value = saved.site;
+    if (saved.view) state.view = saved.view;
+  } catch (e) { /* optional */ }
+}
+
+// ---- Pending (unsaved) changes ---------------------------------------------------------
+function current(job, field) {
+  const pending = state.pending.get(job.id);
+  return pending && field in pending ? pending[field] : job[field];
+}
+function setPending(job, field, value) {
+  const pending = { ...(state.pending.get(job.id) || {}) };
+  const original = field === "note" ? "" : (job[field] ?? (field === "follow_up_on" ? "" : null));
+  if ((value ?? "") === (fmtDate(original) || original || "")) delete pending[field];
+  else pending[field] = value;
+  if (Object.keys(pending).length) {
+    state.pending.set(job.id, pending);
+    if (!state.versions.has(job.id) && job.version) state.versions.set(job.id, job.version);
+  } else {
+    state.pending.delete(job.id);
+    state.versions.delete(job.id);
+  }
+  renderSaveBar();
+  renderRows();
+  // Rebuilding the drawer while typing a note would lose the cursor.
+  if (field !== "note" && state.detail && state.detail.id === job.id) renderDetail();
+}
+function renderSaveBar() {
+  const n = state.pending.size;
+  const loaded = state.loadedAt ? `Updated ${state.loadedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
+  document.getElementById("unsaved").textContent = n ? `${n} unsaved change${n > 1 ? "s" : ""}` : loaded;
+  document.getElementById("save").disabled = !n;
+  document.getElementById("discard").disabled = !n;
+  // The detail panel covers the header, so it has its own Save button.
+  const drawerSave = document.getElementById("d-save");
+  if (drawerSave) drawerSave.disabled = !n;
+  const drawerUnsaved = document.getElementById("d-unsaved");
+  if (drawerUnsaved) drawerUnsaved.textContent = n ? `${n} unsaved` : "";
+}
+async function save(force = false) {
+  const changes = [...state.pending].map(([id, change]) => {
+    const version = state.versions.get(id);
+    return version ? { id, ...change, expected_version: version } : { id, ...change };
+  });
+  document.getElementById("save").disabled = true;
+  try {
+    const result = await api("/api/save", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ changes, force }) });
+    state.pending.clear();
+    state.versions.clear();
+    renderSaveBar();
+    toast(`Saved ${result.saved.length} job${result.saved.length > 1 ? "s" : ""}`);
+    await refresh();
+    if (state.detail) await openDetail(state.detail.id);
+  } catch (error) {
+    if (error.status === 409 && error.data && error.data.conflicts) return resolveConflicts(error.data.conflicts);
+    toast(error.message, true);
+  } finally {
+    renderSaveBar();
+  }
+}
+// Nothing was saved: some jobs changed elsewhere after this page loaded them.
+async function resolveConflicts(conflicts) {
+  const lines = conflicts.map((c) => `• #${c.id} ${c.title}${c.company ? ` (${c.company})` : ""}: `
+    + `now ${label(c.status)}${c.follow_up_on ? `, follow up ${fmtDate(c.follow_up_on)}` : ""}`
+    + (c.changed_via ? `, last changed via ${c.changed_via}` : ""));
+  const overwrite = confirm(`${conflicts.length === 1 ? "This job has" : "These jobs have"} changed since you `
+    + `loaded ${conflicts.length === 1 ? "it" : "them"}, so nothing was saved:\n\n${lines.join("\n")}\n\n`
+    + "OK: save your changes anyway (replacing the status and follow-up; notes are added).\n"
+    + "Cancel: keep your drafts and load the latest data to review.");
+  if (overwrite) return save(true);
+  toast("Nothing saved. Showing the latest data; your drafts are kept.");
+  await refresh();
+  if (state.detail) await openDetail(state.detail.id);
+}
+window.addEventListener("beforeunload", (event) => {
+  if (state.pending.size) { event.preventDefault(); event.returnValue = ""; }
+});
+
+// ---- Loading -------------------------------------------------------------------------
+const qInput = document.getElementById("q"), siteInput = document.getElementById("site"),
+  salaryInput = document.getElementById("salary"), sortInput = document.getElementById("sort");
+function filterParams() {
+  const params = new URLSearchParams();
+  const statuses = state.view === "inbox" ? ["new"] : [...state.statuses];
+  statuses.forEach((s) => params.append("status", s));
+  if (qInput.value.trim()) params.set("q", qInput.value.trim());
+  if (siteInput.value) params.set("site", siteInput.value);
+  if (salaryInput.value) params.set("salary_min", salaryInput.value);
+  params.set("sort", sortInput.value);
+  return params;
+}
+async function refresh() {
+  try {
+    const [summary, jobs] = await Promise.all([api("/api/summary"), api("/api/jobs?" + filterParams())]);
+    state.summary = summary;
+    state.jobs = jobs;
+    state.loadedAt = new Date();
+    renderAll();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+// ---- Rendering -------------------------------------------------------------------------
+function renderAll() { renderPipeline(); renderTabs(); renderStatusMenu(); renderRows(); renderSaveBar(); }
+function renderPipeline() {
+  const box = document.getElementById("pipeline");
+  const { counts, overdue } = state.summary;
+  const order = ["interested", "applied", "interviewing", "offered", "accepted", "declined", "rejected", "withdrawn", "not_interested"];
+  fill(box, [...order.filter((s) => counts[s]).map((s) =>
+    el("button", { className: "chip" + (state.view === "jobs" && state.statuses.has(s) ? " on" : ""),
+      title: `Show only ${label(s).toLowerCase()} jobs`,
+      onclick: () => { state.view = "jobs"; state.statuses = new Set([s]); remember(); refresh(); } },
+      label(s), " ", el("b", {}, counts[s]))),
+    overdue ? el("button", { className: "chip alert", title: "Jobs with a follow-up date in the past",
+      onclick: () => { state.view = "jobs"; sortInput.value = "follow_up"; remember(); refresh(); } },
+      "Follow-ups overdue ", el("b", {}, overdue)) : null]);
+}
+function renderTabs() {
+  document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("on", tab.dataset.view === state.view));
+  document.getElementById("inbox-count").textContent = state.summary.counts.new || 0;
+  document.getElementById("status-filter").hidden = state.view === "inbox";
+}
+function renderStatusMenu() {
+  const menu = document.getElementById("status-menu");
+  const all = state.summary.statuses.filter((s) => s !== "new");
+  fill(menu, [
+    ...all.map((s) => el("label", {},
+      el("input", { type: "checkbox", checked: state.statuses.has(s), onchange: (event) => {
+        event.target.checked ? state.statuses.add(s) : state.statuses.delete(s);
+        if (!state.statuses.size) state.statuses.add("interested");
+        remember(); refresh(); } }),
+      label(s), el("span", { className: "meta" }, ` (${state.summary.counts[s] || 0})`))),
+    el("div", { className: "row" },
+      el("button", { className: "btn small", onclick: () => {
+        state.statuses = new Set(state.summary.default_statuses); remember(); refresh(); } }, "Default"),
+      el("button", { className: "btn small", onclick: () => {
+        state.statuses = new Set(all); remember(); refresh(); } }, "All"))]);
+  const chosen = [...state.statuses].map(label);
+  document.getElementById("status-summary").textContent =
+    "Status: " + (chosen.length > 3 ? `${chosen.length} selected` : chosen.join(", ")) + " ▾";
+}
+function statusSelect(job) {
+  const value = current(job, "status");
+  const options = state.summary.editable.map((s) => el("option", { value: s, selected: s === value }, label(s)));
+  if (value === "filtered") options.unshift(el("option", { value: "filtered", selected: true, disabled: true }, "Filtered"));
+  return el("select", { "aria-label": "Status", onchange: (event) => setPending(job, "status", event.target.value) }, options);
+}
+function duplicateFlag(job) {
+  const started = job.duplicate_in_progress;
+  const applying = ["interested", "applied"].includes(current(job, "status"));
+  if (started && applying) {
+    return el("span", { className: "flag bad", title: "A similar job is already in progress" },
+      `Same role as #${started.id} (${label(started.status).toLowerCase()})?`);
+  }
+  if (job.duplicates.length) {
+    return el("span", { className: "flag warn", title: "Similar title and ad text; open for details" },
+      `${job.duplicates.length} possible duplicate${job.duplicates.length > 1 ? "s" : ""}`);
+  }
+  return null;
+}
+function renderRows() {
+  const body = document.getElementById("rows");
+  const n = state.jobs.length;
+  document.getElementById("shown").textContent = `${n} job${n === 1 ? "" : "s"}`;
+  document.getElementById("export").href = "/api/export.csv?" + filterParams() + "&token=" + encodeURIComponent(TOKEN);
+  if (!n) {
+    fill(body, [el("tr", {}, el("td", { colspan: 7, className: "empty" },
+      state.view === "inbox" ? "Inbox is empty: no new jobs to review." : "No jobs match these filters."))]);
+    return;
+  }
+  fill(body, [...state.jobs.map((job) => {
+    const score = job.score == null ? null : Math.round(job.score);
+    const scoreClass = score == null ? "" : score >= 70 ? " hi" : score >= 45 ? " mid" : " lo";
+    const statusCell = state.view === "inbox"
+      ? el("div", { className: "quick" },
+          el("button", { className: "btn small", onclick: () => setPending(job, "status", "interested") }, "Interested"),
+          el("button", { className: "btn small", onclick: () => setPending(job, "status", "not_interested") }, "Not interested"),
+          statusSelect(job))
+      : statusSelect(job);
+    return el("tr", { className: state.pending.has(job.id) ? "dirty" : "" },
+      el("td", {}, el("span", { className: "score" + scoreClass,
+        title: job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored yet (jobflow match --new)" },
+        score == null ? "–" : score)),
+      el("td", {},
+        el("button", { className: "title-btn", onclick: () => openDetail(job.id) }, job.title),
+        el("div", { className: "meta" }, [job.company, job.location].filter(Boolean).join(" · ")),
+        el("div", { className: "flags" },
+          duplicateFlag(job),
+          job.overdue ? el("span", { className: "flag warn" }, "Follow-up overdue") : null,
+          job.stale ? el("span", { className: "flag" }, "Applied 3+ weeks ago") : null,
+          job.has_notes || current(job, "note") ? el("span", { className: "flag" }, "Notes") : null)),
+      el("td", { className: "hide-sm" }, job.sites.map((s) => el("span", { className: "site" }, SITE_NAMES[s] || s))),
+      el("td", { className: "hide-sm meta" }, fmtDate(job.posted_at) || fmtDate(job.first_seen_at)),
+      el("td", { className: "hide-sm meta" }, fmtSalary(job.salary_min, job.salary_max)),
+      el("td", {}, statusCell),
+      el("td", { className: "hide-sm" }, el("input", { type: "date", "aria-label": "Follow-up date",
+        value: current(job, "follow_up_on") ? fmtDate(current(job, "follow_up_on")) : "",
+        onchange: (event) => setPending(job, "follow_up_on", event.target.value) })));
+  })]);
+}
+
+// ---- Detail drawer -----------------------------------------------------------------------
+async function openDetail(id) {
+  try {
+    const drawer = document.getElementById("drawer");
+    const sameJob = state.detail && state.detail.id === id;
+    const scroll = sameJob ? drawer.scrollTop : 0;
+    state.detail = await api(`/api/jobs/${id}`);
+    renderDetail();
+    drawer.scrollTop = scroll;  // a refresh of the same job keeps your place
+  } catch (error) { toast(error.message, true); }
+}
+function closeDetail() { state.detail = null; document.getElementById("drawer").hidden = true; }
+function renderDetail() {
+  const job = state.detail;
+  const listed = state.jobs.find((j) => j.id === job.id);
+  // Edits go through the same pending changes as the table, using the list row if shown.
+  const target = listed || { ...job, duplicates: job.duplicates, duplicate_in_progress: null };
+  const drawer = document.getElementById("drawer");
+  const inProgress = job.duplicates.filter((d) => ["applied", "interviewing", "offered", "accepted"].includes(d.status));
+  drawer.hidden = false;
+  fill(drawer, [
+    el("button", { className: "close", "aria-label": "Close", onclick: closeDetail }, "×"),
+    el("h2", {}, job.title),
+    el("div", { className: "meta" }, [job.company, job.location, fmtSalary(job.salary_min, job.salary_max)]
+      .filter(Boolean).join(" · ")),
+    el("div", { className: "meta" }, `Posted ${fmtDate(job.posted_at) || "unknown"} · added ${fmtDate(job.first_seen_at)}`
+      + (job.applied_at ? ` · applied ${fmtDate(job.applied_at)}` : "")),
+    el("div", { className: "flags", style: "margin-top:8px" }, job.sources.map((s) => safeUrl(s.url)
+      ? el("a", { className: "btn small", href: safeUrl(s.url), target: "_blank", rel: "noopener noreferrer" },
+          `Open on ${SITE_NAMES[s.source] || s.source} ↗`)
+      : el("span", { className: "flag" }, SITE_NAMES[s.source] || s.source))),
+    inProgress.length > 0 && ["interested", "applied"].includes(current(target, "status"))
+      ? el("div", { className: "banner" }, `This may be the same role as job #${inProgress[0].id} `
+          + `(${inProgress[0].company || "unknown employer"}), which is already ${label(inProgress[0].status).toLowerCase()}.`)
+      : null,
+    job.filter_reason ? el("div", { className: "banner" }, `Filtered on import: ${job.filter_reason}`) : null,
+    el("div", { className: "edit" },
+      el("label", { for: "d-status" }, "Status"),
+      Object.assign(statusSelect(target), { id: "d-status" }),
+      el("label", { for: "d-follow" }, "Follow up"),
+      el("input", { id: "d-follow", type: "date", value: current(target, "follow_up_on") ? fmtDate(current(target, "follow_up_on")) : "",
+        onchange: (event) => setPending(target, "follow_up_on", event.target.value) }),
+      el("textarea", { placeholder: "Add a note (dated when saved), e.g. spoke to recruiter, salary discussed…",
+        maxlength: 2000, oninput: (event) => setPending(target, "note", event.target.value) },
+        current(target, "note") || "")),
+    job.notes ? [el("h3", {}, "Notes"), el("div", { className: "notes" }, job.notes)] : null,
+    el("h3", {}, "Match with your CVs"),
+    job.matches.length ? job.matches.map(renderMatch)
+      : el("p", { className: "meta" }, "Not scored yet. Run jobflow match " + job.id + "."),
+    job.duplicates.length ? [el("h3", {}, "Possible duplicates"),
+      el("ul", { className: "dups" }, job.duplicates.map((d) => el("li", {},
+        el("button", { className: "title-btn", onclick: () => openDetail(d.id) }, `#${d.id} ${d.title}`),
+        el("span", { className: "meta" }, ` — ${d.company || ""}, ${label(d.status)}, ${Math.round(d.similarity * 100)}% same text`))))] : null,
+    job.history.length ? [el("h3", {}, "Status history"),
+      el("ul", { className: "history" }, job.history.map((h) => el("li", { className: "meta" },
+        `${fmtDate(h.changed_at)}: ${label(h.from_status || "new")} → ${label(h.to_status)} (${h.via})`)))] : null,
+    job.description ? [el("h3", {}, "Job description"), el("div", { className: "description" }, job.description)] : null,
+    el("div", { className: "drawer-actions" },
+      el("span", { className: "meta", id: "d-unsaved" }),
+      el("button", { className: "btn", onclick: closeDetail }, "Close"),
+      el("button", { className: "btn primary", id: "d-save", onclick: () => save() }, "Save"))]);
+  renderSaveBar();
+}
+function renderMatch(m) {
+  const items = (title, list, withQuotes) => list.length ? [el("div", { className: "meta", style: "margin-top:6px" }, title),
+    el("ul", {}, list.map((r) => el("li", {}, `[${r.importance}] ${r.requirement}`,
+      withQuotes && r.evidence && r.evidence.length ? el("span", { className: "q" }, ` — “${r.evidence.join("”; “")}”`) : null,
+      r.note ? el("span", { className: "q" }, ` (${r.note})`) : null)))] : null;
+  return el("div", { className: "match" },
+    el("strong", {}, `${m.variant}: ${Math.round(m.score)}/100`),
+    m.rationale ? el("div", { className: "meta" }, m.rationale) : null,
+    items("Matched", m.matched, true), items("Partial", m.partial, true),
+    items("Not evidenced in this CV (not proof you lack it)", m.not_evidenced, false));
+}
+
+// ---- Wiring ----------------------------------------------------------------------------
+document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
+  state.view = tab.dataset.view; remember(); refresh(); }));
+let searchTimer;
+qInput.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(refresh, 250); });
+salaryInput.addEventListener("change", refresh);
+siteInput.addEventListener("change", () => { remember(); refresh(); });
+sortInput.addEventListener("change", () => { remember(); refresh(); });
+document.getElementById("save").addEventListener("click", () => save());
+document.getElementById("discard").addEventListener("click", () => {
+  if (confirm("Discard all unsaved changes?")) {
+    state.pending.clear(); state.versions.clear(); renderAll(); if (state.detail) renderDetail();
+  } });
+// Keep the view current without disturbing edits: refresh when you come back to the
+// tab and every few minutes, but never while there are unsaved changes.
+async function autoRefresh() {
+  if (document.hidden || state.pending.size) return;
+  await refresh();
+  if (state.detail && !state.pending.size) await openDetail(state.detail.id);
+}
+setInterval(autoRefresh, AUTO_REFRESH_MS);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeDetail();
+  if ((event.ctrlKey || event.metaKey) && event.key === "s") { event.preventDefault(); if (state.pending.size) save(); }
+});
+document.addEventListener("click", (event) => {
+  const menu = document.getElementById("status-filter");
+  if (menu.open && !menu.contains(event.target)) menu.open = false;
+});
+recall();
+refresh();
+</script>
+</body>
+</html>

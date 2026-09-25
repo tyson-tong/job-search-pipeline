@@ -6,11 +6,13 @@ from importlib import resources
 
 import psycopg
 
-STATUSES = ("new", "interested", "applied", "interviewing", "offer", "rejected",
-            "withdrawn", "ignored", "filtered")
+STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "offered",
+            "accepted", "declined", "rejected", "withdrawn", "filtered")
 # Hidden from list by default and skipped by match --new. "filtered" is set on import
 # when a job fails a search's local filters (see jobs.filter_reason).
-CLOSED_STATUSES = ["rejected", "withdrawn", "ignored", "filtered"]
+CLOSED_STATUSES = ["not_interested", "accepted", "declined", "rejected", "withdrawn", "filtered"]
+# Statuses meaning you've applied; the first time a job reaches one sets applied_at.
+APPLIED_STATUSES = ["applied", "interviewing", "offered", "accepted", "declined"]
 
 
 def connect():
@@ -97,31 +99,49 @@ def list_jobs(limit: int = 30, by_score: bool = False, statuses: list[str] | Non
     return [dict(zip(keys, row)) for row in rows]
 
 
-def job_status(job_id: int, status: str | None = None, note: str | None = None) -> dict:
-    """Show a job's application status, optionally setting it and appending a note.
+_UNSET = object()
+
+
+def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | None = None,
+                  follow_up_on: object = _UNSET, via: str) -> None:
+    """Change a job's status, add a dated note, and/or set its follow-up date, within
+    the caller's transaction. Status changes are recorded in status_history.
 
     jobs.status is the single source of truth; the applications row mirrors it and
-    holds the dated notes and the first time the job was marked applied.
+    holds the notes, follow-up date, and the first time the job was applied for.
     """
     if status is not None and status not in STATUSES:
         raise RuntimeError(f"Unknown status {status!r}; choose from {', '.join(STATUSES)}")
+    row = conn.execute("SELECT status FROM jobs WHERE id=%s FOR UPDATE", (job_id,)).fetchone()
+    if not row:
+        raise RuntimeError(f"No job with database id {job_id}")
+    if status is not None and status != row[0]:
+        conn.execute("UPDATE jobs SET status=%s, status_updated_at=now() WHERE id=%s",
+                     (status, job_id))
+        conn.execute("""INSERT INTO status_history(job_id, from_status, to_status, via)
+                        VALUES (%s,%s,%s,%s)""", (job_id, row[0], status, via))
     note_line = f"{date.today().isoformat()}: {note.strip()}" if note and note.strip() else None
+    set_follow_up = follow_up_on is not _UNSET
+    if status is None and not note_line and not set_follow_up:
+        return
+    conn.execute(
+        """INSERT INTO applications(job_id, status, notes, applied_at, follow_up_on, updated_at)
+           SELECT id, status, %s, CASE WHEN status = ANY(%s) THEN now() END, %s, now()
+           FROM jobs WHERE id=%s
+           ON CONFLICT (job_id) DO UPDATE SET status=EXCLUDED.status,
+               notes=nullif(concat_ws(chr(10), applications.notes, EXCLUDED.notes), ''),
+               applied_at=coalesce(applications.applied_at, EXCLUDED.applied_at),
+               follow_up_on=CASE WHEN %s THEN EXCLUDED.follow_up_on
+                                 ELSE applications.follow_up_on END,
+               updated_at=now()""",
+        (note_line, APPLIED_STATUSES, follow_up_on if set_follow_up else None, job_id,
+         set_follow_up))
+
+
+def job_status(job_id: int, status: str | None = None, note: str | None = None) -> dict:
+    """Show a job's application status, optionally setting it and appending a note."""
     with connect() as conn:
-        if not conn.execute("SELECT 1 FROM jobs WHERE id=%s", (job_id,)).fetchone():
-            raise RuntimeError(f"No job with database id {job_id}")
-        if status is not None:
-            conn.execute("""UPDATE jobs SET status=%s, status_updated_at=now()
-                            WHERE id=%s AND status IS DISTINCT FROM %s""",
-                         (status, job_id, status))
-        if status is not None or note_line:
-            conn.execute(
-                """INSERT INTO applications(job_id, status, notes, applied_at, updated_at)
-                   SELECT id, status, %s, CASE WHEN status='applied' THEN now() END, now()
-                   FROM jobs WHERE id=%s
-                   ON CONFLICT (job_id) DO UPDATE SET status=EXCLUDED.status,
-                       notes=nullif(concat_ws(chr(10), applications.notes, EXCLUDED.notes), ''),
-                       applied_at=coalesce(applications.applied_at, EXCLUDED.applied_at),
-                       updated_at=now()""", (note_line, job_id))
+        set_job_state(conn, job_id, status=status, note=note, via="cli")
         row = conn.execute(
             """SELECT j.id, j.title, j.company, j.status, j.status_updated_at,
                       a.applied_at, a.notes, j.filter_reason
