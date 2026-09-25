@@ -5,10 +5,16 @@ import os
 
 import requests
 
+DEFAULT_BASE_URL = "https://api.openai.com/v1"
+
+
+def base_url() -> str:
+    # An empty LLM_BASE_URL (as in .env.example) means "use the default".
+    return (os.environ.get("LLM_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
+
 
 def complete(system: str, user: str, *, json_mode: bool = False) -> tuple[str, str]:
     """Call an OpenAI-compatible chat-completions endpoint."""
-    base = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
     model = os.environ.get("LLM_MODEL")
     if not key or not model:
@@ -17,7 +23,7 @@ def complete(system: str, user: str, *, json_mode: bool = False) -> tuple[str, s
              {"role": "user", "content": user}], "temperature": 0.1}
     if json_mode:
         body["response_format"] = {"type": "json_object"}
-    response = requests.post(f"{base}/chat/completions", json=body,
+    response = requests.post(f"{base_url()}/chat/completions", json=body,
                              headers={"Authorization": f"Bearer {key}"}, timeout=180)
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"], model
