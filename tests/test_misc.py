@@ -44,3 +44,20 @@ def test_env_file_never_overrides_real_environment(monkeypatch, tmp_path):
     assert os.environ["EXAMPLE_IDS"] == "a,b"
     assert "LLM_BASE_URL" not in os.environ  # empty values don't mask defaults
     assert os.environ["APIFY_TOKEN"] == "from-github-secret"
+
+
+def test_init_never_overwrites_personal_files_and_keeps_env_private(tmp_path):
+    import stat
+
+    from jobflow.settings import init_files
+
+    for template in (".env.example", "profile.example.toml", "searches.example.toml"):
+        (tmp_path / template).write_text(f"# template {template}\n")
+    (tmp_path / ".env").write_text("DATABASE_URL=my-real-secret\n")  # already set up
+    results = dict(init_files(tmp_path))
+    assert results == {".env": False, "profile.toml": True, "searches.toml": True}
+    assert (tmp_path / ".env").read_text() == "DATABASE_URL=my-real-secret\n"
+    assert (tmp_path / "searches.toml").read_text() == "# template searches.example.toml\n"
+    (tmp_path / ".env").unlink()
+    init_files(tmp_path)
+    assert stat.S_IMODE((tmp_path / ".env").stat().st_mode) == 0o600

@@ -8,6 +8,32 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 ROOT = Path(__file__).resolve().parents[2]
 
 
+# Personal files created from the templates shipped with the repository, in the order
+# they're usually filled in. .env holds secrets, so only its owner may read it.
+INIT_FILES = ((".env.example", ".env", 0o600),
+              ("profile.example.toml", "profile.toml", 0o644),
+              ("searches.example.toml", "searches.toml", 0o644))
+
+
+def init_files(root: Path = ROOT) -> list[tuple[str, bool]]:
+    """Copy each missing personal file from its template. Existing files are never
+    touched. Returns (file name, created) pairs."""
+    results = []
+    for template, target, mode in INIT_FILES:
+        source, destination = root / template, root / target
+        if destination.exists():
+            results.append((target, False))
+            continue
+        if not source.exists():
+            raise RuntimeError(f"Template {source} is missing; run this from the repository")
+        # "x" mode fails rather than overwrite if the file appeared in the meantime.
+        with destination.open("x") as out:
+            out.write(source.read_text())
+        destination.chmod(mode)
+        results.append((target, True))
+    return results
+
+
 def env_path() -> Path:
     """./.env, else .env in the source checkout (mirrors profile_path)."""
     local = Path.cwd() / ".env"

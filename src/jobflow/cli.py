@@ -12,9 +12,11 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="jobflow",
-        description="Everyday: web (job tracker, including your searches), tailor-cv, and "
-        "interview-prep. The daily GitHub Action runs migrate and ingest.")
+        description="First time: init. Everyday: web (job tracker, including your searches), "
+        "tailor-cv, and interview-prep. The daily GitHub Action runs migrate and ingest.")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("init", help="Create .env, profile.toml, and searches.toml from the "
+                   "templates (never overwrites existing files)")
     sub.add_parser("migrate", help="Create or update database tables (the daily Action runs "
                    "this; the other commands do it automatically)")
     ingest = sub.add_parser("ingest", help="Run the searches in searches.toml on Apify now and "
@@ -60,8 +62,28 @@ def warn_possible_duplicates(job_id: int, about_to_apply: bool) -> None:
               + (f"\n\t{m['url']}" if m["url"] else ""))
 
 
+def init() -> None:
+    from .settings import ROOT, init_files
+
+    results = init_files()
+    for name, created in results:
+        print(f"{'created' if created else 'kept   '}  {ROOT / name}"
+              + ("" if created else "  (already exists; not changed)"))
+    if not any(created for _, created in results):
+        print("\nNothing to create: all three files exist.")
+        return
+    print("""
+Next:
+  1. .env           DATABASE_URL, APIFY_TOKEN, LLM_API_KEY, LLM_MODEL, WEB_SEARCH_API_KEY
+  2. profile.toml   cv_directory: the folder with your CV_*.yaml files
+  3. searches.toml  your job searches (it starts with example searches: replace them)
+  4. uv run jobflow web, then the Searches tab to check your searches""")
+
+
 def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    if args.command == "migrate":
+    if args.command == "init":
+        init()
+    elif args.command == "migrate":
         from .db import migrate
         migrate()
     elif args.command == "ingest":

@@ -166,8 +166,8 @@ def load_searches() -> list[Search]:
         from ..settings import searches_file
         path = searches_file()
         if not path.exists():
-            raise SearchConfigError(f"No searches config: create {path} from "
-                                    "searches.example.toml, or set JOBFLOW_SEARCHES")
+            raise SearchConfigError(f"No searches file at {path}. Run `uv run jobflow init` "
+                                    "to create it from searches.example.toml, then edit it")
         text = path.read_text()
     return parse_config(text)
 

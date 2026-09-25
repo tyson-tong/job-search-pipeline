@@ -74,6 +74,8 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
 
 ## Commands
 
+First time: `jobflow init` creates `.env`, `profile.toml`, and `searches.toml` from the templates (never overwrites).
+
 Everyday:
 
 | Command | What it does | Needs |
@@ -97,15 +99,18 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
 1. **Make your own copy.** Create a *private* repository from this template (GitHub: "Use this template"), then clone it.
 
-2. **Install.**
+2. **Install and create your settings files.**
 
    ```
    uv sync --extra documents
+   uv run jobflow init
    ```
 
-3. **Point it at your CVs.** Copy `profile.example.toml` to `profile.toml` and set `cv_directory` to the folder containing your RenderCV files. Keep that folder outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. `profile.toml` also sets where `searches.toml` lives, the output folders, the scoring weights, and your timezone.
+   `init` creates `.env`, `profile.toml`, and `searches.toml` from the `.example` templates, with comments on what to fill in. It never overwrites a file that already exists, so it's safe to rerun. All three are ignored by Git, and `.env` is readable only by you.
 
-4. **Add credentials.** Copy `.env.example` to `.env` and fill in:
+3. **Point it at your CVs.** In `profile.toml`, set `cv_directory` to the folder containing your RenderCV files. Keep that folder outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. `profile.toml` also sets where `searches.toml` lives, the output folders, the scoring weights, and your timezone.
+
+4. **Add credentials.** In `.env`, fill in:
 
    | Variable | Used for |
    |---|---|
@@ -120,7 +125,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
    The database tables are created automatically the first time you run `jobflow web`.
 
-5. **Define your searches.** Copy `searches.example.toml` to `searches.toml` (ignored by Git) and edit it. Each `[[search]]` has:
+5. **Define your searches.** Edit `searches.toml`: it starts with example searches, so replace them before the daily import runs. Each `[[search]]` has:
 
    | Setting | Example | Notes |
    |---|---|---|
