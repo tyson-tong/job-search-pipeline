@@ -200,7 +200,7 @@ job_observations  42 × run 118 (LinkedIn), 42 × run 119 (Seek)   original reco
 applications      42   applied   2026-09-25: Applied via referral</div>
 
 <h2 id="database">Database</h2>
-<p>Created by <code>migrations/001–006</code>; <code>jobflow migrate</code> applies any not yet listed in <code>schema_migrations</code>.</p>
+<p>Defined by the SQL files in <code>migrations/</code>; <code>jobflow migrate</code> applies each file once, in filename order, tracking it in <code>schema_migrations</code>.</p>
 <div class="db-grid">
   <div class="tbl"><h3>scraper_runs</h3><p>One per Apify run.</p><ul>
     <li><span class="k">id</span>, apify_run_id, dataset_id</li><li>actor_id <span class="muted">site:actor</span></li>

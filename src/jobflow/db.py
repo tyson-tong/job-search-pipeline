@@ -49,7 +49,7 @@ def migrate() -> None:
         filled = backfill_keys(conn)
         if filled:
             print(f"Backfilled duplicate-detection keys for {filled} jobs")
-        if "005_job_sources.sql" in newly_applied:
+        if "008_job_sources.sql" in newly_applied:
             added = backfill_sources(conn)
             if added:
                 print(f"Recorded {added} more site copies in job_sources")
