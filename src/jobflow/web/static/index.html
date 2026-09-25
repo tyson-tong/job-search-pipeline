@@ -96,6 +96,12 @@ td select, td input[type=date] { border: 1px solid var(--line); background: var(
 .match .q { color: var(--muted); }
 .history li, .dups li { margin: 3px 0; }
 .description { white-space: pre-wrap; font-size: 0.88rem; max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.chip.busy { background: var(--soft); border-color: var(--accent); }
+.next { background: var(--chip); border-radius: 10px; padding: 10px 12px; margin-top: 14px; }
+.next code { font: 0.82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; overflow-x: auto; white-space: nowrap; flex: 1; }
+.next .cmd { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.h3-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
   padding: 9px 16px; border-radius: 8px; z-index: 20; box-shadow: var(--shadow); max-width: 90vw; }
 .toast.error { background: var(--bad); color: #fff; }
@@ -109,6 +115,7 @@ td select, td input[type=date] { border: 1px solid var(--line); background: var(
 <header>
   <h1>Job Tracker</h1>
   <div class="pipeline" id="pipeline"></div>
+  <span class="chip busy" id="scoring" hidden></span>
   <div class="save-bar">
     <span class="meta" id="unsaved"></span>
     <button class="btn" id="discard" disabled>Discard</button>
@@ -133,6 +140,7 @@ td select, td input[type=date] { border: 1px solid var(--line); background: var(
       <option value="score">Best match first</option><option value="posted">Newest posted</option>
       <option value="added">Recently added</option><option value="follow_up">Follow-up date</option>
     </select>
+    <button class="btn" id="score-btn" disabled>Score unscored jobs</button>
     <a class="btn" id="export" href="#">Export CSV</a>
     <span class="meta" id="shown"></span>
   </div>
@@ -155,7 +163,8 @@ const AUTO_REFRESH_MS = 3 * 60 * 1000;
 // versions: each edited job's tracking version when you started editing it, sent with
 // Save so changes made elsewhere in the meantime are caught instead of overwritten.
 const state = { view: "jobs", statuses: new Set(["interested", "applied"]), jobs: [], summary: null,
-  pending: new Map(), versions: new Map(), detail: null, loadedAt: null };
+  pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null };
+const SCORE_BATCH = 50;
 
 // ---- Helpers -------------------------------------------------------------------------
 function el(tag, attrs = {}, ...children) {
@@ -313,7 +322,7 @@ async function refresh() {
 }
 
 // ---- Rendering -------------------------------------------------------------------------
-function renderAll() { renderPipeline(); renderTabs(); renderStatusMenu(); renderRows(); renderSaveBar(); }
+function renderAll() { renderPipeline(); renderTabs(); renderStatusMenu(); renderRows(); renderSaveBar(); renderScoring(); }
 function renderPipeline() {
   const box = document.getElementById("pipeline");
   const { counts, overdue } = state.summary;
@@ -391,7 +400,7 @@ function renderRows() {
       : statusSelect(job);
     return el("tr", { className: state.pending.has(job.id) ? "dirty" : "" },
       el("td", {}, el("span", { className: "score" + scoreClass,
-        title: job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored yet (jobflow match --new)" },
+        title: job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored yet: use Score unscored jobs" },
         score == null ? "–" : score)),
       el("td", {},
         el("button", { className: "title-btn", onclick: () => openDetail(job.id) }, job.title),
@@ -409,6 +418,48 @@ function renderRows() {
         value: current(job, "follow_up_on") ? fmtDate(current(job, "follow_up_on")) : "",
         onchange: (event) => setPending(job, "follow_up_on", event.target.value) })));
   })]);
+}
+
+// ---- Scoring (LLM match scores run on this machine, in the background) -------------------
+function renderScoring() {
+  const button = document.getElementById("score-btn"), chip = document.getElementById("scoring");
+  const running = state.scoring && state.scoring.running;
+  const { unscored, cv_count: cvs, scoring_problem: problem } = state.summary || {};
+  button.disabled = running || !unscored;
+  button.textContent = unscored ? `Score ${Math.min(unscored, SCORE_BATCH)} unscored job${unscored === 1 ? "" : "s"}` : "All jobs scored";
+  button.title = problem ? `Scoring unavailable: ${problem}`
+    : unscored > SCORE_BATCH ? `${unscored} unscored; ${SCORE_BATCH} are scored per run, newest first` : "";
+  chip.hidden = !running;
+  if (running) chip.textContent = `Scoring ${state.scoring.done} / ${state.scoring.total}…`;
+}
+async function startScoring(body, confirmText) {
+  if (confirmText && !confirm(confirmText)) return;
+  try {
+    state.scoring = await api("/api/scoring", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    renderScoring();
+    if (state.scoring.running) pollScoring();
+    else toast("Nothing to score.");
+  } catch (error) { toast(error.message, true); }
+}
+async function pollScoring() {
+  try { state.scoring = await api("/api/scoring"); } catch (error) { toast(error.message, true); return; }
+  renderScoring();
+  if (state.scoring.running) { setTimeout(pollScoring, 2000); return; }
+  const { scored, errors } = state.scoring;
+  toast(`Scored ${scored.length} job${scored.length === 1 ? "" : "s"}` + (errors.length
+    ? `; ${errors.length} failed (${errors[0].error})` : ""), errors.length > 0);
+  await refresh();  // unsaved drafts are kept; rows just gain their new scores
+  if (state.detail && !state.pending.size) await openDetail(state.detail.id);
+}
+document.getElementById("score-btn").addEventListener("click", () => {
+  const jobs = Math.min(state.summary.unscored, SCORE_BATCH), cvs = state.summary.cv_count;
+  startScoring({ limit: SCORE_BATCH }, `Score ${jobs} job${jobs === 1 ? "" : "s"} against your ${cvs} CV${cvs === 1 ? "" : "s"}?`
+    + `\n\nThis makes about ${jobs * cvs} LLM call${jobs * cvs === 1 ? "" : "s"}, newest jobs first. You can keep working while it runs.`);
+});
+async function copyCommand(text) {
+  try { await navigator.clipboard.writeText(text); toast("Copied: " + text); }
+  catch (error) { toast("Copy failed; select the command and copy it instead.", true); }
 }
 
 // ---- Detail drawer -----------------------------------------------------------------------
@@ -457,9 +508,18 @@ function renderDetail() {
         maxlength: 2000, oninput: (event) => setPending(target, "note", event.target.value) },
         current(target, "note") || "")),
     job.notes ? [el("h3", {}, "Notes"), el("div", { className: "notes" }, job.notes)] : null,
-    el("h3", {}, "Match with your CVs"),
+    el("div", { className: "h3-row" }, el("h3", {}, "Match with your CVs"),
+      el("button", { className: "btn small", disabled: Boolean(state.scoring && state.scoring.running),
+        title: "Ask the LLM to compare this job with each CV", onclick: () =>
+          startScoring({ job_ids: [job.id], force: job.matches.length > 0 }) },
+        job.matches.length ? "Re-score" : "Score")),
     job.matches.length ? job.matches.map(renderMatch)
-      : el("p", { className: "meta" }, "Not scored yet. Run jobflow match " + job.id + "."),
+      : el("p", { className: "meta" }, "Not scored yet."),
+    el("div", { className: "next" }, el("strong", {}, "Next steps (in a terminal)"),
+      [[`uv run jobflow tailor-cv ${job.id}`, "Tailored CV draft"],
+       [`uv run jobflow interview-prep ${job.id} --email-file invite.txt`, "Interview briefing"]].map(([command, what]) =>
+        el("div", { className: "cmd" }, el("span", { className: "meta", style: "min-width:120px" }, what),
+          el("code", {}, command), el("button", { className: "btn small", onclick: () => copyCommand(command) }, "Copy")))),
     job.duplicates.length ? [el("h3", {}, "Possible duplicates"),
       el("ul", { className: "dups" }, job.duplicates.map((d) => el("li", {},
         el("button", { className: "title-btn", onclick: () => openDetail(d.id) }, `#${d.id} ${d.title}`),
@@ -517,7 +577,11 @@ document.addEventListener("click", (event) => {
   if (menu.open && !menu.contains(event.target)) menu.open = false;
 });
 recall();
-refresh();
+refresh().then(async () => {
+  try { state.scoring = await api("/api/scoring"); } catch (error) { return; }
+  renderScoring();
+  if (state.scoring.running) pollScoring();
+});
 </script>
 </body>
 </html>

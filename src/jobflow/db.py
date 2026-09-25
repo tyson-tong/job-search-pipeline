@@ -8,7 +8,7 @@ import psycopg
 
 STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "offered",
             "accepted", "declined", "rejected", "withdrawn", "filtered")
-# Hidden from list by default and skipped by match --new. "filtered" is set on import
+# Hidden from the tracker's default view and skipped when scoring unscored jobs. "filtered" is set on import
 # when a job fails a search's local filters (see jobs.filter_reason).
 CLOSED_STATUSES = ["not_interested", "accepted", "declined", "rejected", "withdrawn", "filtered"]
 # Statuses meaning you've applied; the first time a job reaches one sets applied_at.
@@ -66,37 +66,6 @@ def fetch_job(job_id: int) -> dict:
     job = dict(zip(keys, row))
     job["description"] = job["description"] or ""
     return job
-
-
-def list_jobs(limit: int = 30, by_score: bool = False, statuses: list[str] | None = None,
-              include_closed: bool = False) -> list[dict]:
-    """List jobs with the best score among each CV variant's latest assessment.
-
-    Filters to the given statuses, else hides closed jobs unless include_closed.
-    """
-    if statuses:
-        where, params = "WHERE j.status = ANY(%s)", [statuses]
-    elif include_closed:
-        where, params = "", []
-    else:
-        where, params = "WHERE j.status <> ALL(%s)", [CLOSED_STATUSES]
-    order = "best_score DESC NULLS LAST, j.first_seen_at DESC" if by_score \
-        else "j.first_seen_at DESC"
-    with connect() as conn:
-        rows = conn.execute(
-            f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.status,
-                       best.score AS best_score, best.cv_variant
-                FROM jobs j
-                LEFT JOIN LATERAL (
-                    SELECT latest.score, latest.cv_variant FROM (
-                        SELECT DISTINCT ON (cv_variant) cv_variant, score
-                        FROM match_assessments WHERE job_id = j.id
-                        ORDER BY cv_variant, created_at DESC) latest
-                    ORDER BY latest.score DESC LIMIT 1) best ON true
-                {where}
-                ORDER BY {order} LIMIT %s""", (*params, limit)).fetchall()
-    keys = ("id", "title", "company", "location", "posted_at", "status", "score", "variant")
-    return [dict(zip(keys, row)) for row in rows]
 
 
 _UNSET = object()

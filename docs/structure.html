@@ -136,8 +136,8 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <div class="lane local">
     <div class="lane-title">On your machine, when you choose</div>
     <div class="lane-sub">CVs never leave it, except the text sent to your LLM</div>
-    <div class="step"><b>Score jobs against each CV</b><span class="mod">candidate/matching.py · jobflow match</span>
-      <div class="what">Requirements with verified CV quotes; score computed from required and preferred coverage.</div></div>
+    <div class="step"><b>Score jobs against each CV</b><span class="mod">candidate/matching.py · Score button in jobflow web</span>
+      <div class="what">Runs in the background from the tracker. Requirements with verified CV quotes; score computed from required and preferred coverage.</div></div>
     <div class="step"><b>Pick and track</b><span class="mod">web/ · jobflow web (or list / status)</span>
       <div class="what">Browser tracker on 127.0.0.1: Inbox of new jobs, filters, statuses, notes, follow-ups, duplicate warnings. Edits are saved only when you click Save, in one transaction, with a check for changes made elsewhere since loading; the view auto-refreshes when there are no drafts.</div></div>
     <div class="step"><b>Tailor a CV</b><span class="mod">candidate/tailoring.py · jobflow tailor-cv</span>
@@ -165,6 +165,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft and its fact check.</td></tr>
   <tr><td><code>candidate/interview.py</code></td><td>Company research, specialist agents, HTML briefing.</td></tr>
   <tr><td><code>web/server.py</code></td><td>Local-only HTTP server for <code>jobflow web</code>; a per-start token and host check keep other websites out.</td></tr>
+  <tr><td><code>web/scoring.py</code></td><td>Runs match scoring in a background thread, one run at a time, with progress for the page.</td></tr>
   <tr><td><code>web/queries.py</code></td><td>Job list, pipeline counts, job details, validated all-or-nothing saves, CSV export.</td></tr>
   <tr><td><code>web/static/index.html</code></td><td>The page: Inbox and My jobs views, job panel, unsaved-changes tracking.</td></tr>
 </table></div>
@@ -223,7 +224,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, interview-prep.</p><ul>
     <li>job_id → jobs, kind, status</li><li>model_name, started_at, finished_at</li></ul></div>
 </div>
-<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered. Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from <code>jobflow list</code> and skipped by <code>match --new</code>. Filtered is only set by imports.</p>
+<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered. Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the tracker's default view and never scored. Filtered is only set by imports.</p>
 
 <h2 id="cv">CV work</h2>
 <div class="grid">
@@ -270,9 +271,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><td><code>jobflow searches</code> · <code>options</code></td><td>Preview runs (free) · list allowed values</td><td>ingest/searches.py, report.py</td></tr>
   <tr><td><code>jobflow ingest</code></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
   <tr><td><code>jobflow import-json FILE</code></td><td>Import a scraper export</td><td>ingest/store.py</td></tr>
-  <tr><td><code>jobflow match ID</code> · <code>--new</code></td><td>Score one job, or all unscored open jobs</td><td>candidate/matching.py</td></tr>
-  <tr><td><code>jobflow list</code></td><td>Jobs by recency or score</td><td>db.py</td></tr>
-  <tr><td><code>jobflow web</code></td><td>Job tracker in the browser</td><td>web/</td></tr>
+  <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track</td><td>web/, candidate/matching.py</td></tr>
   <tr><td><code>jobflow status ID [STATUS]</code></td><td>Track an application; possible duplicates</td><td>db.py, ingest/store.py</td></tr>
   <tr><td><code>jobflow tailor-cv ID</code></td><td>Tailored, fact-checked CV draft</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow interview-prep ID</code></td><td>Interview briefing HTML</td><td>candidate/interview.py</td></tr>

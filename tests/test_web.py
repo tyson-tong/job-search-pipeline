@@ -84,3 +84,64 @@ def test_page_carries_this_runs_token(server):
     port, token = server
     status, body = _request(port, "/", {"Host": f"localhost:{port}"})
     assert status == 200 and token.encode() in body and b"__JOBFLOW_TOKEN__" not in body
+
+
+# --- Scoring in the background ----------------------------------------------------------
+
+@pytest.fixture
+def scoring(monkeypatch):
+    from jobflow.web import scoring
+    monkeypatch.setattr(scoring, "credentials", lambda: ("key", "model"))
+    monkeypatch.setattr(scoring, "cv_sources", lambda: {"dev": "cv: {}"})
+    monkeypatch.setattr(scoring, "_state", {**scoring._state, "running": False})
+    return scoring
+
+
+def _wait_until_finished(scoring):
+    import time
+    for _ in range(200):
+        if not scoring.status()["running"]:
+            return scoring.status()
+        time.sleep(0.01)
+    raise AssertionError("scoring did not finish")
+
+
+def test_missing_llm_settings_fail_before_anything_runs(scoring, monkeypatch):
+    def missing():
+        raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in .env")
+    monkeypatch.setattr(scoring, "credentials", missing)
+    monkeypatch.setattr(scoring, "match_job", lambda *a, **k: pytest.fail("scored anyway"))
+    with pytest.raises(RuntimeError, match="LLM_API_KEY"):
+        scoring.start([1, 2])
+    assert not scoring.status()["running"]
+
+
+def test_one_failed_job_does_not_stop_the_batch(scoring, monkeypatch):
+    def match_job(job_id, force=False):
+        if job_id == 2:
+            raise RuntimeError("LLM timed out")
+    monkeypatch.setattr(scoring, "match_job", match_job)
+    monkeypatch.setattr(scoring, "jobs_needing_match", lambda limit: [1, 2, 3])
+    scoring.start(limit=50)
+    result = _wait_until_finished(scoring)
+    assert result["scored"] == [1, 3] and result["done"] == 3
+    assert result["errors"] == [{"id": 2, "error": "LLM timed out"}]
+
+
+def test_only_one_run_at_a_time(scoring, monkeypatch):
+    import threading
+    release = threading.Event()
+    monkeypatch.setattr(scoring, "match_job", lambda job_id, force=False: release.wait(2))
+    scoring.start([1])
+    with pytest.raises(scoring.Busy):
+        scoring.start([2])
+    release.set()
+    assert _wait_until_finished(scoring)["scored"] == [1]
+
+
+@pytest.mark.parametrize("payload", [None, {"job_ids": []}, {"job_ids": ["1"]}, {"job_ids": [True]},
+                                     {"limit": 0}, {"limit": 10_000}])
+def test_scoring_requests_are_validated(payload):
+    from jobflow.web.scoring import parse_request
+    with pytest.raises(ValueError):
+        parse_request(payload)

@@ -110,9 +110,17 @@ def summary() -> dict:
             """SELECT count(*) FROM applications a JOIN jobs j ON j.id = a.job_id
                WHERE a.follow_up_on < current_date AND NOT (j.status = ANY(%s))""",
             (CLOSED_STATUSES,)).fetchone()[0]
+    # Scoring reads your CV files; a missing CV folder shouldn't break the rest of the page.
+    from ..candidate.cvs import cv_sources
+    from ..candidate.matching import count_needing_match
+    try:
+        cv_count, unscored, scoring_problem = len(cv_sources()), count_needing_match(), None
+    except Exception as exc:
+        cv_count, unscored, scoring_problem = 0, None, str(exc)
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,
             "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,
-            "default_statuses": DEFAULT_STATUSES}
+            "default_statuses": DEFAULT_STATUSES, "cv_count": cv_count, "unscored": unscored,
+            "scoring_problem": scoring_problem}
 
 
 def job_detail(job_id: int) -> dict | None:

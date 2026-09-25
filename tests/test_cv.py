@@ -1,7 +1,6 @@
 import copy
 
-from jobflow.candidate.matching import (format_result, normalise_requirements, quote_in_cv,
-                                       score_requirements, _record)
+from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
 from jobflow.candidate.tailoring import fact_check
 
 CV_TEXT = """cv:
@@ -75,14 +74,6 @@ def test_score_is_computed_from_evidence_and_profile_weights():
                                      "matched": 1, "partial": 1}
     # A job with no preferred requirements isn't penalised for them.
     assert score_requirements([_item("required", "matched")], 0.75, 0.25)[0] == 100
-
-
-def test_format_result_labels_missing_evidence_as_not_evidenced():
-    items = [_item("required", "matched"), _item("required", "not_evidenced")]
-    text = format_result(_record("dev", "sha", items, "Solid fit.", "m", (0.75, 0.25)))
-    assert text.startswith("dev: 50/100")
-    assert "Not evidenced in this CV (not proof the skill is missing):" in text
-    assert "lack" not in text.casefold()
 
 
 def test_fact_check_accepts_reordering_and_omitted_bullets():

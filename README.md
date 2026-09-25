@@ -9,13 +9,12 @@ It is a template: each person makes their own private copy with their own databa
 ```
 Daily, in GitHub Actions                     On your machine, when you choose
 ─────────────────────────                    ────────────────────────────────
-searches.toml ─► Apify ─► filter + dedupe ─► PostgreSQL ─► jobflow match --new   score jobs against each CV
-                                             jobflow list --by-score  pick jobs worth applying to
-                                             jobflow tailor-cv ID    draft a CV for one job
-                                             jobflow interview-prep ID   briefing before an interview
+searches.toml ─► Apify ─► filter + dedupe ─► PostgreSQL ─► jobflow web                 score, browse, and track jobs
+                                                           jobflow tailor-cv ID        draft a CV for one job
+                                                           jobflow interview-prep ID   briefing before an interview
 ```
 
-Your CVs never leave your machine, except that the commands send relevant CV, job, and email text to your LLM and web-search providers.
+Your CVs never leave your machine, except that scoring, tailoring, and interview prep send relevant CV, job, and email text to your LLM and web-search providers.
 
 For a diagram of every component, table, and decision, open [`docs/structure.html`](docs/structure.html) in a browser.
 
@@ -23,31 +22,29 @@ For a diagram of every component, table, and decision, open [`docs/structure.htm
 
 Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` once with `. .venv/bin/activate` and drop the `uv run` prefix). `jobflow` reads `.env` and `profile.toml` from this folder by itself. The examples below omit the prefix.
 
-1. **Score the new jobs.** This morning's scheduled run has already imported them.
+1. **Open the job tracker.**
 
    ```
-   jobflow match --new
+   jobflow web
    ```
 
-   This checks every open job (not closed: see the statuses in step 6) that hasn't been scored against your current CVs, up to 50 per run (`--limit` changes that). It makes one LLM call per job per CV. Unchanged CVs are not re-scored.
+   It opens in your browser, runs on your machine only (http://127.0.0.1:8765), and reads and writes your database directly. This morning's scheduled run has already imported the new jobs.
 
-2. **Find the best matches.**
+2. **Score the new jobs.** Click **Score unscored jobs**. Each open job (not closed; see the statuses below) that hasn't been scored against your current CVs is compared with each CV by the LLM, up to 50 per run, newest first. It asks first, stating how many LLM calls that is, and you can keep working while it runs. Unchanged CVs are never re-scored; **Re-score** in a job's panel forces it.
 
-   ```
-   jobflow list --by-score --limit 30
-   ```
+3. **Pick jobs worth applying to.**
+   - **Inbox**: newly scraped jobs, best match first, with one-click Interested / Not interested.
+   - **My jobs**: Interested and Applied by default; the status menu selects any others. Search, filter by site or minimum salary, sort by match, posted date, date added, or follow-up date, and export the view as CSV.
+   - **Pipeline counts** at the top (click one to filter), and overdue follow-ups.
+   - **Job panel** (click a title): the ad, a link to each site it's listed on, why it scored as it did (each requirement matched, partial, or not evidenced, with the CV quotes), possible duplicates, notes, status history, and the tailor-cv and interview-prep commands for that job, ready to copy.
 
-   Columns: job ID, best score (and which CV), posted date, company, title, location, status. The job ID in the first column is what the other commands take. Closed jobs (not interested, accepted, declined, rejected, withdrawn, filtered) are hidden; add `--all` to see them, or `--status applied` (repeatable) to see one status.
+4. **Track each application** in the tracker: status, follow-up date, and dated notes. Changes are drafts, highlighted until you click **Save** (or press Ctrl+S); nothing is written before that, and leaving with unsaved changes asks first. Save writes all drafts in one transaction, then reloads the view.
 
-3. **Look at why a job scored as it did.**
+   The page refreshes itself when you return to its tab and every 3 minutes, but never while you have unsaved drafts; the header shows when it last updated. If a job you edited was changed elsewhere in the meantime (another browser tab, `jobflow status`, or an import), Save writes nothing and shows what changed: save yours anyway, or keep your drafts and review the latest data. Rows warn when a job may be the same role as one you've already applied for (**possible duplicates**: similar title and ad text, such as a recruiter re-posting the employer's ad under its own name), and flag overdue follow-ups and applications with no progress after three weeks.
 
-   ```
-   jobflow match 123
-   ```
+   Statuses: `new` (the Inbox), `interested`, `not_interested`, `applied`, `interviewing`, `offered`, `accepted`, `declined`, `rejected`, `withdrawn`, and `filtered` (set on import when a job fails your search filters; the job panel shows why). Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the default view and never scored. The date you first applied is kept, and every status change is recorded with its date. `jobflow status ID [STATUS] [--note TEXT]` does the same from a terminal.
 
-   This shows each requirement as matched, partial, or not evidenced, with the CV quotes that support it. No LLM call if the job has already been scored.
-
-4. **Draft a CV for a job you want to apply for.**
+5. **Draft a CV for a job you want to apply for.**
 
    ```
    jobflow tailor-cv 123              # uses the best-matching CV
@@ -59,13 +56,13 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
    - `REVIEW_REQUIRED.md`: the automated fact check. Errors mean something factual changed, and the PDF is not rendered.
    - The rendered PDF, if RenderCV is installed and the check found no errors.
 
-   Before drafting, it lists any possible duplicates of the job (see step 6) and warns if one is already applied for. Read the draft line by line. After fixing it, render it from its folder, so RenderCV's output (a `rendercv_output/` folder by default) is created there:
+   Before drafting, it lists any possible duplicates of the job and warns if one is already applied for. Read the draft line by line. After fixing it, render it from its folder, so RenderCV's output (a `rendercv_output/` folder by default) is created there:
 
    ```
    cd output/tailored-cvs/<folder> && rendercv render CV_<variant>_draft.yaml
    ```
 
-5. **Prepare for an interview.**
+6. **Prepare for an interview.**
 
    ```
    jobflow interview-prep 123 --email-file ./invite.txt   # with the invitation email
@@ -74,29 +71,6 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
    ```
 
    Output is one HTML file in `output/interviews/`; open it in a browser. It covers the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps to prepare for, questions to ask, and a 30-minute checklist. With an email it also covers interview logistics. The email is used only for that run and is never saved.
-
-6. **Track where each application is**, in the browser or the terminal.
-
-   ```
-   jobflow web                         # opens the job tracker in your browser
-   jobflow status 123 applied --note "Applied via referral from Sam"
-   jobflow status 456 not_interested   # hidden from list, skipped by match --new
-   jobflow status 123                  # show status, date applied, and notes
-   ```
-
-   `jobflow web` runs on your machine only (http://127.0.0.1:8765) and uses the same database. It shows:
-   - **My jobs**: Interested and Applied by default; the status menu selects any others. Search, filter by site or minimum salary, sort by match, posted date, date added, or follow-up date, and export the view as CSV.
-   - **Inbox**: newly scraped jobs, best match first, with one-click Interested / Not interested.
-   - **Pipeline counts** at the top (click one to filter), and overdue follow-ups.
-   - **Job panel** (click a title): the ad, a link to each site it's listed on, match scores with the CV evidence, possible duplicates, notes, and status history.
-
-   Changes to status, follow-up date, and notes are drafts, highlighted until you click **Save** (or press Ctrl+S); nothing is written before that, and leaving with unsaved changes asks first. Save writes all drafts to your database in one transaction, then reloads the view from it.
-
-   The page reads your database directly, and refreshes itself when you return to its tab and every 3 minutes, but never while you have unsaved drafts; the header shows when it last updated. If a job you edited was changed elsewhere in the meantime (by `jobflow status`, another browser tab, or an import), Save writes nothing and shows what changed: choose to save yours anyway, or keep your drafts and review the latest data. Rows warn when a job may be the same role as one you've already applied for, and flag follow-ups that are overdue and applications with no progress after three weeks.
-
-   `jobflow status` also lists **possible duplicates**: other jobs with a similar title and ad text that weren't merged, such as a recruiter re-posting the employer's ad under its own name. When you mark a job `interested` or `applied` and one of them is already applied, interviewing, offered, or accepted, it prints a warning. Check the link before applying twice.
-
-   Statuses: `new` (default, the Inbox), `interested`, `not_interested`, `applied`, `interviewing`, `offered`, `accepted`, `declined`, `rejected`, `withdrawn`, and `filtered` (set on import when a job fails your search filters; list them with `jobflow list --status filtered`, and `jobflow status ID` shows the reason). Not interested, accepted, declined, rejected, withdrawn, and filtered jobs are hidden from `jobflow list` and skipped by `match --new`. Notes are dated and added to earlier ones; the date you first applied is kept, and every status change is recorded with its date.
 
 ## Commands
 
@@ -107,10 +81,8 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
 | `jobflow options [countries\|classifications]` | Lists allowed search values and which site applies which filter. | Nothing |
 | `jobflow ingest [--search NAME] [--site SITE]` | Runs your searches on Apify now and imports the results. GitHub Actions runs this daily. It uses Apify credits. | Database, Apify, `searches.toml` |
 | `jobflow import-json FILE` | Imports a JSON file of jobs exported from any of the three scrapers (`-` reads stdin). | Database |
-| `jobflow list [--by-score] [--limit N] [--status S] [--all]` | Lists jobs with their best match score and status. | Database |
-| `jobflow status ID [STATUS] [--note TEXT]` | Shows or sets a job's application status and notes, and why it was filtered. | Database |
-| `jobflow web [--port N]` | Job tracker in your browser: browse, filter, set statuses, notes, follow-ups; saves on Save. | Database |
-| `jobflow match ID` / `match --new [--limit N]` | Scores one job, or every open job not yet scored. `--force` re-scores. | Database, LLM, CVs |
+| `jobflow status ID [STATUS] [--note TEXT]` | Terminal alternative to the tracker: shows or sets a job's status and notes. | Database |
+| `jobflow web [--port N]` | Job tracker in your browser: score jobs against your CVs, browse and filter, set statuses, notes, follow-ups; saves on Save. | Database (LLM, CVs to score) |
 | `jobflow tailor-cv ID [--cv VARIANT]` | Writes a tailored CV draft and fact check. | Database, LLM, CVs |
 | `jobflow interview-prep ID [--email-file FILE]` | Writes an interview briefing HTML. | Database, LLM, CVs, Tavily |
 
@@ -134,7 +106,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    |---|---|
    | `DATABASE_URL` | Everything. Use a TLS connection string (`sslmode=require`). |
    | `APIFY_TOKEN` | `jobflow ingest` only (Apify Console → Settings → API & Integrations) |
-   | `LLM_API_KEY`, `LLM_MODEL` | match, tailor-cv, interview-prep |
+   | `LLM_API_KEY`, `LLM_MODEL` | scoring (in the tracker), tailor-cv, interview-prep |
    | `LLM_BASE_URL` | Only for providers other than OpenAI |
    | `WEB_SEARCH_API_KEY` | interview-prep (Tavily) |
    | `APIFY_MAX_WAIT_MINUTES` | Optional: how long to wait for each Apify run (default 60) |
@@ -216,7 +188,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
 The job keeps the first site's details (and the longest description). Each site's copy, with its own ID and link, is kept in the `job_sources` table, so later sightings match by ID and you can open the job on any site it was listed on. Every sighting is also recorded with the scraper run it came from.
 
-**Possible duplicates.** Merging is kept strict so two different jobs are never combined, which means some copies stay separate: a recruiter re-post under another employer name, a reworded title, or a suburb instead of the city. As a safety net, `jobflow status` and `jobflow tailor-cv` compare the job with every job first seen in the last 180 days, ignoring employer and location: titles sharing at least 60% of their words and ads sharing at least 40% are listed as possible duplicates. They are never merged automatically.
+**Possible duplicates.** Merging is kept strict so two different jobs are never combined, which means some copies stay separate: a recruiter re-post under another employer name, a reworded title, or a suburb instead of the city. As a safety net, the tracker, `jobflow status`, and `jobflow tailor-cv` compare the job with every job first seen in the last 180 days, ignoring employer and location: titles sharing at least 60% of their words and ads sharing at least 40% are listed as possible duplicates. They are never merged automatically.
 
 **Match scores.** The LLM lists the job's requirements, marks each required or preferred, and labels it matched, partial, or not evidenced in each CV, with CV quotes. Every quote is checked against the CV file. A "matched" item whose quote isn't found becomes "partial", and a "partial" one becomes "not evidenced". "Not evidenced" means the CV doesn't show it, not that you lack it. The score is calculated, not asked of the LLM: matched counts 1, partial 0.5, not evidenced 0, averaged within required and within preferred, then weighted by `required_weight` and `preferred_weight` in `profile.toml`. Use scores for ranking, not as a prediction.
 

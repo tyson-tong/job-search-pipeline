@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import parse_qs, urlsplit
 
-from . import queries
+from . import queries, scoring
 
 MAX_BODY = 1_000_000
 
@@ -91,6 +91,8 @@ def make_handler(token: str, port: int):
             try:
                 if url.path == "/api/summary":
                     return self._json(queries.summary())
+                if url.path == "/api/scoring":
+                    return self._json(scoring.status())
                 if url.path == "/api/jobs":
                     return self._json(queries.list_jobs(queries.parse_filters(query)))
                 if url.path == "/api/export.csv":
@@ -114,13 +116,15 @@ def make_handler(token: str, port: int):
             url = urlsplit(self.path)
             if not self._allowed({}):
                 return None
-            if url.path != "/api/save":
+            if url.path not in ("/api/save", "/api/scoring"):
                 return self._error(HTTPStatus.NOT_FOUND, "Not found")
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 return self._error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Send JSON")
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_BODY:
                 return self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request too large")
+            if url.path == "/api/scoring":
+                return self._start_scoring(length)
             try:
                 payload = json.loads(self.rfile.read(length) or b"null")
                 if not isinstance(payload, dict):
@@ -135,6 +139,18 @@ def make_handler(token: str, port: int):
             except Exception as exc:  # the transaction was rolled back
                 return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"Nothing was saved: {exc}")
             return self._json({"saved": saved})
+
+        def _start_scoring(self, length: int) -> None:
+            try:
+                job_ids, force, limit = scoring.parse_request(
+                    json.loads(self.rfile.read(length) or b"null"))
+                return self._json(scoring.start(job_ids, force, limit))
+            except (json.JSONDecodeError, ValueError) as exc:
+                return self._error(HTTPStatus.BAD_REQUEST, str(exc))
+            except scoring.Busy as exc:
+                return self._error(HTTPStatus.CONFLICT, str(exc))
+            except RuntimeError as exc:  # LLM or CV configuration
+                return self._error(HTTPStatus.UNPROCESSABLE_ENTITY, str(exc))
 
     return Handler
 

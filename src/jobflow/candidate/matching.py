@@ -167,52 +167,36 @@ def match_job(job_id: int, force: bool = False) -> list[dict]:
     return results
 
 
-def jobs_needing_match(limit: int) -> list[int]:
-    """Open jobs lacking a current-format assessment for some current CV variant."""
+UNSCORED_SQL = """FROM jobs j
+    WHERE j.status <> ALL(%s)
+      AND (SELECT count(DISTINCT m.cv_variant) FROM match_assessments m
+           WHERE m.job_id = j.id
+             AND (m.cv_variant, m.cv_sha256) IN (SELECT * FROM unnest(%s::text[], %s::text[]))
+             AND (m.evidence->>'format')::int = %s) < %s"""
+
+
+def _unscored_params() -> tuple:
     sources = cv_sources()
     if not sources:
         raise RuntimeError(f"No CV_*.yaml files found under {cv_directory()}")
     variants = list(sources)
-    digests = [cv_digest(sources[v]) for v in variants]
+    return (CLOSED_STATUSES, variants, [cv_digest(sources[v]) for v in variants],
+            ASSESSMENT_FORMAT, len(variants))
+
+
+def jobs_needing_match(limit: int) -> list[int]:
+    """Open jobs lacking a current-format assessment for some current CV variant,
+    newest first."""
     with connect() as conn:
-        rows = conn.execute(
-            """SELECT j.id FROM jobs j
-               WHERE j.status <> ALL(%s)
-                 AND (SELECT count(DISTINCT m.cv_variant) FROM match_assessments m
-                      WHERE m.job_id = j.id
-                        AND (m.cv_variant, m.cv_sha256) IN
-                            (SELECT * FROM unnest(%s::text[], %s::text[]))
-                        AND (m.evidence->>'format')::int = %s) < %s
-               ORDER BY j.first_seen_at DESC LIMIT %s""",
-            (CLOSED_STATUSES, variants, digests, ASSESSMENT_FORMAT, len(variants),
-             limit)).fetchall()
+        rows = conn.execute(f"SELECT j.id {UNSCORED_SQL} ORDER BY j.first_seen_at DESC LIMIT %s",
+                            (*_unscored_params(), limit)).fetchall()
     return [row[0] for row in rows]
+
+
+def count_needing_match() -> int:
+    with connect() as conn:
+        return conn.execute(f"SELECT count(*) {UNSCORED_SQL}", _unscored_params()).fetchone()[0]
 
 
 def best_variant(results: list[dict]) -> dict:
     return max(results, key=lambda row: (row["score"], row["variant"]))
-
-
-def format_result(result: dict) -> str:
-    def line(mark: str, item: dict) -> str:
-        text = f"  {mark} [{item['importance']}] {item['requirement']}"
-        if item["evidence"]:
-            text += " — " + "; ".join(f'"{q}"' for q in item["evidence"])
-        if item["note"]:
-            text += f" ({item['note']})"
-        return text
-
-    parts = ", ".join(
-        f"{name} {p['matched']} matched + {p['partial']} partial of {p['count']} "
-        f"(credit {p['credit']:.2f} × weight {p['weight']:g})"
-        for name, p in result["breakdown"].items())
-    out = [f"{result['variant']}: {result['score']}/100 — {parts or 'no requirements found'}"]
-    if result["rationale"]:
-        out.append(f"  {result['rationale']}")
-    for title, key, mark in (("Matched", "matched", "✔"), ("Partial", "partial", "~"),
-                             ("Not evidenced in this CV (not proof the skill is missing)",
-                              "not_evidenced", "?")):
-        if result[key]:
-            out.append(f" {title}:")
-            out.extend(line(mark, item) for item in result[key])
-    return "\n".join(out)

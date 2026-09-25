@@ -33,24 +33,10 @@ def main() -> None:
                          help="Show all countries per site, or all Seek classifications")
     load = sub.add_parser("import-json", help="Import an Apify JSON array from a file or stdin")
     load.add_argument("file", nargs="?", default="-")
-    listing = sub.add_parser("list", help="List jobs with their best CV match score")
-    listing.add_argument("--limit", type=int, default=30)
-    listing.add_argument("--by-score", action="store_true", help="Sort by best match score")
-    listing.add_argument("--status", action="append", choices=STATUSES,
-                         help="Only jobs with this status (repeatable)")
-    listing.add_argument("--all", action="store_true",
-                         help="Include not-interested, filtered, and finished jobs")
     status = sub.add_parser("status", help="Show or set a job's application status")
     status.add_argument("job_id", type=int)
     status.add_argument("status", nargs="?", choices=STATUSES)
     status.add_argument("--note", help="Append a dated note, e.g. who you spoke to")
-    match = sub.add_parser("match", help="Score jobs against every CV variant")
-    match.add_argument("job_id", type=int, nargs="?")
-    match.add_argument("--new", action="store_true",
-                       help="Match every job without a current assessment for each CV")
-    match.add_argument("--limit", type=int, default=50, help="Maximum jobs for --new")
-    match.add_argument("--force", action="store_true",
-                       help="Re-assess even when the CV is unchanged since the last assessment")
     tailor = sub.add_parser("tailor-cv", help="Draft a CV tailored to a job, with a fact check")
     tailor.add_argument("job_id", type=int)
     tailor.add_argument("--cv", help="CV variant name (the part after CV_ in the file name); "
@@ -113,13 +99,6 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         source = "stdin" if args.file == "-" else Path(args.file).name
         added = save_run(f"manual-import:{source}", f"manual-{uuid.uuid4()}", None, payload)
         print(f"Imported {len(payload)} items, {added} new jobs")
-    elif args.command == "list":
-        from .db import list_jobs
-        for job in list_jobs(args.limit, by_score=args.by_score, statuses=args.status,
-                             include_closed=args.all):
-            score = f"{job['score']} ({job['variant']})" if job["score"] is not None else "-"
-            print(f"{job['id']}\t{score}\t{job['posted_at'] or ''}\t{job['company'] or ''}\t"
-                  f"{job['title']}\t{job['location'] or ''}\t{job['status']}")
     elif args.command == "status":
         from .db import job_status
         job = job_status(args.job_id, args.status, args.note)
@@ -132,26 +111,6 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
             print("notes:\n" + "\n".join(f"  {line}" for line in job["notes"].splitlines()))
         warn_possible_duplicates(args.job_id, about_to_apply=args.status in
                                  ("interested", "applied"))
-    elif args.command == "match":
-        from .candidate.matching import (best_variant, format_result, jobs_needing_match,
-                                         match_job)
-        if (args.job_id is None) == (not args.new):
-            parser.error("match needs either a JOB_ID or --new")
-        if args.job_id is not None:
-            results = sorted(match_job(args.job_id, force=args.force),
-                             key=lambda row: row["score"], reverse=True)
-            print("\n\n".join(format_result(result) for result in results))
-            return
-        failures = 0
-        for job_id in jobs_needing_match(args.limit):
-            try:
-                best = best_variant(match_job(job_id, force=args.force))
-                print(f"{job_id}\t{best['score']}/100\t{best['variant']}")
-            except Exception as exc:
-                failures += 1
-                print(f"{job_id}\tFAILED\t{exc}", file=sys.stderr)
-        if failures:
-            raise SystemExit(f"{failures} job(s) could not be matched")
     elif args.command == "tailor-cv":
         from .candidate.tailoring import tailor_cv
         warn_possible_duplicates(args.job_id, about_to_apply=True)

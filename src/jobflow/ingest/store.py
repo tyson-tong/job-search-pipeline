@@ -235,7 +235,7 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None)
     """Upsert one scraped job and record the observation. Returns True if new.
 
     A new job failing job_filter is still stored, with status 'filtered' and the reason,
-    so it stays out of list and match --new but remains a known duplicate.
+    so it stays out of the default view and scoring but remains a known duplicate.
     """
     posting = normalise(item)
     key, url = identity(posting)

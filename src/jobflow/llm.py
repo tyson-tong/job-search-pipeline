@@ -13,12 +13,17 @@ def base_url() -> str:
     return (os.environ.get("LLM_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
 
 
-def complete(system: str, user: str, *, json_mode: bool = False) -> tuple[str, str]:
-    """Call an OpenAI-compatible chat-completions endpoint."""
+def credentials() -> tuple[str, str]:
     key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
     model = os.environ.get("LLM_MODEL")
     if not key or not model:
-        raise RuntimeError("Set LLM_API_KEY and LLM_MODEL")
+        raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in .env")
+    return key, model
+
+
+def complete(system: str, user: str, *, json_mode: bool = False) -> tuple[str, str]:
+    """Call an OpenAI-compatible chat-completions endpoint."""
+    key, model = credentials()
     body = {"model": model, "messages": [{"role": "system", "content": system},
              {"role": "user", "content": user}], "temperature": 0.1}
     if json_mode:
