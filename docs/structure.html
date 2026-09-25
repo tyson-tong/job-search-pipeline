@@ -159,7 +159,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>ingest/apify.py</code></td><td>Runs each planned search on Apify and hands the results to the store.</td></tr>
   <tr><td><code>ingest/sources.py</code></td><td>Converts LinkedIn, Indeed, and Seek records to one <code>Posting</code> shape.</td></tr>
   <tr><td><code>ingest/store.py</code></td><td>Duplicate detection, saving jobs and sightings, run records, possible-duplicate search.</td></tr>
-  <tr><td><code>ingest/report.py</code></td><td>Output of <code>jobflow searches</code> and <code>jobflow options</code>.</td></tr>
+  <tr><td><code>ingest/report.py</code></td><td>The tracker's Searches tab: your searches, their planned runs, and allowed values.</td></tr>
   <tr><td><code>candidate/cvs.py</code></td><td>Loads <code>CV_*.yaml</code> files; shared text helpers.</td></tr>
   <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring, cached per CV version.</td></tr>
   <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft and its fact check.</td></tr>
@@ -181,7 +181,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td>Posted: 2 weeks</td><td class="no">uses 1 month, then filters</td><td class="yes">✓</td><td class="yes">✓</td></tr>
   <tr><td>Posted: 1 month</td><td class="yes">✓</td><td class="no">uses any time, then filters</td><td class="yes">✓</td></tr>
 </table></div>
-<p class="small muted" style="margin-top:8px">LinkedIn's AI search dropped its salary, job-type, workplace, and sort filters; the Indeed actor never had them. <code>jobflow searches</code> previews every run and notes each widened window or skipped option.</p>
+<p class="small muted" style="margin-top:8px">LinkedIn's AI search dropped its salary, job-type, workplace, and sort filters; the Indeed actor never had them. The tracker's Searches tab previews every run and notes each widened window or skipped option.</p>
 
 <h2 id="dedupe">How duplicates are found</h2>
 <p>Every scraped record is normalised, then checked in order. The first match wins; no match creates a new job.</p>
@@ -267,11 +267,9 @@ applications      42   applied   2026-09-25: Applied via referral</div>
 <h2 id="commands">Commands</h2>
 <div class="table-wrap"><table>
   <tr><th>Command</th><th>Does</th><th>Module</th></tr>
-  <tr><td><code>jobflow migrate</code></td><td>Create or update tables</td><td>db.py</td></tr>
-  <tr><td><code>jobflow searches</code> · <code>options</code></td><td>Preview runs (free) · list allowed values</td><td>ingest/searches.py, report.py</td></tr>
-  <tr><td><code>jobflow ingest</code></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
-  <tr><td><code>jobflow import-json FILE</code></td><td>Import a scraper export</td><td>ingest/store.py</td></tr>
-  <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track</td><td>web/, candidate/matching.py</td></tr>
+  <tr><td><code>jobflow migrate</code> <span class="muted">(daily Action)</span></td><td>Create or update tables; the other commands also do it on start</td><td>db.py</td></tr>
+  <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
+  <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv ID</code></td><td>Tailored, fact-checked CV draft</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow interview-prep ID</code></td><td>Interview briefing HTML</td><td>candidate/interview.py</td></tr>
 </table></div>

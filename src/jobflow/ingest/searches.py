@@ -52,7 +52,7 @@ class PlannedRun:
     search: Search
     label: str
     run_input: dict
-    # Shown by `jobflow searches`: options this site can't apply, widened date windows.
+    # Shown in the tracker's Searches tab: options this site can't apply, widened date windows.
     notes: list[str] = field(default_factory=list)
 
 
@@ -101,7 +101,7 @@ def parse_search(raw: dict, defaults: dict) -> Search:
         code = country.upper()
         if code not in opt.LINKEDIN_COUNTRIES and code not in opt.INDEED_COUNTRIES:
             raise SearchConfigError(f"{where}: unknown country code {country!r}; use ISO codes "
-                                    "such as AU, NZ, GB, US (see jobflow options)")
+                                    "such as AU, NZ, GB, US (all listed in the tracker's Searches tab)")
         if isinstance(cities, str):
             cities = [cities]
         if not isinstance(cities, list) or not all(isinstance(c, str) and c.strip() for c in cities):

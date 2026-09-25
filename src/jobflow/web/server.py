@@ -93,6 +93,9 @@ def make_handler(token: str, port: int):
                     return self._json(queries.summary())
                 if url.path == "/api/scoring":
                     return self._json(scoring.status())
+                if url.path == "/api/searches":
+                    from ..ingest.report import describe_searches, reference
+                    return self._json({**describe_searches(), "reference": reference()})
                 if url.path == "/api/jobs":
                     return self._json(queries.list_jobs(queries.parse_filters(query)))
                 if url.path == "/api/export.csv":

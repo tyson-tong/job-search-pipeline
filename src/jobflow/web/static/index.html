@@ -21,6 +21,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--ink);
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 button, select, input, textarea { font: inherit; color: inherit; }
@@ -102,6 +103,19 @@ td select, td input[type=date] { border: 1px solid var(--line); background: var(
   border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; overflow-x: auto; white-space: nowrap; flex: 1; }
 .next .cmd { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .h3-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sv-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+.sv-card h2 { font-size: 1.05rem; margin: 0 0 6px; }
+.sv-card h3 { font-size: 0.92rem; margin: 12px 0 4px; }
+.ok { color: var(--good); font-weight: 600; } .err { color: var(--bad); font-weight: 600; }
+.err-box { background: var(--warn-soft); color: var(--bad); border-radius: 8px; padding: 10px 12px; margin-top: 8px; white-space: pre-wrap; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; font-size: 0.9rem; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; }
+.pill { display: inline-block; background: var(--chip); border-radius: 999px; padding: 0 8px; margin: 0 4px 3px 0; font-size: 0.82rem; }
+.site-block { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 10px; }
+pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--chip); border-radius: 6px; padding: 8px; overflow-x: auto; margin: 4px 0 8px; }
+.ref table { font-size: 0.86rem; }
+.ref input[type=search] { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 5px 8px; margin: 6px 0; width: min(320px, 100%); }
+.scroll { max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
   padding: 9px 16px; border-radius: 8px; z-index: 20; box-shadow: var(--shadow); max-width: 90vw; }
 .toast.error { background: var(--bad); color: #fff; }
@@ -126,8 +140,9 @@ td select, td input[type=date] { border: 1px solid var(--line); background: var(
   <div class="tabs">
     <button class="tab" data-view="inbox">Inbox<span class="count" id="inbox-count">0</span></button>
     <button class="tab" data-view="jobs">My jobs</button>
+    <button class="tab" data-view="searches">Searches</button>
   </div>
-  <div class="filters">
+  <div class="filters" id="filters">
     <details class="multi" id="status-filter">
       <summary id="status-summary">Statuses</summary>
       <div class="menu" id="status-menu"></div>
@@ -144,11 +159,12 @@ td select, td input[type=date] { border: 1px solid var(--line); background: var(
     <a class="btn" id="export" href="#">Export CSV</a>
     <span class="meta" id="shown"></span>
   </div>
-  <div class="table-wrap"><table>
+  <div class="table-wrap" id="jobs-table"><table>
     <thead><tr><th>Match</th><th>Job</th><th class="hide-sm">Sites</th><th class="hide-sm">Posted</th>
       <th class="hide-sm">Salary</th><th>Status</th><th class="hide-sm">Follow up</th></tr></thead>
     <tbody id="rows"></tbody>
   </table></div>
+  <section id="searches-view" hidden></section>
 </main>
 <aside class="drawer" id="drawer" hidden></aside>
 
@@ -311,6 +327,12 @@ function filterParams() {
 }
 async function refresh() {
   try {
+    if (state.view === "searches") {
+      const [summary, searches] = await Promise.all([api("/api/summary"), api("/api/searches")]);
+      state.summary = summary; state.searches = searches; state.loadedAt = new Date();
+      renderAll();
+      return;
+    }
     const [summary, jobs] = await Promise.all([api("/api/summary"), api("/api/jobs?" + filterParams())]);
     state.summary = summary;
     state.jobs = jobs;
@@ -322,7 +344,14 @@ async function refresh() {
 }
 
 // ---- Rendering -------------------------------------------------------------------------
-function renderAll() { renderPipeline(); renderTabs(); renderStatusMenu(); renderRows(); renderSaveBar(); renderScoring(); }
+function renderAll() {
+  const searching = state.view === "searches";
+  document.getElementById("filters").hidden = searching;
+  document.getElementById("jobs-table").hidden = searching;
+  document.getElementById("searches-view").hidden = !searching;
+  renderPipeline(); renderTabs(); renderSaveBar(); renderScoring();
+  if (searching) renderSearches(); else { renderStatusMenu(); renderRows(); }
+}
 function renderPipeline() {
   const box = document.getElementById("pipeline");
   const { counts, overdue } = state.summary;
@@ -460,6 +489,98 @@ document.getElementById("score-btn").addEventListener("click", () => {
 async function copyCommand(text) {
   try { await navigator.clipboard.writeText(text); toast("Copied: " + text); }
   catch (error) { toast("Copy failed; select the command and copy it instead.", true); }
+}
+
+// ---- Searches (searches.toml: what the daily import runs) ---------------------------------
+const siteName = (s) => SITE_NAMES[s] || s;
+function renderSearches() {
+  const data = state.searches, box = document.getElementById("searches-view");
+  const pushCommand = data.path ? `gh variable set JOBFLOW_SEARCHES < ${data.path}` : null;
+  const header = el("div", { className: "sv-card" },
+    el("h2", {}, "Your searches"),
+    el("div", {}, data.ok ? el("span", { className: "ok" }, "✓ Valid") : el("span", { className: "err" }, "✗ Can't be used"),
+      el("span", { className: "meta" }, `  ·  from ${data.source || "(no profile.toml)"}`), "  ",
+      el("button", { className: "btn small", onclick: () => refresh().then(() => toast("Searches reloaded")) }, "Reload")),
+    data.ok ? el("p", { className: "meta", style: "margin:8px 0 0" },
+      `${data.total_runs} Apify run${data.total_runs === 1 ? "" : "s"} per import, at most ${data.total_max_results} results. `
+      + "Actors charge per result. Nothing runs from this page.") : null,
+    data.error ? el("div", { className: "err-box" }, data.error) : null,
+    el("div", { className: "next" }, el("strong", {}, "To change your searches"),
+      el("p", { className: "meta", style: "margin:4px 0" },
+        "Edit the file in your editor, then click Reload to check it. The daily GitHub run uses its own copy, "
+        + "so update that after each change:"),
+      pushCommand ? el("div", { className: "cmd" }, el("code", {}, pushCommand),
+        el("button", { className: "btn small", onclick: () => copyCommand(pushCommand) }, "Copy")) : null,
+      el("div", { className: "cmd" }, el("code", {}, "uv run jobflow ingest --site seek"),
+        el("button", { className: "btn small", onclick: () => copyCommand("uv run jobflow ingest --site seek") }, "Copy")),
+      el("p", { className: "meta", style: "margin:4px 0 0" }, "The second command runs the searches now (one site here) instead of waiting for the daily run; it costs Apify credits.")));
+  fill(box, [header, data.searches.map(renderSearchCard), renderReference(data.reference)]);
+}
+function renderSearchCard(search) {
+  const salary = search.salary_min != null || search.salary_max != null
+    ? `${search.salary_min ?? "any"} – ${search.salary_max ?? "any"} (${search.salary_period}); jobs without a salary are kept` : "any";
+  const item = (label, value) => [el("dt", {}, label), el("dd", {}, value)];
+  return el("div", { className: "sv-card" },
+    el("h2", {}, search.name),
+    el("dl", { className: "kv" },
+      item("Terms", search.terms.map((t) => el("span", { className: "pill" }, t))),
+      item("Locations", Object.entries(search.locations).map(([country, cities]) =>
+        el("span", { className: "pill" }, `${country}: ${cities.length ? cities.join(", ") : "whole country"}`))),
+      item("Posted within", search.posted_within),
+      item("Results", `up to ${search.max_results} per run` + (search.max_cost_usd ? `, cost cap $${search.max_cost_usd} per run` : "")
+        + (search.radius_km ? `, ${search.radius_km} km radius` : "")),
+      item("Salary", salary),
+      item("Job types", search.job_types.length ? search.job_types.join(", ") : "any"),
+      item("Work arrangements", search.work_arrangements.length ? search.work_arrangements.join(", ") : "any"),
+      item("Classifications", search.classifications.length ? search.classifications.join(", ") + " (Seek only)" : "any")),
+    search.sites.map((site) => el("div", { className: "site-block" },
+      el("strong", {}, siteName(site.site)),
+      el("span", { className: "meta" }, ` · ${site.runs.length} run${site.runs.length === 1 ? "" : "s"}, up to ${site.max_results_per_run} results each`
+        + (site.local_filters.length ? ` · filtered after import by ${site.local_filters.join(", ").replace(/_/g, " ")}` : "")),
+      site.notes.map((note) => el("div", { className: "flags" }, el("span", { className: "flag warn" }, note))),
+      el("details", {}, el("summary", { className: "meta" }, `Show the exact input sent to ${site.actor}`),
+        site.runs.map((r) => [el("div", { className: "meta" }, r.label),
+          el("pre", { className: "json" }, JSON.stringify(r.input, null, 2))])))));
+}
+function renderReference(ref) {
+  const yes = (v) => v ? "✓" : "–";
+  const table = (head, rows) => el("div", { className: "table-wrap" }, el("table", {},
+    el("thead", {}, el("tr", {}, head.map((h) => el("th", {}, h)))),
+    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c) => el("td", {}, c)))))));
+  const filterNames = Object.keys(ref.filter_support[ref.sites[0]]);
+  const countryBody = el("tbody"), classList = el("div");
+  const drawCountries = (q) => fill(countryBody, ref.countries
+    .filter((c) => !q || `${c.code} ${c.name}`.toLowerCase().includes(q))
+    .map((c) => el("tr", {}, el("td", {}, el("code", {}, c.code)), el("td", {}, c.name),
+      ref.sites.map((s) => el("td", {}, yes(c.sites.includes(s)))))));
+  const drawClasses = (q) => fill(classList, ref.classifications.map((c) => {
+    const subs = c.subclassifications.filter((sc) => !q || `${sc.key} ${sc.name}`.toLowerCase().includes(q));
+    const own = !q || `${c.key} ${c.name}`.toLowerCase().includes(q);
+    if (!own && !subs.length) return null;
+    return el("div", { style: "margin:6px 0" }, el("code", {}, c.key), ` ${c.name} (all subclassifications)`,
+      el("div", { style: "padding-left:16px" }, (own && !q ? c.subclassifications : subs).map((sc) =>
+        el("div", { className: "meta" }, el("code", {}, sc.key), ` ${sc.name}`))));
+  }));
+  drawCountries(""); drawClasses("");
+  return el("div", { className: "sv-card ref" },
+    el("h2", {}, "Allowed values"),
+    el("dl", { className: "kv" },
+      [["sites", ref.sites], ["job_types", ref.job_types], ["work_arrangements", ref.work_arrangements],
+       ["salary_period", ref.salary_periods]].map(([k, v]) => [el("dt", {}, el("code", {}, k)), el("dd", {}, v.join(", "))])),
+    el("h3", {}, "posted_within_days"),
+    table(["Value", ...ref.sites.map(siteName)], ref.posted_within.map((w) =>
+      [`${w.days} (${w.name})`, ...ref.sites.map((s) => w.sites[s] ? "✓" : "wider, then filtered")])),
+    el("h3", {}, "How each site applies each setting"),
+    el("p", { className: "meta", style: "margin:0 0 4px" }, "search: the site filters before you pay · local: filtered after import, only when the job's value is known · unsupported: not available"),
+    table(["Setting", ...ref.sites.map(siteName)], filterNames.map((f) =>
+      [f.replace(/_/g, " "), ...ref.sites.map((s) => ref.filter_support[s][f])])),
+    el("details", {}, el("summary", {}, el("strong", {}, "Countries (locations keys)")),
+      el("input", { type: "search", placeholder: "Filter countries", oninput: (e) => drawCountries(e.target.value.toLowerCase()) }),
+      el("div", { className: "scroll" }, el("table", {}, el("thead", {}, el("tr", {},
+        ["Code", "Country", ...ref.sites.map(siteName)].map((h) => el("th", {}, h)))), countryBody))),
+    el("details", {}, el("summary", {}, el("strong", {}, "Seek classifications")),
+      el("input", { type: "search", placeholder: "Filter classifications", oninput: (e) => drawClasses(e.target.value.toLowerCase()) }),
+      el("div", { className: "scroll", style: "padding:6px 10px" }, classList)));
 }
 
 // ---- Detail drawer -----------------------------------------------------------------------

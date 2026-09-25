@@ -74,16 +74,22 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
 
 ## Commands
 
+Everyday:
+
+| Command | What it does | Needs |
+|---|---|---|
+| `jobflow web [--port N]` | Job tracker in your browser: score jobs against your CVs, browse and filter, track applications (saves on Save), and check your searches. | Database (LLM and CVs to score) |
+| `jobflow tailor-cv ID [--cv VARIANT]` | Writes a tailored CV draft and fact check. | Database, LLM, CVs |
+| `jobflow interview-prep ID [--email-file FILE]` | Writes an interview briefing HTML. | Database, LLM, CVs, Tavily |
+
+These three bring the database tables up to date themselves when they start.
+
+Run by the daily GitHub Action (you rarely need them):
+
 | Command | What it does | Needs |
 |---|---|---|
 | `jobflow migrate` | Creates or updates the database tables. Safe to rerun. | Database |
-| `jobflow searches [--search NAME] [--site SITE] [--json]` | Checks `searches.toml` and lists the Apify runs it would make. Free. | `searches.toml` |
-| `jobflow options [countries\|classifications]` | Lists allowed search values and which site applies which filter. | Nothing |
-| `jobflow ingest [--search NAME] [--site SITE]` | Runs your searches on Apify now and imports the results. GitHub Actions runs this daily. It uses Apify credits. | Database, Apify, `searches.toml` |
-| `jobflow import-json FILE` | Imports a JSON file of jobs exported from any of the three scrapers (`-` reads stdin). | Database |
-| `jobflow web [--port N]` | Job tracker in your browser: score jobs against your CVs, browse and filter, set statuses, notes, follow-ups; saves on Save. | Database (LLM, CVs to score) |
-| `jobflow tailor-cv ID [--cv VARIANT]` | Writes a tailored CV draft and fact check. | Database, LLM, CVs |
-| `jobflow interview-prep ID [--email-file FILE]` | Writes an interview briefing HTML. | Database, LLM, CVs, Tavily |
+| `jobflow ingest [--search NAME] [--site SITE]` | Runs your searches on Apify and imports the results. Run it yourself only to test a changed search now instead of waiting for tomorrow; it uses Apify credits. | Database, Apify, `searches.toml` |
 
 ## One-time setup
 
@@ -112,13 +118,9 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
    `jobflow` reads `.env` from the current folder (or this repository's folder) automatically. Variables already set in your shell take precedence.
 
-5. **Create the tables.**
+   The database tables are created automatically the first time you run `jobflow web`.
 
-   ```
-   jobflow migrate
-   ```
-
-6. **Define your searches.** Copy `searches.example.toml` to `searches.toml` (ignored by Git) and edit it. Each `[[search]]` has:
+5. **Define your searches.** Copy `searches.example.toml` to `searches.toml` (ignored by Git) and edit it. Each `[[search]]` has:
 
    | Setting | Example | Notes |
    |---|---|---|
@@ -128,7 +130,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `salary_min`, `salary_max`, `salary_period` | `100000`, `160000`, `"annual"` | Local currency. Jobs without a listed salary are kept |
    | `job_types` | `["full-time", "contract"]` | full-time, part-time, contract, casual |
    | `work_arrangements` | `["hybrid", "remote"]` | on-site, hybrid, remote |
-   | `classifications` | `["information-communication-technology"]` | Seek only; `jobflow options classifications` |
+   | `classifications` | `["information-communication-technology"]` | Seek only; the tracker's Searches tab lists them all |
    | `sites` | `["seek", "linkedin"]` | Which job sites to search; see below |
    | `posted_within_days` | `1` | 1 (24 hours), 7 (1 week), 14 (2 weeks), or 30 (1 month); see below |
    | `max_results`, `max_cost_usd`, `radius_km` | `30`, `0.50`, `25` | Usually set once under `[defaults]` |
@@ -155,7 +157,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | 2 weeks | uses 1 month | ✓ | ✓ |
    | 1 month | ✓ | uses any time | ✓ |
 
-   A site without your window searches the next wider one, so no jobs are missed, and jobs posted before your window are marked `filtered` after import. `jobflow searches` notes when this happens. You still pay Apify for those extra results.
+   A site without your window searches the next wider one, so no jobs are missed, and jobs posted before your window are marked `filtered` after import. The tracker's Searches tab notes when this happens. You still pay Apify for those extra results.
 
    The three sites don't support the same filters, so each is translated to what the site can do:
 
@@ -167,11 +169,11 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
    "On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match; the job is stored with status `filtered` and the reason. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. LinkedIn results rarely list a salary and never say whether a job is remote, so in practice those filters seldom remove LinkedIn jobs. Seek applies its salary filter to the range the advertiser entered, even when that range is hidden on the ad.
 
-   Check the result with `jobflow searches`: it validates every value (listing the allowed ones if something is wrong) and shows each Apify run, without running anything. Add `--json` to see the exact input each actor receives. All option values are constants in `src/jobflow/ingest/options.py`.
+   Check the result in the tracker: open `jobflow web` and the **Searches** tab. It validates every value (listing the allowed ones if something is wrong), shows each Apify run with the exact input each actor receives, and lists all allowed values; click **Reload** after editing. Nothing runs from that page. All option values are constants in `src/jobflow/ingest/options.py`.
 
    Cost: LinkedIn makes one run per search, with a result cap per term and location; Indeed and Seek make one run per term and location. The actors charge per result, including jobs you already have, so keep `posted_within_days = 1` for a daily schedule and set `max_results`. Each run's actual cost is recorded in `scraper_runs.cost_usd`.
 
-7. **Schedule the daily import.** In your GitHub repository, open Settings → Secrets and variables → Actions and add:
+6. **Schedule the daily import.** In your GitHub repository, open Settings → Secrets and variables → Actions and add:
    - Secret `DATABASE_URL`
    - Secret `APIFY_TOKEN`
    - Variable `JOBFLOW_SEARCHES`: the contents of your `searches.toml`. Set it, and update it after each edit, with `gh variable set JOBFLOW_SEARCHES < searches.toml`

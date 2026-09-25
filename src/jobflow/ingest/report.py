@@ -1,64 +1,77 @@
-"""Plain-text output for the searches and options commands."""
+"""What the tracker's Searches page shows: your searches, the Apify runs they plan, and
+the allowed option values."""
 from __future__ import annotations
 
-import json
+import os
 from itertools import groupby
 
 from . import options as opt
-from .searches import POSTED_WITHIN, WINDOW_NAMES, PlannedRun, local_filters
+from .searches import (POSTED_WITHIN, WINDOW_NAMES, SearchConfigError, load_searches,
+                       local_filters, plan)
 
 
-def print_plan(runs: list[PlannedRun], show_json: bool = False) -> None:
-    total_results = 0
+def describe_searches() -> dict:
+    """Your searches and every planned Apify run, or why the config can't be used.
+    Nothing is run and nothing is charged."""
+    if os.environ.get("JOBFLOW_SEARCHES"):
+        source, path = "JOBFLOW_SEARCHES environment variable", None
+    else:
+        from ..settings import searches_file
+        try:
+            path = str(searches_file())
+        except RuntimeError as exc:  # no profile.toml
+            return {"ok": False, "source": None, "path": None, "error": str(exc), "searches": []}
+        source = path
+    try:
+        searches = load_searches()
+    except SearchConfigError as exc:
+        return {"ok": False, "source": source, "path": path, "error": str(exc), "searches": []}
+    runs = plan(searches)
+    described, total_results = [], 0
     for search, search_runs in groupby(runs, key=lambda r: r.search):
-        print(f"== {search.name}: {', '.join(search.terms)}")
+        sites = []
         for site, site_runs in groupby(search_runs, key=lambda r: r.site):
             site_runs = list(site_runs)
             per_run = search.max_results * (len(site_runs[0].run_input.get("urls", [])) or 1)
             total_results += per_run * len(site_runs)
-            active = local_filters(site, search)
-            print(f"  {site}: {len(site_runs)} run(s), up to {per_run} results each"
-                  + (f"; filtered after import by {', '.join(active)}" if active else ""))
-            for run in site_runs:
-                print(f"    - {run.label}")
-                if show_json:
-                    print("      " + json.dumps(run.run_input, ensure_ascii=False))
-            for note in dict.fromkeys(site_runs[0].notes):
-                print(f"    note: {note}")
-    print(f"\n{len(runs)} Apify run(s), at most {total_results} results in total. "
-          "Actors charge per result; see each actor's pricing on apify.com.")
+            sites.append({"site": site, "actor": site_runs[0].actor, "max_results_per_run": per_run,
+                          "local_filters": local_filters(site, search),
+                          "notes": list(dict.fromkeys(site_runs[0].notes)),
+                          "runs": [{"label": r.label, "input": r.run_input} for r in site_runs]})
+        described.append({
+            "name": search.name, "terms": list(search.terms),
+            "locations": {c: list(cities) for c, cities in search.locations.items()},
+            "posted_within": WINDOW_NAMES[search.posted_within_days],
+            "max_results": search.max_results, "max_cost_usd": search.max_cost_usd,
+            "radius_km": search.radius_km, "salary_min": search.salary_min,
+            "salary_max": search.salary_max, "salary_period": search.salary_period,
+            "job_types": list(search.job_types), "work_arrangements": list(search.work_arrangements),
+            "classifications": list(search.classifications), "sites": sites})
+    return {"ok": True, "source": source, "path": path, "error": None, "searches": described,
+            "total_runs": len(runs), "total_max_results": total_results}
 
 
-def print_options(topic: str | None = None) -> None:
-    if topic == "countries":
-        print("Country codes (ISO) per site:")
-        print(f"  seek:     {', '.join(opt.SEEK_COUNTRIES)}")
-        print(f"  indeed:   {', '.join(opt.INDEED_COUNTRIES)}")
-        print(f"  linkedin: {', '.join(opt.LINKEDIN_COUNTRIES)}")
-        return
-    if topic == "classifications":
-        for key, name in opt.SEEK_CLASSIFICATIONS.items():
-            print(f"{key}  ({name})")
-            for sub, sub_name in opt.SEEK_SUBCLASSIFICATIONS.get(key, {}).items():
-                print(f"    {sub}  ({sub_name})")
-        return
-    print(f"job_types:         {', '.join(opt.JOB_TYPES)}")
-    print(f"work_arrangements: {', '.join(opt.WORK_ARRANGEMENTS)}")
-    print(f"salary_period:     {', '.join(opt.SALARY_PERIODS)}")
-    print(f"posted_within_days: {', '.join(f'{d} ({WINDOW_NAMES[d]})' for d in opt.POSTED_WITHIN_DAYS)}")
-    for site in opt.SITES:
-        missing = [WINDOW_NAMES[d] for d in opt.POSTED_WITHIN_DAYS if d not in POSTED_WITHIN[site][0]]
-        if missing:
-            print(f"  {site} has no {', '.join(missing)} option: a wider window is used and "
-                  "older jobs are filtered after import")
-    print(f"sites:             {', '.join(opt.SITES)}")
-    print(f"classifications:   Seek only, e.g. {', '.join(list(opt.SEEK_CLASSIFICATIONS)[:4])}"
-          " (jobflow options classifications)")
-    print("countries:         ISO codes, e.g. AU, NZ, GB, US (jobflow options countries)\n")
-    filters = list(next(iter(opt.FILTER_SUPPORT.values())))
-    print("How each site applies each filter (search = by the site, before you pay;")
-    print("local = after import, excluding only jobs whose value is known):")
-    print(f"  {'':20}" + "".join(f"{site:>12}" for site in opt.SITES))
-    for name in filters:
-        print(f"  {name:20}" + "".join(f"{opt.FILTER_SUPPORT[site][name]:>12}"
-                                       for site in opt.SITES))
+def reference() -> dict:
+    """Allowed values for searches.toml and how each site handles each setting."""
+    countries = sorted(set(opt.LINKEDIN_COUNTRIES) | set(opt.INDEED_COUNTRIES))
+    return {
+        "sites": list(opt.SITES),
+        "job_types": list(opt.JOB_TYPES),
+        "work_arrangements": list(opt.WORK_ARRANGEMENTS),
+        "salary_periods": list(opt.SALARY_PERIODS),
+        "posted_within": [
+            {"days": d, "name": WINDOW_NAMES[d],
+             "sites": {site: d in POSTED_WITHIN[site][0] for site in opt.SITES}}
+            for d in opt.POSTED_WITHIN_DAYS],
+        "filter_support": opt.FILTER_SUPPORT,
+        "countries": [{"code": code, "name": opt.LINKEDIN_COUNTRIES.get(code, code),
+                       "sites": [s for s, table in (("linkedin", opt.LINKEDIN_COUNTRIES),
+                                                     ("indeed", opt.INDEED_COUNTRIES),
+                                                     ("seek", opt.SEEK_COUNTRIES))
+                                 if code in table]}
+                      for code in countries],
+        "classifications": [{"key": key, "name": name,
+                             "subclassifications": [{"key": k, "name": n} for k, n in
+                                                    opt.SEEK_SUBCLASSIFICATIONS.get(key, {}).items()]}
+                            for key, name in opt.SEEK_CLASSIFICATIONS.items()],
+    }

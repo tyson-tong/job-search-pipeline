@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-import uuid
 from pathlib import Path
 
 
@@ -12,26 +10,20 @@ def main() -> None:
     load_env()
     from .ingest.options import SITES
 
-    parser = argparse.ArgumentParser(prog="jobflow")
+    parser = argparse.ArgumentParser(
+        prog="jobflow",
+        description="Everyday: web (job tracker, including your searches), tailor-cv, and "
+        "interview-prep. The daily GitHub Action runs migrate and ingest.")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("migrate", help="Create or update database tables")
-    ingest = sub.add_parser("ingest", help="Run the searches in searches.toml on Apify and "
-                            "import the results (costs Apify credits)")
+    sub.add_parser("migrate", help="Create or update database tables (the daily Action runs "
+                   "this; the other commands do it automatically)")
+    ingest = sub.add_parser("ingest", help="Run the searches in searches.toml on Apify now and "
+                            "import the results (the daily Action runs this; costs Apify credits)")
     ingest.add_argument("--search", help="Only this search name")
     ingest.add_argument("--site", choices=SITES, help="Only this job site")
-    preview = sub.add_parser("searches", help="Check searches.toml and show the Apify runs "
-                             "it would make, without running anything")
-    preview.add_argument("--search", help="Only this search name")
-    preview.add_argument("--site", choices=SITES, help="Only this job site")
-    preview.add_argument("--json", action="store_true", help="Print full actor inputs")
     web = sub.add_parser("web", help="Open the job tracker in your browser (local only)")
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--no-browser", action="store_true", help="Don't open a browser tab")
-    options = sub.add_parser("options", help="List allowed search option values")
-    options.add_argument("topic", nargs="?", choices=("countries", "classifications"),
-                         help="Show all countries per site, or all Seek classifications")
-    load = sub.add_parser("import-json", help="Import an Apify JSON array from a file or stdin")
-    load.add_argument("file", nargs="?", default="-")
     tailor = sub.add_parser("tailor-cv", help="Draft a CV tailored to a job, with a fact check")
     tailor.add_argument("job_id", type=int)
     tailor.add_argument("--cv", help="CV variant name (the part after CV_ in the file name); "
@@ -75,27 +67,15 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     elif args.command == "ingest":
         from .ingest.apify import ingest_searches
         ingest_searches(args.search, args.site)
-    elif args.command == "searches":
-        from .ingest.report import print_plan
-        from .ingest.searches import load_searches, plan
-        print_plan(plan(load_searches(), args.search, args.site), show_json=args.json)
     elif args.command == "web":
+        from .db import migrate
         from .web.server import serve
+        migrate()
         serve(args.port, open_browser=not args.no_browser)
-    elif args.command == "options":
-        from .ingest.report import print_options
-        print_options(args.topic)
-    elif args.command == "import-json":
-        from .ingest.store import save_run
-        text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text()
-        payload = json.loads(text)
-        if not isinstance(payload, list):
-            raise SystemExit("Expected a JSON array of job objects")
-        source = "stdin" if args.file == "-" else Path(args.file).name
-        added = save_run(f"manual-import:{source}", f"manual-{uuid.uuid4()}", None, payload)
-        print(f"Imported {len(payload)} items, {added} new jobs")
     elif args.command == "tailor-cv":
         from .candidate.tailoring import tailor_cv
+        from .db import migrate
+        migrate()
         warn_possible_duplicates(args.job_id, about_to_apply=True)
         target, errors, warnings = tailor_cv(args.job_id, args.cv)
         print(target)
@@ -108,6 +88,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
             raise SystemExit(1)
     elif args.command == "interview-prep":
         from .candidate.interview import prepare
+        from .db import migrate
+        migrate()
         email_text = None
         if args.email_file == "-":
             email_text = sys.stdin.read()

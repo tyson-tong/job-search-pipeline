@@ -1,6 +1,6 @@
 # Copy to searches.toml (ignored by Git) and edit. Check it with:
-#   jobflow searches          # shows the Apify runs it would make; costs nothing
-#   jobflow options           # allowed values, and which site applies which filter
+#   jobflow web, then the Searches tab: checks this file, shows the Apify runs it would
+#   make (costs nothing), and lists allowed values and which site applies which filter.
 # GitHub Actions reads the same text from the JOBFLOW_SEARCHES repository variable:
 #   gh variable set JOBFLOW_SEARCHES < searches.toml
 
@@ -35,7 +35,7 @@ job_types = ["full-time", "contract"]            # full-time | part-time | contr
 work_arrangements = ["hybrid", "remote"]         # on-site | hybrid | remote
 
 # Seek only (LinkedIn and Indeed have no equivalent; your terms do that job there).
-# A top-level key includes all its subclassifications: jobflow options classifications
+# A top-level key includes all its subclassifications (all listed in the Searches tab).
 classifications = ["information-communication-technology", "banking-financial-services-analysis-reporting"]
 
 # A second search can use different sites and filters, e.g.:
