@@ -33,8 +33,8 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
 2. **Score the new jobs.** Click **Score unscored jobs**. Each open job (not closed; see the statuses below) that hasn't been scored against your current CVs is compared with each CV by the LLM, up to 50 per run, newest first. It asks first, stating how many LLM calls that is, and you can keep working while it runs. Unchanged CVs are never re-scored; **Re-score** in a job's panel forces it.
 
 3. **Pick jobs worth applying to.**
-   - **Inbox**: newly scraped jobs, best match first, with one-click Interested / Not interested.
-   - **My jobs**: Interested and Applied by default; the status menu selects any others. Search, filter by site or minimum salary, sort by match, posted date, date added, or follow-up date, and export the view as CSV.
+   - **Inbox**: newly scraped jobs, best match first. A job here can only be marked Interested or Not interested; the other statuses are for My jobs. Tick several rows (shift-click selects a range) to mark them all at once.
+   - **My jobs**: jobs you marked Interested and everything after (Interested and Applied by default; the status menu selects the others). Not interested and filtered jobs never appear here. Search, filter by site or minimum salary, sort by match, posted date, date added, or follow-up date, and export the view as CSV.
    - **Pipeline counts** at the top (click one to filter), and overdue follow-ups.
    - **Job panel** (click a title): the ad, a link to each site it's listed on, why it scored as it did (each requirement matched, partial, or not evidenced, with the CV quotes), possible duplicates, notes, status history, and the tailor-cv and interview-prep commands for that job, ready to copy.
 
@@ -42,7 +42,7 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
 
    The page refreshes itself when you return to its tab and every 3 minutes, but never while you have unsaved drafts; the header shows when it last updated. If a job you edited was changed elsewhere in the meantime (for example in another browser tab), Save writes nothing and shows what changed: save yours anyway, or keep your drafts and review the latest data. Rows warn when a job may be the same role as one you've already applied for (**possible duplicates**: similar title and ad text, such as a recruiter re-posting the employer's ad under its own name), and flag overdue follow-ups and applications with no progress after three weeks.
 
-   Statuses: `new` (the Inbox), `interested`, `not_interested`, `applied`, `interviewing`, `offered`, `accepted`, `declined`, `rejected`, `withdrawn`, and `filtered` (set on import when a job fails your search filters; the job panel shows why). Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the default view and never scored. The date you first applied is kept, and every status change is recorded with its date.
+   Statuses: `new` (the Inbox), `interested`, `not_interested`, `applied`, `interviewing`, `offered`, `accepted`, `declined`, `rejected`, `withdrawn`, and `filtered` (set on import when a job fails your search filters; the job panel shows why). Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the default view and never scored. Not interested and filtered jobs leave the tracker altogether (they stay in the database), so undo a misclick before you click Save. The date you first applied is kept, and every status change is recorded with its date.
 
 5. **Draft a CV for a job you want to apply for.**
 

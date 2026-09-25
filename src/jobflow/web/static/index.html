@@ -77,6 +77,13 @@ tr.dirty td:first-child { box-shadow: inset 3px 0 0 var(--dirty-line); }
 .site { font-size: 0.72rem; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-right: 3px; }
 td select, td input[type=date] { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 3px 5px; }
 .quick { display: flex; gap: 4px; flex-wrap: wrap; }
+.btn.on { background: var(--soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+th.sel, td.sel { width: 1%; padding-right: 0; }
+td.sel { cursor: pointer; user-select: none; }
+/* Pinned to the bottom so it stays in reach while ticking rows down a long Inbox. */
+.bulk { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 8; max-width: calc(100vw - 32px);
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--accent);
+  border-radius: 10px; padding: 8px 12px; box-shadow: var(--shadow); }
 .empty { padding: 40px; text-align: center; color: var(--muted); }
 /* Drawer */
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: var(--panel);
@@ -159,8 +166,9 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
     <a class="btn" id="export" href="#">Export CSV</a>
     <span class="meta" id="shown"></span>
   </div>
+  <div class="bulk" id="bulk" hidden></div>
   <div class="table-wrap" id="jobs-table"><table>
-    <thead><tr><th>Match</th><th>Job</th><th class="hide-sm">Sites</th><th class="hide-sm">Posted</th>
+    <thead><tr><th class="sel" id="select-col"><input type="checkbox" id="select-all" aria-label="Select all shown jobs"></th><th>Match</th><th>Job</th><th class="hide-sm">Sites</th><th class="hide-sm">Posted</th>
       <th class="hide-sm">Salary</th><th>Status</th><th class="hide-sm">Follow up</th></tr></thead>
     <tbody id="rows"></tbody>
   </table></div>
@@ -179,7 +187,13 @@ const AUTO_REFRESH_MS = 3 * 60 * 1000;
 // versions: each edited job's tracking version when you started editing it, sent with
 // Save so changes made elsewhere in the meantime are caught instead of overwritten.
 const state = { view: "jobs", statuses: new Set(["interested", "applied"]), jobs: [], summary: null,
-  pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null };
+  pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null,
+  // Inbox rows ticked for a bulk Interested / Not interested; lastPicked anchors shift-click ranges.
+  selected: new Set(), lastPicked: null };
+// A job still in the Inbox can only be triaged; the other statuses come after Interested.
+const TRIAGE_STATUSES = ["new", "interested", "not_interested"];
+// My jobs holds only jobs you picked as Interested and what followed; these never show there.
+const NOT_MY_JOBS = ["new", "not_interested", "filtered"];
 const SCORE_BATCH = 50;
 
 // ---- Helpers -------------------------------------------------------------------------
@@ -231,7 +245,8 @@ function recall() {
   try {
     const saved = JSON.parse(localStorage.getItem("jobflow.filters") || "null");
     if (!saved) return;
-    if (Array.isArray(saved.statuses) && saved.statuses.length) state.statuses = new Set(saved.statuses);
+    const statuses = Array.isArray(saved.statuses) ? saved.statuses.filter((s) => !NOT_MY_JOBS.includes(s)) : [];
+    if (statuses.length) state.statuses = new Set(statuses);
     if (saved.sort) sortInput.value = saved.sort;
     if (saved.site !== undefined) siteInput.value = saved.site;
     if (saved.view) state.view = saved.view;
@@ -244,6 +259,13 @@ function current(job, field) {
   return pending && field in pending ? pending[field] : job[field];
 }
 function setPending(job, field, value) {
+  stagePending(job, field, value);
+  renderSaveBar();
+  renderRows();
+  // Rebuilding the drawer while typing a note would lose the cursor.
+  if (field !== "note" && state.detail && state.detail.id === job.id) renderDetail();
+}
+function stagePending(job, field, value) {
   const pending = { ...(state.pending.get(job.id) || {}) };
   const original = field === "note" ? "" : (job[field] ?? (field === "follow_up_on" ? "" : null));
   if ((value ?? "") === (fmtDate(original) || original || "")) delete pending[field];
@@ -255,10 +277,6 @@ function setPending(job, field, value) {
     state.pending.delete(job.id);
     state.versions.delete(job.id);
   }
-  renderSaveBar();
-  renderRows();
-  // Rebuilding the drawer while typing a note would lose the cursor.
-  if (field !== "note" && state.detail && state.detail.id === job.id) renderDetail();
 }
 function renderSaveBar() {
   const n = state.pending.size;
@@ -336,6 +354,7 @@ async function refresh() {
     const [summary, jobs] = await Promise.all([api("/api/summary"), api("/api/jobs?" + filterParams())]);
     state.summary = summary;
     state.jobs = jobs;
+    state.lastPicked = null;  // rows may have moved
     state.loadedAt = new Date();
     renderAll();
   } catch (error) {
@@ -348,6 +367,7 @@ function renderAll() {
   const searching = state.view === "searches";
   document.getElementById("filters").hidden = searching;
   document.getElementById("jobs-table").hidden = searching;
+  if (searching) document.getElementById("bulk").hidden = true;
   document.getElementById("searches-view").hidden = !searching;
   renderPipeline(); renderTabs(); renderSaveBar(); renderScoring();
   if (searching) renderSearches(); else { renderStatusMenu(); renderRows(); }
@@ -355,7 +375,7 @@ function renderAll() {
 function renderPipeline() {
   const box = document.getElementById("pipeline");
   const { counts, overdue } = state.summary;
-  const order = ["interested", "applied", "interviewing", "offered", "accepted", "declined", "rejected", "withdrawn", "not_interested"];
+  const order = ["interested", "applied", "interviewing", "offered", "accepted", "declined", "rejected", "withdrawn"];
   fill(box, [...order.filter((s) => counts[s]).map((s) =>
     el("button", { className: "chip" + (state.view === "jobs" && state.statuses.has(s) ? " on" : ""),
       title: `Show only ${label(s).toLowerCase()} jobs`,
@@ -372,7 +392,7 @@ function renderTabs() {
 }
 function renderStatusMenu() {
   const menu = document.getElementById("status-menu");
-  const all = state.summary.statuses.filter((s) => s !== "new");
+  const all = state.summary.statuses.filter((s) => !NOT_MY_JOBS.includes(s));
   fill(menu, [
     ...all.map((s) => el("label", {},
       el("input", { type: "checkbox", checked: state.statuses.has(s), onchange: (event) => {
@@ -391,7 +411,8 @@ function renderStatusMenu() {
 }
 function statusSelect(job) {
   const value = current(job, "status");
-  const options = state.summary.editable.map((s) => el("option", { value: s, selected: s === value }, label(s)));
+  const choices = job.status === "new" ? TRIAGE_STATUSES : state.summary.editable;
+  const options = choices.map((s) => el("option", { value: s, selected: s === value }, label(s)));
   if (value === "filtered") options.unshift(el("option", { value: "filtered", selected: true, disabled: true }, "Filtered"));
   return el("select", { "aria-label": "Status", onchange: (event) => setPending(job, "status", event.target.value) }, options);
 }
@@ -413,21 +434,29 @@ function renderRows() {
   const n = state.jobs.length;
   document.getElementById("shown").textContent = `${n} job${n === 1 ? "" : "s"}`;
   document.getElementById("export").href = "/api/export.csv?" + filterParams() + "&token=" + encodeURIComponent(TOKEN);
+  const inbox = state.view === "inbox";
+  const shown = new Set(state.jobs.map((job) => job.id));
+  state.selected.forEach((id) => { if (!inbox || !shown.has(id)) state.selected.delete(id); });
+  renderBulk();
   if (!n) {
-    fill(body, [el("tr", {}, el("td", { colspan: 7, className: "empty" },
+    fill(body, [el("tr", {}, el("td", { colspan: inbox ? 8 : 7, className: "empty" },
       state.view === "inbox" ? "Inbox is empty: no new jobs to review." : "No jobs match these filters."))]);
     return;
   }
-  fill(body, [...state.jobs.map((job) => {
+  fill(body, [...state.jobs.map((job, index) => {
     const score = job.score == null ? null : Math.round(job.score);
     const scoreClass = score == null ? "" : score >= 70 ? " hi" : score >= 45 ? " mid" : " lo";
-    const statusCell = state.view === "inbox"
-      ? el("div", { className: "quick" },
-          el("button", { className: "btn small", onclick: () => setPending(job, "status", "interested") }, "Interested"),
-          el("button", { className: "btn small", onclick: () => setPending(job, "status", "not_interested") }, "Not interested"),
-          statusSelect(job))
+    const statusCell = inbox
+      ? el("div", { className: "quick" }, [["interested", "Interested"], ["not_interested", "Not interested"]].map(([s, text]) => {
+          const on = current(job, "status") === s;
+          // Clicking the chosen one again puts the job back to New.
+          return el("button", { className: "btn small" + (on ? " on" : ""), "aria-pressed": String(on),
+            onclick: () => setPending(job, "status", on ? "new" : s) }, text);
+        }))
       : statusSelect(job);
     return el("tr", { className: state.pending.has(job.id) ? "dirty" : "" },
+      inbox ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
+        el("input", { type: "checkbox", checked: state.selected.has(job.id), "aria-label": `Select ${job.title}` })) : null,
       el("td", {}, el("span", { className: "score" + scoreClass,
         title: job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored yet: use Score unscored jobs" },
         score == null ? "–" : score)),
@@ -448,6 +477,50 @@ function renderRows() {
         onchange: (event) => setPending(job, "follow_up_on", event.target.value) })));
   })]);
 }
+
+// ---- Selecting Inbox rows for bulk triage -------------------------------------------------
+function pick(id, index, event) {
+  const on = !state.selected.has(id);
+  const anchor = event.shiftKey && state.lastPicked !== null ? state.lastPicked : index;
+  // Shift-click sets every row between the last click and this one.
+  for (let i = Math.min(anchor, index); i <= Math.max(anchor, index); i++) {
+    const rowId = state.jobs[i] && state.jobs[i].id;
+    if (rowId === undefined) continue;
+    on ? state.selected.add(rowId) : state.selected.delete(rowId);
+  }
+  state.lastPicked = index;
+  renderRows();
+}
+function markSelected(status) {
+  const jobs = state.jobs.filter((job) => state.selected.has(job.id));
+  jobs.forEach((job) => stagePending(job, "status", status));
+  state.selected.clear();
+  state.lastPicked = null;
+  renderSaveBar();
+  renderRows();
+  if (state.detail && jobs.some((job) => job.id === state.detail.id)) renderDetail();
+  toast(`${jobs.length} job${jobs.length === 1 ? "" : "s"} marked ${label(status).toLowerCase()}: click Save to keep`);
+}
+function renderBulk() {
+  const inbox = state.view === "inbox", n = state.selected.size, total = state.jobs.length;
+  document.getElementById("select-col").hidden = !inbox;
+  const all = document.getElementById("select-all");
+  all.checked = inbox && total > 0 && n === total;
+  all.indeterminate = n > 0 && n < total;
+  const bar = document.getElementById("bulk");
+  bar.hidden = !inbox || !n;
+  if (bar.hidden) return;
+  fill(bar, [el("strong", {}, `${n} selected`),
+    el("button", { className: "btn small", onclick: () => markSelected("interested") }, "Mark interested"),
+    el("button", { className: "btn small", onclick: () => markSelected("not_interested") }, "Mark not interested"),
+    el("button", { className: "btn small", onclick: () => { state.selected.clear(); state.lastPicked = null; renderRows(); } }, "Clear selection"),
+    el("span", { className: "meta" }, "Shift-click a checkbox to select a range.")]);
+}
+document.getElementById("select-all").addEventListener("change", (event) => {
+  state.selected = new Set(event.target.checked ? state.jobs.map((job) => job.id) : []);
+  state.lastPicked = null;
+  renderRows();
+});
 
 // ---- Scoring (LLM match scores run on this machine, in the background) -------------------
 function renderScoring() {
