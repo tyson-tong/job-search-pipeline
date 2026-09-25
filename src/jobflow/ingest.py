@@ -82,13 +82,6 @@ def identity(posting: Posting) -> tuple[str, str | None]:
     return f"fingerprint:{_digest(parts + '|' + _normalise(posting.description)[:1500])}", None
 
 
-def timestamp(value: str | None) -> datetime | None:
-    try:
-        return datetime.fromisoformat(value) if value else None
-    except ValueError:
-        return None
-
-
 def find_duplicate(conn, key: str, fp: str | None, mkey: str | None,
                    description: str | None) -> tuple[int, bool] | None:
     """Return (job id, same_source) for an existing copy of this posting, if any.

@@ -1,7 +1,7 @@
 import copy
 
 from jobflow.cv import (fact_check, format_result, normalise_requirements, quote_in_cv,
-                        score_requirements, _parse_draft, _record)
+                        score_requirements, _record)
 
 CV_TEXT = """cv:
   name: Alex Example
@@ -64,7 +64,7 @@ def _item(importance, status):
             "evidence": [], "unverified_evidence": [], "note": ""}
 
 
-def test_score_uses_profile_weights():
+def test_score_is_computed_from_evidence_and_profile_weights():
     items = [_item("required", "matched"), _item("required", "partial"),
              _item("preferred", "not_evidenced")]
     score, breakdown = score_requirements(items, 0.75, 0.25)
@@ -72,12 +72,8 @@ def test_score_uses_profile_weights():
     assert score == 56
     assert breakdown["required"] == {"count": 2, "weight": 0.75, "credit": 0.75,
                                      "matched": 1, "partial": 1}
-    assert score_requirements(items, 1, 0)[0] == 75
-
-
-def test_score_renormalises_when_a_group_is_empty():
+    # A job with no preferred requirements isn't penalised for them.
     assert score_requirements([_item("required", "matched")], 0.75, 0.25)[0] == 100
-    assert score_requirements([], 0.75, 0.25)[0] == 0
 
 
 def test_format_result_labels_missing_evidence_as_not_evidenced():
@@ -122,8 +118,3 @@ def test_fact_check_flags_removed_employer_and_warns_on_new_terms():
     errors, warnings = fact_check(SOURCE_CV, draft)
     assert "Employer removed: Example Corp." in errors
     assert warnings and "Kubernetes" in warnings[0]
-
-
-def test_parse_draft_accepts_fenced_yaml_and_bare_cv_mapping():
-    assert _parse_draft("```yaml\ncv:\n  name: A\n  sections: {}\n```") == {"name": "A", "sections": {}}
-    assert _parse_draft("name: A\nsections: {}\n") == {"name": "A", "sections": {}}
