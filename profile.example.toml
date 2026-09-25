@@ -4,10 +4,15 @@
 cv_directory = "/path/to/your/private/cv"
 tailored_directory = "./output/tailored-cvs"
 interview_directory = "./output/interviews"
+# Job searches to run on Apify (copy searches.example.toml).
+searches_file = "./searches.toml"
 
 [matching]
+# Match score = weighted evidence coverage of required vs. preferred requirements
+# (matched = 1, partial = 0.5, not evidenced = 0).
 required_weight = 0.75
 preferred_weight = 0.25
 
 [locale]
+# Used for timestamps in generated interview briefings.
 timezone = "Australia/Sydney"

@@ -3,17 +3,54 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def env_path() -> Path:
+    """./.env, else .env in the source checkout (mirrors profile_path)."""
+    local = Path.cwd() / ".env"
+    return local if local.exists() else ROOT / ".env"
+
+
+def load_env(path: Path | None = None) -> None:
+    """Load KEY=VALUE lines from .env without overriding variables already set.
+
+    Real environment variables (for example GitHub Actions secrets) take precedence,
+    and empty values are skipped so they don't mask defaults.
+    """
+    path = path or env_path()
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.removeprefix("export ").split("=", 1)
+        key, value = key.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        else:
+            value = value.split(" #", 1)[0].strip()
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+
+
+def profile_path() -> Path:
+    """JOBFLOW_PROFILE, else ./profile.toml, else profile.toml in the source checkout."""
+    if os.environ.get("JOBFLOW_PROFILE"):
+        return Path(os.environ["JOBFLOW_PROFILE"]).expanduser().resolve()
+    local = Path.cwd() / "profile.toml"
+    return local.resolve() if local.exists() else ROOT / "profile.toml"
+
+
 def profile() -> dict:
-    path = Path(os.environ.get("JOBFLOW_PROFILE", ROOT / "profile.toml")).expanduser()
+    path = profile_path()
     if not path.exists():
-        example = ROOT / "profile.example.toml"
         raise RuntimeError(
-            f"Profile not found at {path}. Copy {example} to {ROOT / 'profile.toml'} "
-            "and set paths.cv_directory."
+            f"Profile not found at {path}. Copy profile.example.toml to profile.toml "
+            "(or set JOBFLOW_PROFILE) and set paths.cv_directory."
         )
     with path.open("rb") as stream:
         return tomllib.load(stream)
@@ -23,7 +60,8 @@ def configured_path(section: str, name: str, default: str) -> Path:
     settings = profile()
     value = os.environ.get(name.upper()) or settings.get(section, {}).get(name, default)
     path = Path(value).expanduser()
-    return path if path.is_absolute() else (ROOT / path).resolve()
+    # Relative paths are relative to the profile file, not the working directory.
+    return path if path.is_absolute() else (profile_path().parent / path).resolve()
 
 
 def cv_directory() -> Path:
@@ -36,3 +74,26 @@ def tailored_directory() -> Path:
 
 def interview_directory() -> Path:
     return configured_path("paths", "interview_directory", "./output/interviews")
+
+
+def searches_file() -> Path:
+    return configured_path("paths", "searches_file", "./searches.toml")
+
+
+def matching_weights() -> tuple[float, float]:
+    matching = profile().get("matching", {})
+    required = float(matching.get("required_weight", 0.75))
+    preferred = float(matching.get("preferred_weight", 0.25))
+    if required < 0 or preferred < 0 or required + preferred <= 0:
+        raise RuntimeError("matching weights must be non-negative and not both zero")
+    return required, preferred
+
+
+def timezone() -> ZoneInfo | None:
+    name = profile().get("locale", {}).get("timezone")
+    if not name:
+        return None
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError as exc:
+        raise RuntimeError(f"Unknown locale.timezone {name!r} in profile") from exc

@@ -7,13 +7,11 @@ __pycache__/
 .pytest_cache/
 dist/
 build/
-cv/tailored/**
-!cv/tailored/.gitkeep
-interviews/**
-!interviews/.gitkeep
+*.egg-info/
 .DS_Store
 
 # Per-person data and generated files
 /profile.toml
+/searches.toml
 /private/
 /output/
