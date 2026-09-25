@@ -131,7 +131,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    |---|---|---|
    | `name` | `"data-analyst"` | Required and unique; used by `--search` and in run history |
    | `terms` | `["data analyst", "bi analyst"]` | Each term is searched separately |
-   | `locations` | `{ AU = ["Sydney", "Melbourne"], NZ = [] }` | ISO country code → cities; `[]` = whole country |
+   | `locations` | `{ AU = ["Sydney"], SG = ["Singapore"], HK = ["Hong Kong"] }` | ISO country code → cities; `[]` = whole country |
    | `salary_min`, `salary_max`, `salary_period` | `100000`, `160000`, `"annual"` | Local currency. Jobs without a listed salary are kept |
    | `job_types` | `["full-time", "contract"]` | full-time, part-time, contract, casual |
    | `work_arrangements` | `["hybrid", "remote"]` | on-site, hybrid, remote |
@@ -139,6 +139,10 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `sites` | `["seek", "linkedin"]` | Which job sites to search; see below |
    | `posted_within_days` | `1` | 1 (24 hours), 7 (1 week), 14 (2 weeks), or 30 (1 month); see below |
    | `max_results`, `max_cost_usd`, `radius_km` | `30`, `0.50`, `25` | Usually set once under `[defaults]` |
+
+   **Major city options for `locations`:** Australia: Sydney, Melbourne, Brisbane, Perth, Adelaide, Gold Coast, Canberra, Newcastle, Sunshine Coast, Central Coast (NSW), Wollongong, Geelong, Hobart, Townsville, Cairns, Darwin, Toowoomba, Ballarat, Bendigo, Launceston, Albury–Wodonga, Mackay, Rockhampton, Bundaberg, Hervey Bay, Wagga Wagga, Shepparton, Mildura, Bunbury, Port Macquarie, and Coffs Harbour. New Zealand: Auckland, Wellington, Lower Hutt, Upper Hutt, Porirua, Christchurch, Hamilton, Tauranga, Dunedin, Palmerston North, Napier–Hastings, Nelson, Rotorua, New Plymouth, Whangārei, Invercargill, Whanganui, Gisborne, and Timaru. Add the cities you want to the corresponding country arrays; use `[]` to search the whole country. The defaults above stay focused on Sydney, Singapore, and Hong Kong.
+
+   For different salary cutoffs in AUD, SGD, and HKD, make one `[[search]]` entry per country and put `salary_min`, `salary_max`, and `salary_period` inside that country’s entry. The amounts are interpreted in the posting’s local currency; the workflow does not convert currencies. Leave salary fields out to disable salary filtering for that country. Separate searches may increase LinkedIn scraper runs because LinkedIn runs once per search.
 
    **Choosing job sites.** Use any combination of `linkedin`, `indeed`, and `seek`. Set `sites` under `[defaults]` for all searches, and override it in a search that needs different sites. If `sites` is left out everywhere, all three are used. For example, to use only Seek and Indeed, except LinkedIn too for one search:
 
@@ -169,10 +173,11 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | | LinkedIn | Indeed | Seek |
    |---|---|---|---|
    | Terms, country, city, date posted | on site | on site | on site |
-   | Salary, job type, work arrangement | after import | after import | on site |
+   | Salary | after import | after import | after import |
+   | Job type, work arrangement | after import | after import | on site |
    | Classification | no | no | on site |
 
-   "On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match; the job is stored with status `filtered` and the reason. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. LinkedIn results rarely list a salary and never say whether a job is remote, so in practice those filters seldom remove LinkedIn jobs. Seek applies its salary filter to the range the advertiser entered, even when that range is hidden on the ad.
+   "On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match; the job is stored with status `filtered` and the reason. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. LinkedIn results rarely list a salary and never say whether a job is remote, so in practice those filters seldom remove LinkedIn jobs. Salary bounds are applied after import for all three sites. Missing salary data is kept; Seek is deliberately scraped without salary bounds so it cannot hide salaryless postings upstream. This can increase the number of Seek results and Apify usage.
 
    Check the result in the tracker: open `jobflow web` and the **Searches** tab. It validates every value (listing the allowed ones if something is wrong), shows each Apify run with the exact input each actor receives, and lists all allowed values; click **Reload** after editing. Nothing runs from that page. All option values are constants in `src/jobflow/ingest/options.py`.
 

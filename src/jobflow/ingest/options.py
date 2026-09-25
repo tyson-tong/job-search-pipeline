@@ -39,7 +39,7 @@ FILTER_SUPPORT = {
                "salary": "local", "job_types": "local", "work_arrangements": "local",
                "classifications": "unsupported"},
     "seek": {"country": "search", "city": "search", "posted_within_days": "search",
-             "salary": "search", "job_types": "search", "work_arrangements": "search",
+             "salary": "local", "job_types": "search", "work_arrangements": "search",
              "classifications": "search"},
 }
 
@@ -355,7 +355,6 @@ SEEK_POSTED_ANY_TIME = 365
 SEEK_JOB_TYPES = {"full-time": "fulltime", "part-time": "parttime", "contract": "contract",
                   "casual": "casual"}
 SEEK_WORK_ARRANGEMENTS = {"on-site": "on-site", "hybrid": "hybrid", "remote": "remote"}
-SEEK_SALARY_TYPES = {"annual": "Annual", "monthly": "Monthly", "hourly": "Hourly"}
 
 # How Seek output reports work types and arrangements (lower-cased).
 SEEK_OUTPUT_JOB_TYPES = {"full time": "full-time", "part time": "part-time",

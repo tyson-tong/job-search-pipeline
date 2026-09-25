@@ -17,31 +17,40 @@ max_results = 50           # per Apify run (LinkedIn: per term and location). Ca
 # max_cost_usd = 1.00      # optional hard cap per Apify run, in USD
 
 [[search]]
-name = "data-analyst"
-# Each term is searched separately on each site.
+name = "data-analyst-au"
 terms = ["data analyst", "business intelligence analyst"]
-# ISO country code = list of cities; an empty list searches the whole country.
-locations = { AU = ["Sydney", "Melbourne"], NZ = [] }
-# radius_km = 25
-
-# Salary range in the posting's local currency. Jobs that don't list a salary are
-# always kept. Seek filters on its site; LinkedIn and Indeed jobs are filtered after
-# import. Either bound may be left out.
-salary_min = 100000
-salary_max = 160000
+locations = { AU = ["Sydney"] }
+# Optional salary bounds go here in AUD; omit both for no salary filter.
+# salary_min = 200_000
+# salary_max = 300_000
 salary_period = "annual"   # annual | monthly | hourly
-
-job_types = ["full-time", "contract"]            # full-time | part-time | contract | casual
-work_arrangements = ["hybrid", "remote"]         # on-site | hybrid | remote
-
-# Seek only (LinkedIn and Indeed have no equivalent; your terms do that job there).
-# A top-level key includes all its subclassifications (all listed in the Searches tab).
+job_types = ["full-time"]
+work_arrangements = ["on-site", "hybrid", "remote"]
+# Seek only; LinkedIn and Indeed ignore classifications. Use search terms there.
 classifications = ["information-communication-technology", "banking-financial-services-analysis-reporting"]
 
-# A second search can use different sites and filters, e.g.:
 # [[search]]
-# name = "legal-counsel"
-# terms = ["legal counsel"]
-# sites = ["seek", "linkedin"]
-# locations = { AU = ["Sydney"] }
-# classifications = ["legal"]
+# name = "data-analyst-sg"
+# terms = ["data analyst", "business intelligence analyst"]
+# locations = { SG = ["Singapore"] }
+# Optional salary bounds go here in SGD. Set values separately from the AU search.
+# salary_min = 150_000
+# salary_max = 300_000
+# salary_period = "annual"
+# job_types = ["full-time"]
+# work_arrangements = ["on-site", "hybrid", "remote"]
+# Seek only; LinkedIn and Indeed ignore classifications. Use search terms there.
+# classifications = ["information-communication-technology", "banking-financial-services-analysis-reporting"]
+
+# [[search]]
+# name = "data-analyst-hk"
+# terms = ["data analyst", "business intelligence analyst"]
+# locations = { HK = ["Hong Kong"] }
+# Optional salary bounds go here in HKD. Set values separately from the AU search.
+# salary_min = 850_000
+# salary_max = 2_000_000
+# salary_period = "annual"
+# job_types = ["full-time"]
+# work_arrangements = ["on-site", "hybrid", "remote"]
+# Seek only; LinkedIn and Indeed ignore classifications. Use search terms there.
+# classifications = ["information-communication-technology", "banking-financial-services-analysis-reporting"]

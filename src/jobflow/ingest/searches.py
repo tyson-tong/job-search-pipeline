@@ -253,12 +253,6 @@ def seek_runs(search: Search) -> list[PlannedRun]:
         if search.work_arrangements:
             run_input["workArrangements"] = [opt.SEEK_WORK_ARRANGEMENTS[w]
                                              for w in search.work_arrangements]
-        if search.salary_min is not None or search.salary_max is not None:
-            run_input["salaryType"] = opt.SEEK_SALARY_TYPES[search.salary_period]
-            if search.salary_min is not None:
-                run_input["salaryMin"] = int(search.salary_min)
-            if search.salary_max is not None:
-                run_input["salaryMax"] = int(search.salary_max)
         for key in search.classifications:
             run_input[key] = True
         runs.append(PlannedRun("seek", opt.ACTORS["seek"], search,

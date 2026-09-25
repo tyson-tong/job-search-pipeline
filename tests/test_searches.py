@@ -105,8 +105,7 @@ def test_seek_uses_native_filters_and_skips_unsupported_countries():
     assert (sydney["country"], sydney["location"]) == ("australia", "Sydney")
     assert sydney["workTypes"] == ["fulltime", "contract"]
     assert sydney["workArrangements"] == ["hybrid", "remote"]
-    assert (sydney["salaryType"], sydney["salaryMin"], sydney["salaryMax"]) == \
-        ("Annual", 100000, 150000)
+    assert "salaryMin" not in sydney and "salaryMax" not in sydney
     assert sydney["information-communication-technology"] is sydney["engineering-software"] is True
     assert "location" not in runs[2].run_input  # NZ nationwide
 
@@ -121,9 +120,9 @@ def _linkedin(**fields):
 def test_unknown_values_always_pass_local_filters():
     analyst = searches()[0]
     assert filter_reason(_linkedin(), analyst, "linkedin") is None
-    # Seek already filtered on its site, so its results aren't filtered again.
+    # A Seek posting with no salary must not be filtered by salary bounds.
     seek = normalise({"jobLink": "https://www.seek.com.au/job/1", "title": "Data Analyst",
-                      "salary": "$50k", "workTypes": "Part time"})
+                      "workTypes": "Part time"})
     assert filter_reason(seek, analyst, "seek") is None
 
 
@@ -133,6 +132,9 @@ def test_local_salary_filter():
     assert "outside 100,000-150,000/yr" in filter_reason(low, analyst, "linkedin")
     overlapping = _linkedin(salaryInfo=["$140,000.00/yr", "$170,000.00/yr"])
     assert filter_reason(overlapping, analyst, "linkedin") is None
+    seek_low = normalise({"jobLink": "https://www.seek.com.au/job/2", "title": "Data Analyst",
+                         "salary": "$60,000/year"})
+    assert "outside 100,000-150,000/yr" in filter_reason(seek_low, analyst, "seek")
     hourly = normalise({"viewJobLink": "/viewjob?jk=1", "title": "Data Analyst",
                         "salary": {"min": 60, "max": 70, "type": "HOUR"}})
     assert filter_reason(hourly, analyst, "indeed") is None  # ~118k-138k a year
