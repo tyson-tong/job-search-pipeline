@@ -11,10 +11,10 @@ from pathlib import Path
 
 import requests
 
-from .cv import CV_CHAR_LIMIT, cv_sources, slug
-from .db import connect, fetch_job
-from .llm import complete
-from .settings import interview_directory, timezone
+from ..db import connect, fetch_job
+from ..llm import complete
+from ..settings import interview_directory, timezone
+from .cvs import CV_CHAR_LIMIT, cv_sources, slug
 
 
 AGENTS = {

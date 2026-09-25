@@ -169,7 +169,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
    "On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match; the job is stored with status `filtered` and the reason. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. LinkedIn results rarely list a salary and never say whether a job is remote, so in practice those filters seldom remove LinkedIn jobs. Seek applies its salary filter to the range the advertiser entered, even when that range is hidden on the ad.
 
-   Check the result with `jobflow searches`: it validates every value (listing the allowed ones if something is wrong) and shows each Apify run, without running anything. Add `--json` to see the exact input each actor receives. All option values are constants in `src/jobflow/search_options.py`.
+   Check the result with `jobflow searches`: it validates every value (listing the allowed ones if something is wrong) and shows each Apify run, without running anything. Add `--json` to see the exact input each actor receives. All option values are constants in `src/jobflow/ingest/options.py`.
 
    Cost: LinkedIn makes one run per search, with a result cap per term and location; Indeed and Seek make one run per term and location. The actors charge per result, so keep `posted_within_days = 1` for a daily schedule and set `max_results`. Each run's actual cost is recorded in `scraper_runs.cost_usd`.
 
@@ -182,7 +182,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
 ## How it decides
 
-**Duplicates.** Each scraper's output is first converted to the same fields (`src/jobflow/sources.py`). A job then counts as already seen if any of these match, in order:
+**Duplicates.** Each scraper's output is first converted to the same fields (`src/jobflow/ingest/sources.py`). A job then counts as already seen if any of these match, in order:
 1. Same site and job ID (or, for a posting without an ID, the same URL without tracking parameters).
 2. Identical company, title, location, and description.
 3. Same employer and title, ignoring suffixes like "Pty Ltd", first seen in the last 90 days, with descriptions that share at least half their words. This catches the same job on LinkedIn, Indeed, and Seek, and reposts with a new ID.

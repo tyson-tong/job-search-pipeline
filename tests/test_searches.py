@@ -4,9 +4,9 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from jobflow import apify
-from jobflow.searches import SearchConfigError, filter_reason, parse_config, plan
-from jobflow.sources import normalise, parse_salary
+from jobflow.ingest import apify
+from jobflow.ingest.searches import SearchConfigError, filter_reason, parse_config, plan
+from jobflow.ingest.sources import normalise, parse_salary
 
 CONFIG = """
 [defaults]
@@ -173,9 +173,9 @@ class FakeClient:
 
 
 def test_run_passes_cost_cap_and_applies_the_search_filter(monkeypatch):
-    import jobflow.ingest as ingest
+    import jobflow.ingest.store as store
     saved = []
-    monkeypatch.setattr(ingest, "save_run", lambda *a, **k: saved.append(k) or 1)
+    monkeypatch.setattr(store, "save_run", lambda *a, **k: saved.append(k) or 1)
     capped = parse_config(CONFIG.replace("max_results = 40", "max_results = 40\nmax_cost_usd = 0.5"))
     planned = plan(capped, "analyst", "indeed")[0]
     client = FakeClient(_run(cost=0.02), [{"viewJobLink": "/viewjob?jk=1", "title": "x"}])
@@ -191,10 +191,10 @@ def test_run_passes_cost_cap_and_applies_the_search_filter(monkeypatch):
     (_run("RUNNING"), "still running after"),  # partial results must not be imported
 ])
 def test_unsuccessful_runs_are_recorded_not_imported(monkeypatch, result, message):
-    import jobflow.ingest as ingest
+    import jobflow.ingest.store as store
     recorded = []
-    monkeypatch.setattr(ingest, "record_failed_run", lambda *a: recorded.append(a))
-    monkeypatch.setattr(ingest, "save_run", lambda *a, **k: pytest.fail("imported"))
+    monkeypatch.setattr(store, "record_failed_run", lambda *a: recorded.append(a))
+    monkeypatch.setattr(store, "save_run", lambda *a, **k: pytest.fail("imported"))
     planned = plan(searches(), "counsel")[0]
     with pytest.raises(RuntimeError, match=message):
         apify.run_search(FakeClient(result), planned, timedelta(minutes=5))

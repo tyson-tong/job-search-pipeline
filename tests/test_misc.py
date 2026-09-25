@@ -1,5 +1,5 @@
 from jobflow.db import migration_files
-from jobflow.interview import _safe_markup
+from jobflow.candidate.interview import _safe_markup
 
 
 def test_migrations_ship_inside_the_package():

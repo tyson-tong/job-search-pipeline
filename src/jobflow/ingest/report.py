@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from itertools import groupby
 
-from . import search_options as opt
+from . import options as opt
 from .searches import PlannedRun, local_filters
 
 

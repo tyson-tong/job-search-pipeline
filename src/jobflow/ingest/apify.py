@@ -23,7 +23,7 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
 
     Any failure is recorded in scraper_runs and re-raised.
     """
-    from .ingest import record_failed_run, save_run
+    from .store import record_failed_run, save_run
 
     actor_id = f"{planned.site}:{planned.actor}"
     name = f"{planned.search.name}/{planned.site} {planned.label}"

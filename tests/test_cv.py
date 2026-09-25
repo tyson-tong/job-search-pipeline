@@ -1,7 +1,8 @@
 import copy
 
-from jobflow.cv import (fact_check, format_result, normalise_requirements, quote_in_cv,
-                        score_requirements, _record)
+from jobflow.candidate.matching import (format_result, normalise_requirements, quote_in_cv,
+                                       score_requirements, _record)
+from jobflow.candidate.tailoring import fact_check
 
 CV_TEXT = """cv:
   name: Alex Example

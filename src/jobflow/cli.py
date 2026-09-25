@@ -11,7 +11,7 @@ def main() -> None:
     from .settings import load_env
     load_env()
     from .db import STATUSES
-    from .search_options import SITES
+    from .ingest.options import SITES
 
     parser = argparse.ArgumentParser(prog="jobflow")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -70,17 +70,17 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         from .db import migrate
         migrate()
     elif args.command == "ingest":
-        from .apify import ingest_searches
+        from .ingest.apify import ingest_searches
         ingest_searches(args.search, args.site)
     elif args.command == "searches":
-        from .searches import load_searches, plan
-        from .views import print_plan
+        from .ingest.report import print_plan
+        from .ingest.searches import load_searches, plan
         print_plan(plan(load_searches(), args.search, args.site), show_json=args.json)
     elif args.command == "options":
-        from .views import print_options
+        from .ingest.report import print_options
         print_options(args.topic)
     elif args.command == "import-json":
-        from .ingest import save_run
+        from .ingest.store import save_run
         text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text()
         payload = json.loads(text)
         if not isinstance(payload, list):
@@ -106,7 +106,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         if job["notes"]:
             print("notes:\n" + "\n".join(f"  {line}" for line in job["notes"].splitlines()))
     elif args.command == "match":
-        from .cv import best_variant, format_result, jobs_needing_match, match_job
+        from .candidate.matching import (best_variant, format_result, jobs_needing_match,
+                                         match_job)
         if (args.job_id is None) == (not args.new):
             parser.error("match needs either a JOB_ID or --new")
         if args.job_id is not None:
@@ -125,7 +126,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         if failures:
             raise SystemExit(f"{failures} job(s) could not be matched")
     elif args.command == "tailor-cv":
-        from .cv import tailor_cv
+        from .candidate.tailoring import tailor_cv
         target, errors, warnings = tailor_cv(args.job_id, args.cv)
         print(target)
         for message in errors:
@@ -136,7 +137,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         if errors:
             raise SystemExit(1)
     elif args.command == "interview-prep":
-        from .interview import prepare
+        from .candidate.interview import prepare
         email_text = None
         if args.email_file == "-":
             email_text = sys.stdin.read()

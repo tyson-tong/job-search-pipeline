@@ -162,7 +162,7 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
              started_at: datetime | None = None, finished_at: datetime | None = None,
              cost_usd: float | None = None, search_name: str | None = None,
              run_input: dict | None = None, job_filter: JobFilter | None = None) -> int:
-    from .db import connect
+    from ..db import connect
 
     with connect() as conn:
         run_pk = conn.execute(
@@ -185,7 +185,7 @@ def record_failed_run(actor_id: str, run_id: str | None, dataset_id: str | None,
                       error: str, started_at: datetime | None = None,
                       finished_at: datetime | None = None, cost_usd: float | None = None,
                       search_name: str | None = None, run_input: dict | None = None) -> None:
-    from .db import connect
+    from ..db import connect
 
     with connect() as conn:
         conn.execute(

@@ -14,7 +14,7 @@ from datetime import date, datetime, timezone
 from html import unescape
 from urllib.parse import urlsplit
 
-from .search_options import (INDEED_JOB_TYPES, INDEED_WORK_ARRANGEMENTS, LINKEDIN_JOB_TYPES,
+from .options import (INDEED_JOB_TYPES, INDEED_WORK_ARRANGEMENTS, LINKEDIN_JOB_TYPES,
                              LINKEDIN_WORK_ARRANGEMENTS, SEEK_OUTPUT_JOB_TYPES,
                              SEEK_OUTPUT_WORK_ARRANGEMENTS)
 
@@ -45,7 +45,7 @@ class Posting:
     # Annualised salary range, when the posting states one.
     salary_min: float | None = None
     salary_max: float | None = None
-    # Common vocabulary (search_options.JOB_TYPES / WORK_ARRANGEMENTS); empty = unknown.
+    # Common vocabulary (options.JOB_TYPES / WORK_ARRANGEMENTS); empty = unknown.
     job_types: frozenset[str] = frozenset()
     work_arrangements: frozenset[str] = frozenset()
 

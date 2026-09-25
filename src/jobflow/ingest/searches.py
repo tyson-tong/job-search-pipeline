@@ -1,7 +1,7 @@
 """Job searches: load searches.toml, translate each search into Apify actor inputs, and
 apply the filters a site can't apply itself.
 
-See searches.example.toml for the format and search_options.py for allowed values.
+See searches.example.toml for the format and options.py for allowed values.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from itertools import product
 from urllib.parse import urlencode
 
-from . import search_options as opt
+from . import options as opt
 from .sources import ANNUAL_FACTOR, Posting
 
 DEFAULTS = {"posted_within_days": 1, "max_results": 50, "sites": list(opt.SITES)}
@@ -159,7 +159,7 @@ def load_searches() -> list[Search]:
     named by paths.searches_file in profile.toml (default ./searches.toml)."""
     text = os.environ.get("JOBFLOW_SEARCHES")
     if not text:
-        from .settings import searches_file
+        from ..settings import searches_file
         path = searches_file()
         if not path.exists():
             raise SearchConfigError(f"No searches config: create {path} from "

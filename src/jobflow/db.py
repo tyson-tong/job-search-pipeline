@@ -28,7 +28,7 @@ def migration_files() -> list[tuple[str, str]]:
 
 
 def migrate() -> None:
-    from .ingest import backfill_keys
+    from .ingest.store import backfill_keys
 
     with connect() as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
