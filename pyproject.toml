@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "job-search-workflow"
+version = "0.1.0"
+description = "Private job discovery, CV matching, and interview preparation workflow"
+requires-python = ">=3.12"
+dependencies = [
+  "psycopg[binary]>=3.2,<4",
+  "requests>=2.32,<3",
+  "PyYAML>=6.0,<7",
+]
+
+[project.scripts]
+jobflow = "jobflow.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
