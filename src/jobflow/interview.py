@@ -13,6 +13,7 @@ import requests
 from .cv import cv_sources
 from .db import ROOT, connect, fetch_job
 from .llm import complete
+from .settings import interview_directory
 
 
 AGENTS = {
@@ -119,7 +120,7 @@ def prepare(job_id: int, email: str, output: Path | None = None) -> Path:
     brief, model = complete("You are the final interview-brief editor. Synthesize the specialists' "
                             "notes, remove repetition, and preserve source links and uncertainty.",
                             json.dumps(synth_input, ensure_ascii=False))
-    target = output or (ROOT / "interviews" / f"{job_id}-{slug(job['company'])}-{slug(job['title'])}.html")
+    target = output or (interview_directory() / f"{job_id}-{slug(job['company'])}-{slug(job['title'])}.html")
     target.parent.mkdir(parents=True, exist_ok=True)
     source_items = "\n".join(
         f'<li><a href="{html.escape(s["url"], quote=True)}" rel="noreferrer">'

@@ -11,21 +11,20 @@ import yaml
 
 from .db import ROOT, connect, fetch_job
 from .llm import complete, parse_json
-
-
-CV_DIR = ROOT / "cv" / "source"
+from .settings import cv_directory, tailored_directory
 
 
 def cv_sources() -> dict[str, str]:
+    directory = cv_directory()
     return {p.stem.removeprefix("CV_"): p.read_text()
-            for p in sorted(CV_DIR.glob("CV_*.yaml"))}
+            for p in sorted(directory.glob("CV_*.yaml"))}
 
 
 def match_job(job_id: int) -> list[dict]:
     job = fetch_job(job_id)
     sources = cv_sources()
     if not sources:
-        raise RuntimeError(f"No CV YAML files found under {CV_DIR}")
+        raise RuntimeError(f"No CV_*.yaml files found under {cv_directory()}")
     results = []
     for variant, source in sources.items():
         digest = hashlib.sha256(source.encode()).hexdigest()
@@ -86,13 +85,13 @@ def tailor_cv(job_id: int, variant: str, output_dir: Path | None = None) -> Path
     parsed = yaml.safe_load(content)
     if not isinstance(parsed, dict) or not isinstance(parsed.get("cv"), dict):
         raise RuntimeError("LLM output is not a RenderCV document with a cv mapping")
-    target_dir = output_dir or (ROOT / "cv" / "tailored" / f"{job_id}-{slug(job['company'])}-{slug(job['title'])}")
+    target_dir = output_dir or (tailored_directory() / f"{job_id}-{slug(job['company'])}-{slug(job['title'])}")
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"CV_{variant}_draft.yaml"
     target.write_text(content.rstrip() + "\n")
     (target_dir / "REVIEW_REQUIRED.md").write_text(
         f"Draft for {job['company']} — {job['title']} (job id {job_id}).\n\n"
-        "Review every line against cv/source before rendering or submitting. "
+        "Review every line against your private source CV before rendering or submitting. "
         "The LLM output has not been fact-checked.\n")
     rendercv = shutil.which("rendercv")
     if rendercv:

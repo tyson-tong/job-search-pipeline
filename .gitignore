@@ -12,3 +12,8 @@ cv/tailored/**
 interviews/**
 !interviews/.gitkeep
 .DS_Store
+
+# Per-person data and generated files
+/profile.toml
+/private/
+/output/

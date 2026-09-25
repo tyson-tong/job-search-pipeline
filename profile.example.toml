@@ -1,0 +1,13 @@
+# Copy to profile.toml and point it at your private CV folder.
+# profile.toml is ignored by Git. Never put API credentials here.
+[paths]
+cv_directory = "/path/to/your/private/cv"
+tailored_directory = "./output/tailored-cvs"
+interview_directory = "./output/interviews"
+
+[matching]
+required_weight = 0.75
+preferred_weight = 0.25
+
+[locale]
+timezone = "Australia/Sydney"
