@@ -1,6 +1,6 @@
 """Search option vocabularies, and how each job site's Apify actor expresses them.
 
-Search configs (searches.toml) use the common vocabulary; ingest/searches.py translates it
+Search configs (config/searches.toml) use the common vocabulary; ingest/searches.py translates it
 per site. Values come from each actor's published input schema:
 - LinkedIn: curious_coder/linkedin-jobs-scraper
 - Indeed:   curious_coder/indeed-scraper

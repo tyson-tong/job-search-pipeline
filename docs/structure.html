@@ -114,7 +114,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <div class="lane cloud">
     <div class="lane-title">Daily, in GitHub Actions</div>
     <div class="lane-sub">06:30 Sydney time · <code>jobflow migrate</code> then <code>jobflow ingest</code></div>
-    <div class="step"><b>Your searches</b><span class="mod">JOBFLOW_SEARCHES variable (= searches.toml)</span>
+    <div class="step"><b>Your searches</b><span class="mod">JOBFLOW_SEARCHES variable (= config/searches.toml)</span>
       <div class="what">Terms, countries and cities, sites, salary, job type, work arrangement, classification, posted window.</div></div>
     <div class="step"><b>Plan runs per site</b><span class="mod">ingest/searches.py · ingest/options.py</span>
       <div class="what">Validates values and translates each search into each actor's input. LinkedIn: one run per search; Indeed and Seek: one per term and location.</div></div>
@@ -150,8 +150,8 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
 <h2 id="modules">Modules</h2>
 <div class="table-wrap"><table>
   <tr><th>File</th><th>Responsibility</th></tr>
-  <tr><td><code>cli.py</code></td><td>The <code>jobflow</code> command: parses arguments, loads <code>.env</code>, calls the modules below, prints one-line errors.</td></tr>
-  <tr><td><code>settings.py</code></td><td>Reads <code>.env</code> (never overriding real environment variables) and <code>profile.toml</code>: CV folder, output folders, searches file, scoring weights, timezone.</td></tr>
+  <tr><td><code>cli.py</code></td><td>The <code>jobflow</code> command: parses arguments, loads <code>config/.env</code>, calls the modules below, prints one-line errors.</td></tr>
+  <tr><td><code>settings.py</code></td><td>Reads <code>config/.env</code> (never overriding real environment variables) and <code>config/profile.toml</code>: CV folder, output folders, searches file, scoring weights, timezone.</td></tr>
   <tr><td><code>db.py</code> · <code>migrations/</code></td><td>Connection, schema migrations (applied once each, in order), job lookups, list queries, and <code>set_job_state</code>: the one place status, notes, and follow-ups are changed and history recorded.</td></tr>
   <tr><td><code>llm.py</code></td><td>One call to any OpenAI-compatible chat-completions endpoint.</td></tr>
   <tr><td><code>ingest/options.py</code></td><td>Constants: allowed search values and how each site's actor expresses them.</td></tr>
@@ -248,14 +248,14 @@ applications      42   applied   2026-09-25: Applied via referral</div>
 <h2 id="config">Config and secrets</h2>
 <div class="table-wrap"><table>
   <tr><th>What</th><th>On your machine</th><th>In GitHub</th></tr>
-  <tr><td>Database connection</td><td><code>.env</code> DATABASE_URL</td><td>secret DATABASE_URL</td></tr>
-  <tr><td>Apify token</td><td><code>.env</code> APIFY_TOKEN</td><td>secret APIFY_TOKEN</td></tr>
-  <tr><td>Searches</td><td><code>searches.toml</code></td><td>variable JOBFLOW_SEARCHES (same text)</td></tr>
-  <tr><td>LLM and Tavily keys</td><td><code>.env</code></td><td>not needed</td></tr>
-  <tr><td>CV folder, outputs, weights, timezone</td><td><code>profile.toml</code></td><td>not needed</td></tr>
+  <tr><td>Database connection</td><td><code>config/.env</code> DATABASE_URL</td><td>secret DATABASE_URL</td></tr>
+  <tr><td>Apify token</td><td><code>config/.env</code> APIFY_TOKEN</td><td>secret APIFY_TOKEN</td></tr>
+  <tr><td>Searches</td><td><code>config/searches.toml</code></td><td>variable JOBFLOW_SEARCHES (same text)</td></tr>
+  <tr><td>LLM and Tavily keys</td><td><code>config/.env</code></td><td>not needed</td></tr>
+  <tr><td>CV folder, outputs, weights, timezone</td><td><code>config/profile.toml</code></td><td>not needed</td></tr>
 </table></div>
-<p class="small muted" style="margin-top:8px"><code>jobflow init</code> creates <code>.env</code>, <code>profile.toml</code>, and <code>searches.toml</code> from the templates, never overwriting existing files.</p>
-<p class="small muted" style="margin-top:8px"><code>.env</code>, <code>profile.toml</code>, <code>searches.toml</code>, and <code>output/</code> are ignored by Git; the <code>.example</code> files show what goes in them.</p>
+<p class="small muted" style="margin-top:8px"><code>jobflow init</code> creates <code>config/.env</code>, <code>config/profile.toml</code>, and <code>config/searches.toml</code> from the templates, never overwriting existing files.</p>
+<p class="small muted" style="margin-top:8px"><code>config/.env</code>, <code>config/profile.toml</code>, <code>config/searches.toml</code>, and <code>output/</code> are ignored by Git; the <code>.example</code> files show what goes in them.</p>
 
 <h2 id="cost">Keeping Apify cost down</h2>
 <div class="grid">

@@ -19,7 +19,7 @@ def describe_searches() -> dict:
         from ..settings import searches_file
         try:
             path = str(searches_file())
-        except RuntimeError as exc:  # no profile.toml
+        except RuntimeError as exc:  # no config/profile.toml
             return {"ok": False, "source": None, "path": None, "error": str(exc), "searches": []}
         source = path
     try:
@@ -52,7 +52,7 @@ def describe_searches() -> dict:
 
 
 def reference() -> dict:
-    """Allowed values for searches.toml and how each site handles each setting."""
+    """Allowed values for config/searches.toml and how each site handles each setting."""
     countries = sorted(set(opt.LINKEDIN_COUNTRIES) | set(opt.INDEED_COUNTRIES))
     return {
         "sites": list(opt.SITES),

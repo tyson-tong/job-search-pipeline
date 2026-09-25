@@ -1,7 +1,7 @@
-"""Job searches: load searches.toml, translate each search into Apify actor inputs, and
+"""Job searches: load config/searches.toml, translate each search into Apify actor inputs, and
 apply the filters a site can't apply itself.
 
-See searches.example.toml for the format and options.py for allowed values.
+See config/searches.example.toml for the format and options.py for allowed values.
 """
 from __future__ import annotations
 
@@ -160,14 +160,14 @@ def parse_config(text: str) -> list[Search]:
 
 def load_searches() -> list[Search]:
     """From JOBFLOW_SEARCHES (the TOML text, as used in GitHub Actions), else the file
-    named by paths.searches_file in profile.toml (default ./searches.toml)."""
+    named by paths.searches_file in config/profile.toml (default ./searches.toml relative to config/profile.toml)."""
     text = os.environ.get("JOBFLOW_SEARCHES")
     if not text:
         from ..settings import searches_file
         path = searches_file()
         if not path.exists():
             raise SearchConfigError(f"No searches file at {path}. Run `uv run jobflow init` "
-                                    "to create it from searches.example.toml, then edit it")
+                                    "to create it from config/searches.example.toml, then edit it")
         text = path.read_text()
     return parse_config(text)
 

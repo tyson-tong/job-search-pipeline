@@ -9,7 +9,7 @@ It is a template: each person makes their own private copy with their own databa
 ```
 Daily, in GitHub Actions                     On your machine, when you choose
 ─────────────────────────                    ────────────────────────────────
-searches.toml ─► Apify ─► filter + dedupe ─► PostgreSQL ─► jobflow web                 score, browse, and track jobs
+config/searches.toml ─► Apify ─► filter + dedupe ─► PostgreSQL ─► jobflow web                 score, browse, and track jobs
                                                            jobflow tailor-cv ID        draft a CV for one job
                                                            jobflow interview-prep ID   briefing before an interview
 ```
@@ -20,7 +20,7 @@ For a diagram of every component, table, and decision, open [`docs/structure.htm
 
 ## Routine
 
-Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` once with `. .venv/bin/activate` and drop the `uv run` prefix). `jobflow` reads `.env` and `profile.toml` from this folder by itself. The examples below omit the prefix.
+Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` once with `. .venv/bin/activate` and drop the `uv run` prefix). `jobflow` reads `config/.env` and `config/profile.toml` from this folder by itself. The examples below omit the prefix.
 
 1. **Open the job tracker.**
 
@@ -74,7 +74,7 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
 
 ## Commands
 
-First time: `jobflow init` creates `.env`, `profile.toml`, and `searches.toml` from the templates (never overwrites).
+First time: `jobflow init` creates `config/.env`, `config/profile.toml`, and `config/searches.toml` from the templates (never overwrites).
 
 Everyday:
 
@@ -91,7 +91,7 @@ Run by the daily GitHub Action (you rarely need them):
 | Command | What it does | Needs |
 |---|---|---|
 | `jobflow migrate` | Creates or updates the database tables. Safe to rerun. | Database |
-| `jobflow ingest [--search NAME] [--site SITE]` | Runs your searches on Apify and imports the results. Run it yourself only to test a changed search now instead of waiting for tomorrow; it uses Apify credits. | Database, Apify, `searches.toml` |
+| `jobflow ingest [--search NAME] [--site SITE]` | Runs your searches on Apify and imports the results. Run it yourself only to test a changed search now instead of waiting for tomorrow; it uses Apify credits. | Database, Apify, `config/searches.toml` |
 
 ## One-time setup
 
@@ -106,11 +106,11 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    uv run jobflow init
    ```
 
-   `init` creates `.env`, `profile.toml`, and `searches.toml` from the `.example` templates, with comments on what to fill in. It never overwrites a file that already exists, so it's safe to rerun. All three are ignored by Git, and `.env` is readable only by you.
+   `init` creates `config/.env`, `config/profile.toml`, and `config/searches.toml` from the `.example` templates, with comments on what to fill in. It never overwrites a file that already exists, so it's safe to rerun. The personal files are ignored by Git, and `config/.env` is readable only by you.
 
-3. **Point it at your CVs.** In `profile.toml`, set `cv_directory` to the folder containing your RenderCV files. Keep that folder outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. `profile.toml` also sets where `searches.toml` lives, the output folders, the scoring weights, and your timezone.
+3. **Point it at your CVs.** In `config/profile.toml`, set `cv_directory` to the folder containing your RenderCV files. Keep that folder outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. `config/profile.toml` also sets where `config/searches.toml` lives, the output folders, the scoring weights, and your timezone.
 
-4. **Add credentials.** In `.env`, fill in:
+4. **Add credentials.** In `config/.env`, fill in:
 
    | Variable | Used for |
    |---|---|
@@ -121,11 +121,11 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `WEB_SEARCH_API_KEY` | interview-prep (Tavily) |
    | `APIFY_MAX_WAIT_MINUTES` | Optional: how long to wait for each Apify run (default 60) |
 
-   `jobflow` reads `.env` from the current folder (or this repository's folder) automatically. Variables already set in your shell take precedence.
+   `jobflow` reads `config/.env` from the current folder (or this repository's folder) automatically. Variables already set in your shell take precedence.
 
    The database tables are created automatically the first time you run `jobflow web`.
 
-5. **Define your searches.** Edit `searches.toml`: it starts with example searches, so replace them before the daily import runs. Each `[[search]]` has:
+5. **Define your searches.** Edit `config/searches.toml`: it starts with example searches, so replace them before the daily import runs. Each `[[search]]` has:
 
    | Setting | Example | Notes |
    |---|---|---|
@@ -181,7 +181,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 6. **Schedule the daily import.** In your GitHub repository, open Settings → Secrets and variables → Actions and add:
    - Secret `DATABASE_URL`
    - Secret `APIFY_TOKEN`
-   - Variable `JOBFLOW_SEARCHES`: the contents of your `searches.toml`. Set it, and update it after each edit, with `gh variable set JOBFLOW_SEARCHES < searches.toml`
+   - Variable `JOBFLOW_SEARCHES`: the contents of your `config/searches.toml`. Set it, and update it after each edit, with `gh variable set JOBFLOW_SEARCHES < config/searches.toml`
 
    Then open Actions → "Daily job ingestion" → **Run workflow** to test it once. After that it runs every day at 06:30 Sydney time (07:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. The LLM and Tavily keys are not needed in GitHub.
 
@@ -196,7 +196,7 @@ The job keeps the first site's details (and the longest description). Each site'
 
 **Possible duplicates.** Merging is kept strict so two different jobs are never combined, which means some copies stay separate: a recruiter re-post under another employer name, a reworded title, or a suburb instead of the city. As a safety net, the tracker and `jobflow tailor-cv` compare the job with every job first seen in the last 180 days, ignoring employer and location: titles sharing at least 60% of their words and ads sharing at least 40% are listed as possible duplicates. They are never merged automatically.
 
-**Match scores.** The LLM lists the job's requirements, marks each required or preferred, and labels it matched, partial, or not evidenced in each CV, with CV quotes. Every quote is checked against the CV file. A "matched" item whose quote isn't found becomes "partial", and a "partial" one becomes "not evidenced". "Not evidenced" means the CV doesn't show it, not that you lack it. The score is calculated, not asked of the LLM: matched counts 1, partial 0.5, not evidenced 0, averaged within required and within preferred, then weighted by `required_weight` and `preferred_weight` in `profile.toml`. Use scores for ranking, not as a prediction.
+**Match scores.** The LLM lists the job's requirements, marks each required or preferred, and labels it matched, partial, or not evidenced in each CV, with CV quotes. Every quote is checked against the CV file. A "matched" item whose quote isn't found becomes "partial", and a "partial" one becomes "not evidenced". "Not evidenced" means the CV doesn't show it, not that you lack it. The score is calculated, not asked of the LLM: matched counts 1, partial 0.5, not evidenced 0, averaged within required and within preferred, then weighted by `required_weight` and `preferred_weight` in `config/profile.toml`. Use scores for ranking, not as a prediction.
 
 **Tailored CVs.** Only the CV's `cv` section goes to the LLM; design, locale, and settings are copied from your file. The draft is then compared with your original CV. These count as errors, and the PDF is not rendered:
 - changed contact details
@@ -210,7 +210,7 @@ New capitalised or technical terms, such as a tool name, are warnings. The check
 
 ## Privacy
 
-- `.env`, `profile.toml`, `searches.toml`, `output/`, and `private/` are ignored by Git. Never commit them.
+- `config/.env`, `config/profile.toml`, `config/searches.toml`, `output/`, and `private/` are ignored by Git. Never commit them.
 - The database holds job postings, scraper history, and match results. Match results include short quotes from your CVs, so keep the database private.
 - Interview emails are never stored. CV, job, and email text is sent to your LLM provider, and company names to Tavily, when you run the commands; choose providers whose data handling you accept.
 - If you ever move CV processing to the cloud, keep CVs in a private per-person storage bucket, not in PostgreSQL or GitHub variables.

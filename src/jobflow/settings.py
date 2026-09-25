@@ -6,6 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parents[2]
+CONFIG_DIR = ROOT / "config"
 
 
 # Personal files created from the templates shipped with the repository, in the order
@@ -18,9 +19,11 @@ INIT_FILES = ((".env.example", ".env", 0o600),
 def init_files(root: Path = ROOT) -> list[tuple[str, bool]]:
     """Copy each missing personal file from its template. Existing files are never
     touched. Returns (file name, created) pairs."""
+    config_dir = root / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
     results = []
     for template, target, mode in INIT_FILES:
-        source, destination = root / template, root / target
+        source, destination = config_dir / template, config_dir / target
         if destination.exists():
             results.append((target, False))
             continue
@@ -35,9 +38,9 @@ def init_files(root: Path = ROOT) -> list[tuple[str, bool]]:
 
 
 def env_path() -> Path:
-    """./.env, else .env in the source checkout (mirrors profile_path)."""
-    local = Path.cwd() / ".env"
-    return local if local.exists() else ROOT / ".env"
+    """config/.env in the current project, else config/.env in the source checkout."""
+    local = Path.cwd() / "config" / ".env"
+    return local if local.exists() else CONFIG_DIR / ".env"
 
 
 def load_env(path: Path | None = None) -> None:
@@ -64,19 +67,19 @@ def load_env(path: Path | None = None) -> None:
 
 
 def profile_path() -> Path:
-    """JOBFLOW_PROFILE, else ./profile.toml, else profile.toml in the source checkout."""
+    """JOBFLOW_PROFILE, else config/profile.toml in the current project or checkout."""
     if os.environ.get("JOBFLOW_PROFILE"):
         return Path(os.environ["JOBFLOW_PROFILE"]).expanduser().resolve()
-    local = Path.cwd() / "profile.toml"
-    return local.resolve() if local.exists() else ROOT / "profile.toml"
+    local = Path.cwd() / "config" / "profile.toml"
+    return local.resolve() if local.exists() else CONFIG_DIR / "profile.toml"
 
 
 def profile() -> dict:
     path = profile_path()
     if not path.exists():
         raise RuntimeError(
-            f"Profile not found at {path}. Copy profile.example.toml to profile.toml "
-            "(or set JOBFLOW_PROFILE) and set paths.cv_directory."
+            f"Profile not found at {path}. Run `uv run jobflow init` to create "
+            "config/profile.toml (or set JOBFLOW_PROFILE) and set paths.cv_directory."
         )
     with path.open("rb") as stream:
         return tomllib.load(stream)
@@ -91,15 +94,15 @@ def configured_path(section: str, name: str, default: str) -> Path:
 
 
 def cv_directory() -> Path:
-    return configured_path("paths", "cv_directory", "./private/cv")
+    return configured_path("paths", "cv_directory", "../private/cv")
 
 
 def tailored_directory() -> Path:
-    return configured_path("paths", "tailored_directory", "./output/tailored-cvs")
+    return configured_path("paths", "tailored_directory", "../output/tailored-cvs")
 
 
 def interview_directory() -> Path:
-    return configured_path("paths", "interview_directory", "./output/interviews")
+    return configured_path("paths", "interview_directory", "../output/interviews")
 
 
 def searches_file() -> Path:

@@ -491,7 +491,7 @@ async function copyCommand(text) {
   catch (error) { toast("Copy failed; select the command and copy it instead.", true); }
 }
 
-// ---- Searches (searches.toml: what the daily import runs) ---------------------------------
+// ---- Searches (config/searches.toml: what the daily import runs) ---------------------------------
 const siteName = (s) => SITE_NAMES[s] || s;
 function renderSearches() {
   const data = state.searches, box = document.getElementById("searches-view");
@@ -499,7 +499,7 @@ function renderSearches() {
   const header = el("div", { className: "sv-card" },
     el("h2", {}, "Your searches"),
     el("div", {}, data.ok ? el("span", { className: "ok" }, "✓ Valid") : el("span", { className: "err" }, "✗ Can't be used"),
-      el("span", { className: "meta" }, `  ·  from ${data.source || "(no profile.toml)"}`), "  ",
+      el("span", { className: "meta" }, `  ·  from ${data.source || "(no config/profile.toml)"}`), "  ",
       el("button", { className: "btn small", onclick: () => refresh().then(() => toast("Searches reloaded")) }, "Reload")),
     data.ok ? el("p", { className: "meta", style: "margin:8px 0 0" },
       `${data.total_runs} Apify run${data.total_runs === 1 ? "" : "s"} per import, at most ${data.total_max_results} results. `

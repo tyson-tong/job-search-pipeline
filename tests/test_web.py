@@ -108,7 +108,7 @@ def _wait_until_finished(scoring):
 
 def test_missing_llm_settings_fail_before_anything_runs(scoring, monkeypatch):
     def missing():
-        raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in .env")
+        raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in config/.env")
     monkeypatch.setattr(scoring, "credentials", missing)
     monkeypatch.setattr(scoring, "match_job", lambda *a, **k: pytest.fail("scored anyway"))
     with pytest.raises(RuntimeError, match="LLM_API_KEY"):

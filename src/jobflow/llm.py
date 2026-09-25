@@ -9,7 +9,7 @@ DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
 def base_url() -> str:
-    # An empty LLM_BASE_URL (as in .env.example) means "use the default".
+    # An empty LLM_BASE_URL (as in config/.env.example) means "use the default".
     return (os.environ.get("LLM_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
 
 
@@ -17,7 +17,7 @@ def credentials() -> tuple[str, str]:
     key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
     model = os.environ.get("LLM_MODEL")
     if not key or not model:
-        raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in .env")
+        raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in config/.env")
     return key, model
 
 

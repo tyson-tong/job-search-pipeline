@@ -1,6 +1,3 @@
-.env
-.env.*
-!.env.example
 __pycache__/
 *.py[cod]
 .venv/
@@ -11,7 +8,8 @@ build/
 .DS_Store
 
 # Per-person data and generated files
-/profile.toml
-/searches.toml
+/config/profile.toml
+/config/searches.toml
+/config/.env
 /private/
 /output/
