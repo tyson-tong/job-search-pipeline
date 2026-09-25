@@ -38,19 +38,24 @@ The workflow cron uses UTC because GitHub Actions cron does not follow local day
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-pip install -e .
+pip install -e '.[documents]'
 cp .env.example .env   # fill locally; .env is ignored
 set -a && . ./.env && set +a
 jobflow migrate
 jobflow ingest
 jobflow import-json sample-jobs.json
+jobflow list --limit 50
+jobflow match 123
+jobflow tailor 123 --cv strat
+jobflow interview-prep 123 --email-file ./interview-email.txt
 ```
 
 `DATABASE_URL` and `APIFY_TOKEN` are required for cloud ingestion. `import-json` can load a saved Apify JSON array for a local or one-off import.
 
 ## Current implementation status
 
-- Implemented: PostgreSQL schema, Apify saved-task run and polling, dataset retrieval, JSON import, exact-key deduplication, run provenance, weekly GitHub Actions workflow.
-- Planned next: fuzzy duplicate review, requirement extraction and CV scoring, RenderCV draft generation, application-status commands, interview-email intake and multi-agent HTML preparation.
+- Implemented: PostgreSQL schema, Apify saved-task run and polling, dataset retrieval, JSON import, exact-key deduplication, run provenance, and weekly GitHub Actions workflow.
+- Implemented: LLM-assisted requirement/evidence scoring for each CV variant; tailored RenderCV YAML drafts with factual constraints and review marker; optional PDF rendering when RenderCV is installed; manual interview-prep command with three specialist agents, a synthesizer, current web search, and a standalone HTML file.
+- Follow-up improvements: fuzzy duplicate review for jobs with different source IDs, persistent application-status CLI commands, export/history UI, and optional pgvector retrieval.
 
-The matching and document-generation stages are intentionally not automatic at ingestion time. They are costlier and benefit from keeping a human review step.
+Matching and document generation do not run automatically on ingestion. They call paid LLM/search services and benefit from a human review step.

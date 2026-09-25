@@ -28,6 +28,17 @@ CREATE TABLE IF NOT EXISTS jobs (
     status_updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS workflow_runs (
+    id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT REFERENCES jobs(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    model_name TEXT,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at TIMESTAMPTZ,
+    error TEXT
+);
+
 CREATE INDEX IF NOT EXISTS jobs_posted_at_idx ON jobs (posted_at DESC);
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs (status);
 CREATE INDEX IF NOT EXISTS jobs_description_fts_idx
