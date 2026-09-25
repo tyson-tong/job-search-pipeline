@@ -9,7 +9,10 @@
 # Job sites to search: any of "linkedin", "indeed", "seek". Unlisted sites are never
 # called (so cost nothing). A search can override this with its own sites = [...].
 sites = ["linkedin", "indeed", "seek"]
-posted_within_days = 1     # match the daily schedule: only jobs posted since yesterday
+# 1 (24 hours), 7 (1 week), 14 (2 weeks), or 30 (1 month). Use 1 for the daily schedule;
+# a longer window is useful for a first run. LinkedIn has no 2-week option and Indeed no
+# 1-month option: those sites search wider and older jobs are filtered after import.
+posted_within_days = 1
 max_results = 50           # per Apify run (LinkedIn: per term and location). Caps cost.
 # max_cost_usd = 1.00      # optional hard cap per Apify run, in USD
 

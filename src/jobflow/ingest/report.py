@@ -5,7 +5,7 @@ import json
 from itertools import groupby
 
 from . import options as opt
-from .searches import PlannedRun, local_filters
+from .searches import POSTED_WITHIN, WINDOW_NAMES, PlannedRun, local_filters
 
 
 def print_plan(runs: list[PlannedRun], show_json: bool = False) -> None:
@@ -23,8 +23,8 @@ def print_plan(runs: list[PlannedRun], show_json: bool = False) -> None:
                 print(f"    - {run.label}")
                 if show_json:
                     print("      " + json.dumps(run.run_input, ensure_ascii=False))
-            for note in dict.fromkeys(site_runs[0].skipped):
-                print(f"    skipped: {note}")
+            for note in dict.fromkeys(site_runs[0].notes):
+                print(f"    note: {note}")
     print(f"\n{len(runs)} Apify run(s), at most {total_results} results in total. "
           "Actors charge per result; see each actor's pricing on apify.com.")
 
@@ -45,6 +45,12 @@ def print_options(topic: str | None = None) -> None:
     print(f"job_types:         {', '.join(opt.JOB_TYPES)}")
     print(f"work_arrangements: {', '.join(opt.WORK_ARRANGEMENTS)}")
     print(f"salary_period:     {', '.join(opt.SALARY_PERIODS)}")
+    print(f"posted_within_days: {', '.join(f'{d} ({WINDOW_NAMES[d]})' for d in opt.POSTED_WITHIN_DAYS)}")
+    for site in opt.SITES:
+        missing = [WINDOW_NAMES[d] for d in opt.POSTED_WITHIN_DAYS if d not in POSTED_WITHIN[site][0]]
+        if missing:
+            print(f"  {site} has no {', '.join(missing)} option: a wider window is used and "
+                  "older jobs are filtered after import")
     print(f"sites:             {', '.join(opt.SITES)}")
     print(f"classifications:   Seek only, e.g. {', '.join(list(opt.SEEK_CLASSIFICATIONS)[:4])}"
           " (jobflow options classifications)")

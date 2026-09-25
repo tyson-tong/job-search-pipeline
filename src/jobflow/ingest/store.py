@@ -8,6 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import psycopg.types.json
 
+from .options import LINKEDIN_COUNTRIES
 from .sources import Posting, normalise
 
 JobFilter = Callable[[Posting], "str | None"]
@@ -21,6 +22,16 @@ COMPANY_NOISE = {"pty", "ltd", "limited", "inc", "llc", "co", "corp", "corporati
 # description word sets overlap at least this much (Jaccard similarity).
 SIMILAR_DESCRIPTION = 0.5
 FUZZY_WINDOW_DAYS = 90
+# Location words that don't identify a city: states, countries, and generic terms.
+NOT_PLACE_WORDS = ({"nsw", "vic", "qld", "tas", "act", "wa", "sa", "nt", "area", "greater",
+                    "metropolitan", "metro", "region", "remote", "hybrid", "onsite", "site",
+                    "cbd", "the", "and", "city", "state", "district", "province", "county",
+                    # Australian states and territories written out in full.
+                    "new", "south", "wales", "victoria", "queensland", "tasmania", "western",
+                    "northern", "territory", "capital", "australian",
+                    "england", "scotland"}
+                   | {word for name in LINKEDIN_COUNTRIES.values()
+                      for word in name.casefold().split()})
 
 
 def canonical_url(value: str | None) -> str | None:
@@ -72,6 +83,19 @@ def description_similarity(a: str | None, b: str | None) -> float:
     return len(words_a & words_b) / len(words_a | words_b)
 
 
+def place_words(location: str | None) -> set[str]:
+    """City and suburb words in a location, e.g. {"sydney"} for "Sydney NSW 2000"."""
+    return {w for w in re.findall(r"[a-z]{3,}", (location or "").casefold())
+            if w not in NOT_PLACE_WORDS}
+
+
+def same_place(a: str | None, b: str | None) -> bool:
+    """False only when both locations name places and none are shared (e.g. Sydney vs
+    Melbourne). Unknown or country-only locations never block a match."""
+    words_a, words_b = place_words(a), place_words(b)
+    return not words_a or not words_b or bool(words_a & words_b)
+
+
 def identity(posting: Posting) -> tuple[str, str | None]:
     url = canonical_url(posting.url)
     if posting.source_id:
@@ -83,16 +107,19 @@ def identity(posting: Posting) -> tuple[str, str | None]:
 
 
 def find_duplicate(conn, key: str, fp: str | None, mkey: str | None,
-                   description: str | None) -> tuple[int, bool] | None:
-    """Return (job id, same_source) for an existing copy of this posting, if any.
+                   description: str | None, location: str | None) -> tuple[int, bool] | None:
+    """Return (job id, is_first_copy) for an existing copy of this posting, if any.
 
-    Tried in order: same site ID/URL, exact content fingerprint, then the same
-    employer and title seen recently with a similar description (another site's
-    copy, or a repost).
+    is_first_copy is True when this is the copy the jobs row was created from.
+    Tried in order: this site's ID/URL on any known copy (job_sources), exact content
+    fingerprint, then the same employer and title seen recently in the same place with
+    a similar description (another site's copy, or a repost).
     """
-    row = conn.execute("SELECT id FROM jobs WHERE canonical_key=%s", (key,)).fetchone()
+    row = conn.execute("""SELECT s.job_id, j.canonical_key = s.source_key
+                          FROM job_sources s JOIN jobs j ON j.id = s.job_id
+                          WHERE s.source_key=%s""", (key,)).fetchone()
     if row:
-        return row[0], True
+        return row[0], row[1]
     if fp:
         row = conn.execute("SELECT id FROM jobs WHERE fingerprint=%s ORDER BY id LIMIT 1",
                            (fp,)).fetchone()
@@ -100,11 +127,12 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None,
             return row[0], False
     if mkey and description:
         candidates = conn.execute(
-            """SELECT id, description FROM jobs
+            """SELECT id, description, location FROM jobs
                WHERE match_key=%s AND first_seen_at > now() - make_interval(days => %s)
                ORDER BY first_seen_at DESC LIMIT 20""", (mkey, FUZZY_WINDOW_DAYS)).fetchall()
-        for job_pk, existing in candidates:
-            if description_similarity(description, existing) >= SIMILAR_DESCRIPTION:
+        for job_pk, existing, existing_location in candidates:
+            if same_place(location, existing_location) and \
+                    description_similarity(description, existing) >= SIMILAR_DESCRIPTION:
                 return job_pk, False
     return None
 
@@ -120,7 +148,7 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None)
     fp, mkey = fingerprint(posting), match_key(posting)
     description = posting.description or None
     raw = psycopg.types.json.Jsonb(item)
-    found = find_duplicate(conn, key, fp, mkey, description)
+    found = find_duplicate(conn, key, fp, mkey, description, posting.location)
     if found is None:
         reason = job_filter(posting) if job_filter else None
         job_pk = conn.execute(
@@ -133,9 +161,9 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None)
              posting.salary_min, posting.salary_max, "filtered" if reason else "new",
              reason)).fetchone()[0]
     else:
-        job_pk, same_source = found
-        # Another site's copy keeps the first site's record; its own copy is kept as
-        # an observation below. A longer description from any site is preferred.
+        job_pk, is_first_copy = found
+        # Another site's copy keeps the first site's record; its own copy is kept in
+        # job_sources and as an observation. A longer description from any site is preferred.
         conn.execute(
             """UPDATE jobs SET last_seen_at=now(),
                    raw_json=CASE WHEN %s THEN %s ELSE raw_json END,
@@ -149,13 +177,23 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None)
                    salary_min=coalesce(salary_min, %s),
                    salary_max=coalesce(salary_max, %s)
                WHERE id=%s""",
-            (same_source, raw, description, description, url, posting.posted_at, fp,
+            (is_first_copy, raw, description, description, url, posting.posted_at, fp,
              posting.source, mkey, posting.salary_min, posting.salary_max, job_pk))
+    record_source(conn, job_pk, key, posting, url)
     conn.execute(
         """INSERT INTO job_observations(job_id, scraper_run_id, observed_json)
            VALUES (%s,%s,%s) ON CONFLICT DO NOTHING""",
         (job_pk, run_pk, raw))
     return found is None
+
+
+def record_source(conn, job_pk: int, key: str, posting: Posting, url: str | None) -> None:
+    conn.execute(
+        """INSERT INTO job_sources(source_key, job_id, source, source_job_id, url)
+           VALUES (%s,%s,%s,%s,%s)
+           ON CONFLICT (source_key) DO UPDATE SET last_seen_at=now(),
+               url=coalesce(EXCLUDED.url, job_sources.url)""",
+        (key, job_pk, posting.source, posting.source_id, url))
 
 
 def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict], *,
@@ -198,6 +236,21 @@ def record_failed_run(actor_id: str, run_id: str | None, dataset_id: str | None,
             (actor_id, run_id, dataset_id, status, started_at, finished_at, error[:4000],
              cost_usd, search_name,
              psycopg.types.json.Jsonb(run_input) if run_input else None))
+
+
+def backfill_sources(conn) -> int:
+    """Record every earlier sighting's site copy in job_sources (run once, when the
+    table is created; the migration itself only knows each job's first copy)."""
+    rows = conn.execute("SELECT job_id, observed_json FROM job_observations").fetchall()
+    before = conn.execute("SELECT count(*) FROM job_sources").fetchone()[0]
+    for job_pk, raw in rows:
+        posting = normalise(raw or {})
+        key, url = identity(posting)
+        conn.execute(
+            """INSERT INTO job_sources(source_key, job_id, source, source_job_id, url)
+               VALUES (%s,%s,%s,%s,%s) ON CONFLICT (source_key) DO NOTHING""",
+            (key, job_pk, posting.source, posting.source_id, url))
+    return conn.execute("SELECT count(*) FROM job_sources").fetchone()[0] - before
 
 
 def backfill_keys(conn) -> int:

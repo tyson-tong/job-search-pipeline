@@ -19,6 +19,8 @@ ACTORS = {
 
 # --- Common vocabulary ---------------------------------------------------------------
 
+# posted_within_days: 24 hours, 1 week, 2 weeks, 1 month.
+POSTED_WITHIN_DAYS = (1, 7, 14, 30)
 JOB_TYPES = ("full-time", "part-time", "contract", "casual")
 WORK_ARRANGEMENTS = ("on-site", "hybrid", "remote")
 SALARY_PERIODS = ("annual", "monthly", "hourly")
@@ -244,9 +246,10 @@ LINKEDIN_COUNTRIES = {'US': 'United States',
  'ST': 'Sao Tome and Principe',
  'SC': 'Seychelles'}
 
-# datePosted enum, by the largest window in days each covers.
-LINKEDIN_DATE_POSTED = ((1, "past24Hours"), (7, "pastWeek"), (30, "pastMonth"))
-LINKEDIN_DATE_POSTED_ANY = "anyTime"
+# Search URL f_TPR values (seconds) for LinkedIn's own date filter: past 24 hours,
+# past week, past month. LinkedIn has no 2-week option.
+LINKEDIN_POSTED_WITHIN = {1: "r86400", 7: "r604800", 30: "r2592000"}
+LINKEDIN_POSTED_ANY_TIME = None  # no f_TPR parameter
 
 # How LinkedIn output reports job types and workplace types (lower-cased).
 LINKEDIN_JOB_TYPES = {"full-time": "full-time", "part-time": "part-time",
@@ -319,8 +322,9 @@ INDEED_COUNTRIES = {'AR': 'ar',
  'VE': 've',
  'VN': 'vn'}
 
-# postedWithinDays enum.
-INDEED_POSTED_WITHIN_DAYS = (1, 3, 7, 14)
+# postedWithinDays input (the actor also accepts 3). Indeed has no 1-month option.
+INDEED_POSTED_WITHIN = {1: "1", 7: "7", 14: "14"}
+INDEED_POSTED_ANY_TIME = ""
 
 # How Indeed output reports job types (jobTypes / attributes labels, lower-cased).
 INDEED_JOB_TYPES = {"full-time": "full-time", "part-time": "part-time",
@@ -344,7 +348,9 @@ SEEK_COUNTRIES = {'AU': 'australia',
  'TH': 'thailand'}
 
 SEEK_MAX_RESULTS = 550
-SEEK_MAX_DATE_RANGE = 365
+# dateRange input takes any number of days (up to 365), so every window is exact.
+SEEK_POSTED_WITHIN = {1: 1, 7: 7, 14: 14, 30: 30}
+SEEK_POSTED_ANY_TIME = 365
 
 SEEK_JOB_TYPES = {"full-time": "fulltime", "part-time": "parttime", "contract": "contract",
                   "casual": "casual"}

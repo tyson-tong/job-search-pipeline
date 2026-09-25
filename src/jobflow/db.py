@@ -28,23 +28,29 @@ def migration_files() -> list[tuple[str, str]]:
 
 
 def migrate() -> None:
-    from .ingest.store import backfill_keys
+    from .ingest.store import backfill_keys, backfill_sources
 
     with connect() as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
                             name TEXT PRIMARY KEY,
                             applied_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
         applied = {row[0] for row in conn.execute("SELECT name FROM schema_migrations")}
+        newly_applied = []
         for name, sql in migration_files():
             if name in applied:
                 continue
             with conn.transaction():
                 conn.execute(sql)
                 conn.execute("INSERT INTO schema_migrations(name) VALUES (%s)", (name,))
+            newly_applied.append(name)
             print(f"Applied migration {name}")
         filled = backfill_keys(conn)
         if filled:
             print(f"Backfilled duplicate-detection keys for {filled} jobs")
+        if "005_job_sources.sql" in newly_applied:
+            added = backfill_sources(conn)
+            if added:
+                print(f"Recorded {added} more site copies in job_sources")
 
 
 def fetch_job(job_id: int) -> dict:

@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import tomllib
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from itertools import product
 from urllib.parse import urlencode
 
@@ -51,7 +52,8 @@ class PlannedRun:
     search: Search
     label: str
     run_input: dict
-    skipped: list[str] = field(default_factory=list)
+    # Shown by `jobflow searches`: options this site can't apply, widened date windows.
+    notes: list[str] = field(default_factory=list)
 
 
 class SearchConfigError(RuntimeError):
@@ -108,9 +110,11 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     sites = _choices(f"{where} sites", merged.get("sites"), opt.SITES)
     if not sites:
         raise SearchConfigError(f"{where}: sites must list at least one of {list(opt.SITES)}")
-    days = int(merged.get("posted_within_days") or 0)
-    if days < 1:
-        raise SearchConfigError(f"{where}: posted_within_days must be at least 1")
+    days = merged.get("posted_within_days")
+    if days not in opt.POSTED_WITHIN_DAYS:
+        raise SearchConfigError(f"{where}: posted_within_days must be one of "
+                                f"{list(opt.POSTED_WITHIN_DAYS)} (24 hours, 1 week, 2 weeks, "
+                                f"1 month), not {days!r}")
     max_results = int(merged.get("max_results") or 0)
     if max_results < 1:
         raise SearchConfigError(f"{where}: max_results must be at least 1")
@@ -171,18 +175,35 @@ def load_searches() -> list[Search]:
 # --- Translation to actor inputs ------------------------------------------------------
 
 
-def _linkedin_date_filter(days: int) -> str | None:
-    """LinkedIn's f_TPR URL filter (seconds), which stays a real filter in AI search."""
-    return f"r{days * 86400}"
+POSTED_WITHIN = {"linkedin": (opt.LINKEDIN_POSTED_WITHIN, opt.LINKEDIN_POSTED_ANY_TIME),
+                 "indeed": (opt.INDEED_POSTED_WITHIN, opt.INDEED_POSTED_ANY_TIME),
+                 "seek": (opt.SEEK_POSTED_WITHIN, opt.SEEK_POSTED_ANY_TIME)}
+WINDOW_NAMES = {1: "24 hours", 7: "1 week", 14: "2 weeks", 30: "1 month"}
+
+
+def site_window(site: str, days: int) -> tuple[object, str | None]:
+    """The site's input value for a posted-date window, and a note if the site lacks
+    that window and a wider one is used instead (never narrower, so no jobs are missed).
+    """
+    windows, any_time = POSTED_WITHIN[site]
+    if days in windows:
+        return windows[days], None
+    wider = next((d for d in opt.POSTED_WITHIN_DAYS if d > days and d in windows), None)
+    used = WINDOW_NAMES[wider] if wider else "any time"
+    note = (f"posted within {WINDOW_NAMES[days]} isn't available here; searching {used} "
+            "and filtering older jobs after import")
+    return (windows[wider] if wider else any_time), note
 
 
 def linkedin_runs(search: Search) -> list[PlannedRun]:
+    window, window_note = site_window("linkedin", search.posted_within_days)
     urls = []
     for term, (country, city) in product(search.terms, search.places()):
         country_name = opt.LINKEDIN_COUNTRIES.get(country, country)
         params = {"keywords": term,
-                  "location": f"{city}, {country_name}" if city else country_name,
-                  "f_TPR": _linkedin_date_filter(search.posted_within_days)}
+                  "location": f"{city}, {country_name}" if city else country_name}
+        if window:
+            params["f_TPR"] = window
         if search.radius_km and city:
             params["distance"] = round(search.radius_km / 1.609)
         urls.append("https://www.linkedin.com/jobs/search/?" + urlencode(params))
@@ -190,38 +211,37 @@ def linkedin_runs(search: Search) -> list[PlannedRun]:
                        f"{len(urls)} search URL(s)",
                        {"urls": urls, "limitPerSource": search.max_results,
                         "scrapeCompany": False, "autoConvertToAiSearch": True},
-                       _skipped("linkedin", search))]
-
-
-def _indeed_posted(days: int) -> str:
-    return str(next((d for d in opt.INDEED_POSTED_WITHIN_DAYS if d >= days), ""))
+                       _notes("linkedin", search, window_note))]
 
 
 def indeed_runs(search: Search) -> list[PlannedRun]:
-    runs, skipped = [], _skipped("indeed", search)
+    window, window_note = site_window("indeed", search.posted_within_days)
+    runs, notes = [], _notes("indeed", search, window_note)
     for term, (country, city) in product(search.terms, search.places()):
         if country not in opt.INDEED_COUNTRIES:
-            skipped.append(f"country {country} (not on Indeed)")
+            notes.append(f"country {country} skipped (not on Indeed)")
             continue
         run_input = {"country": opt.INDEED_COUNTRIES[country], "query": term,
-                     "location": city or "", "postedWithinDays":
-                     _indeed_posted(search.posted_within_days), "count": search.max_results}
+                     "location": city or "", "postedWithinDays": window,
+                     "count": search.max_results}
         if search.radius_km and city:
             run_input["radiusKm"] = search.radius_km
         runs.append(PlannedRun("indeed", opt.ACTORS["indeed"], search,
-                               f"{term!r} in {city or country}", run_input, skipped))
+                               f"{term!r} in {city or country}", run_input, notes))
     return runs
 
 
 def seek_runs(search: Search) -> list[PlannedRun]:
-    runs, skipped = [], _skipped("seek", search)
+    window, window_note = site_window("seek", search.posted_within_days)
+    runs, notes = [], _notes("seek", search, window_note)
     for term, (country, city) in product(search.terms, search.places()):
         if country not in opt.SEEK_COUNTRIES:
-            skipped.append(f"country {country} (Seek covers {', '.join(opt.SEEK_COUNTRIES)})")
+            notes.append(f"country {country} skipped (Seek covers "
+                         f"{', '.join(opt.SEEK_COUNTRIES)})")
             continue
         run_input: dict = {
             "searchTerm": term, "country": opt.SEEK_COUNTRIES[country],
-            "dateRange": min(search.posted_within_days, opt.SEEK_MAX_DATE_RANGE),
+            "dateRange": window,
             "maxResults": min(search.max_results, opt.SEEK_MAX_RESULTS),
             "sortBy": "ListedDate"}
         if city:
@@ -242,14 +262,14 @@ def seek_runs(search: Search) -> list[PlannedRun]:
         for key in search.classifications:
             run_input[key] = True
         runs.append(PlannedRun("seek", opt.ACTORS["seek"], search,
-                               f"{term!r} in {city or country}", run_input, skipped))
+                               f"{term!r} in {city or country}", run_input, notes))
     return runs
 
 
-def _skipped(site: str, search: Search) -> list[str]:
-    notes = []
+def _notes(site: str, search: Search, window_note: str | None) -> list[str]:
+    notes = [window_note] if window_note else []
     if search.classifications and opt.FILTER_SUPPORT[site]["classifications"] == "unsupported":
-        notes.append("classifications (Seek only; use search terms instead)")
+        notes.append("classifications skipped (Seek only; use search terms instead)")
     return notes
 
 
@@ -283,16 +303,25 @@ def local_filters(site: str, search: Search) -> list[str]:
         active.append("job_types")
     if search.work_arrangements and support.get("work_arrangements") == "local":
         active.append("work_arrangements")
+    if site in POSTED_WITHIN and site_window(site, search.posted_within_days)[1]:
+        active.append("posted_date")
     return active
 
 
-def filter_reason(posting: Posting, search: Search, site: str) -> str | None:
+def filter_reason(posting: Posting, search: Search, site: str,
+                  today: date | None = None) -> str | None:
     """Why a job fails this search's local filters, or None to keep it.
 
-    Only known values can exclude a job: no salary, job type, or work arrangement
-    listed means the job is kept.
+    Only known values can exclude a job: no salary, job type, work arrangement, or
+    posted date listed means the job is kept.
     """
     active = local_filters(site, search)
+    if "posted_date" in active and posting.posted_at is not None:
+        # One day of slack: sites and time zones disagree on what "today" is.
+        oldest = (today or date.today()) - timedelta(days=search.posted_within_days + 1)
+        if posting.posted_at < oldest:
+            return (f"posted {posting.posted_at.isoformat()}, older than "
+                    f"{WINDOW_NAMES[search.posted_within_days]}")
     if "salary" in active and posting.salary_min is not None:
         factor = ANNUAL_FACTOR[search.salary_period]
         low = search.salary_min * factor if search.salary_min is not None else None

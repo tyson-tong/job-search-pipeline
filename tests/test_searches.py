@@ -29,7 +29,7 @@ name = "counsel"
 terms = "legal counsel"
 sites = ["seek"]
 locations = { AU = [] }
-posted_within_days = 5
+posted_within_days = 30
 """
 
 
@@ -40,7 +40,7 @@ def searches():
 def test_defaults_are_inherited_and_overridden():
     analyst, counsel = searches()
     assert analyst.sites == ("linkedin", "indeed", "seek")
-    assert analyst.max_results == 40 and counsel.posted_within_days == 5
+    assert analyst.max_results == 40 and counsel.posted_within_days == 30
     assert analyst.places() == [("AU", "Sydney"), ("AU", "Melbourne"), ("NZ", None),
                                 ("US", "Austin")]
 
@@ -51,6 +51,7 @@ def test_defaults_are_inherited_and_overridden():
     ("keywords = 'x'", "unknown setting"),  # a typo'd setting must not be silently ignored
     ('locations = ["Sydney"]', "locations must map"),
     ("sites = []", "at least one"),  # an empty list would silently run nothing
+    ("posted_within_days = 3", "must be one of \\[1, 7, 14, 30\\]"),
 ])
 def test_invalid_config_is_rejected(bad, message):
     base = '[[search]]\nname = "x"\nterms = ["a"]\n'
@@ -71,21 +72,35 @@ def test_linkedin_is_one_run_with_a_url_per_term_and_place():
     assert parse_qs(urlsplit(urls[2]).query)["location"] == ["New Zealand"]
 
 
-def test_indeed_runs_per_term_and_place_with_rounded_date_window():
+
+def test_indeed_runs_per_term_and_place():
     runs = plan(searches(), "analyst", "indeed")
     assert len(runs) == 8
     assert runs[0].run_input == {"country": "au", "query": "data analyst", "location": "Sydney",
                                  "postedWithinDays": "1", "count": 40, "radiusKm": 20}
     assert runs[2].run_input["location"] == "" and runs[2].run_input["country"] == "nz"
-    # Indeed only accepts 1, 3, 7, or 14 days; 5 must widen to 7, not narrow to 3.
-    counsel = parse_config(CONFIG.replace('sites = ["seek"]', 'sites = ["indeed"]'))
-    assert plan(counsel, "counsel")[0].run_input["postedWithinDays"] == "7"
+
+
+@pytest.mark.parametrize("days, linkedin, indeed, seek", [
+    (1, "r86400", "1", 1),
+    (7, "r604800", "7", 7),
+    (14, "r2592000", "14", 14),   # LinkedIn has no 2 weeks: widened to its month
+    (30, "r2592000", "", 30),     # Indeed has no month: widened to any time
+])
+def test_posted_windows_are_never_narrowed(days, linkedin, indeed, seek):
+    config = CONFIG.replace("posted_within_days = 1", f"posted_within_days = {days}")
+    runs = {r.site: r for r in plan(parse_config(config), "analyst")}
+    assert parse_qs(urlsplit(runs["linkedin"].run_input["urls"][0]).query)["f_TPR"] == [linkedin]
+    assert runs["indeed"].run_input["postedWithinDays"] == indeed
+    assert runs["seek"].run_input["dateRange"] == seek
+    widened = {site for site, run in runs.items() if any("isn't available" in n for n in run.notes)}
+    assert widened == {1: set(), 7: set(), 14: {"linkedin"}, 30: {"indeed"}}[days]
 
 
 def test_seek_uses_native_filters_and_skips_unsupported_countries():
     runs = plan(searches(), "analyst", "seek")
     assert len(runs) == 6  # US is not on Seek
-    assert any("country US" in note for note in runs[0].skipped)
+    assert any("country US" in note for note in runs[0].notes)
     sydney = runs[0].run_input
     assert (sydney["country"], sydney["location"]) == ("australia", "Sydney")
     assert sydney["workTypes"] == ["fulltime", "contract"]
@@ -121,6 +136,20 @@ def test_local_salary_filter():
     hourly = normalise({"viewJobLink": "/viewjob?jk=1", "title": "Data Analyst",
                         "salary": {"min": 60, "max": 70, "type": "HOUR"}})
     assert filter_reason(hourly, analyst, "indeed") is None  # ~118k-138k a year
+
+
+def test_widened_window_drops_older_jobs_after_import():
+    from datetime import date
+    two_weeks = parse_config(CONFIG.replace("posted_within_days = 1", "posted_within_days = 14"))[0]
+    today = date(2026, 9, 26)
+    old = _linkedin(postedAt="2026-09-01")      # 25 days old: inside LinkedIn's month, not 2 weeks
+    recent = _linkedin(postedAt="2026-09-20")
+    assert "older than 2 weeks" in filter_reason(old, two_weeks, "linkedin", today)
+    assert filter_reason(recent, two_weeks, "linkedin", today) is None
+    assert filter_reason(_linkedin(), two_weeks, "linkedin", today) is None  # no date: kept
+    # Indeed has an exact 2-week window, so its results aren't re-checked.
+    assert filter_reason(normalise({"viewJobLink": "/viewjob?jk=1", "title": "Data Analyst",
+                                    "pubDate": "2026-09-01"}), two_weeks, "indeed", today) is None
 
 
 def test_local_job_type_and_arrangement_filters():

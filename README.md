@@ -143,7 +143,8 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `work_arrangements` | `["hybrid", "remote"]` | on-site, hybrid, remote |
    | `classifications` | `["information-communication-technology"]` | Seek only; `jobflow options classifications` |
    | `sites` | `["seek", "linkedin"]` | Which job sites to search; see below |
-   | `posted_within_days`, `max_results`, `max_cost_usd`, `radius_km` | `1`, `30`, `0.50`, `25` | Usually set once under `[defaults]` |
+   | `posted_within_days` | `1` | 1 (24 hours), 7 (1 week), 14 (2 weeks), or 30 (1 month); see below |
+   | `max_results`, `max_cost_usd`, `radius_km` | `30`, `0.50`, `25` | Usually set once under `[defaults]` |
 
    **Choosing job sites.** Use any combination of `linkedin`, `indeed`, and `seek`. Set `sites` under `[defaults]` for all searches, and override it in a search that needs different sites. If `sites` is left out everywhere, all three are used. For example, to use only Seek and Indeed, except LinkedIn too for one search:
 
@@ -159,6 +160,16 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
    A site you don't list is never called, so it costs nothing. You don't need an account per site; all three scrapers run on your one Apify account. To try a single site once without editing the file, use `jobflow ingest --site seek`.
 
+   **Posted-date window.** Use `1` for the daily schedule; a longer window suits a first run. Not every site offers every window:
+
+   | | LinkedIn | Indeed | Seek |
+   |---|---|---|---|
+   | 24 hours, 1 week | ✓ | ✓ | ✓ |
+   | 2 weeks | uses 1 month | ✓ | ✓ |
+   | 1 month | ✓ | uses any time | ✓ |
+
+   A site without your window searches the next wider one, so no jobs are missed, and jobs posted before your window are marked `filtered` after import. `jobflow searches` notes when this happens. You still pay Apify for those extra results.
+
    The three sites don't support the same filters, so each is translated to what the site can do:
 
    | | LinkedIn | Indeed | Seek |
@@ -171,7 +182,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
    Check the result with `jobflow searches`: it validates every value (listing the allowed ones if something is wrong) and shows each Apify run, without running anything. Add `--json` to see the exact input each actor receives. All option values are constants in `src/jobflow/ingest/options.py`.
 
-   Cost: LinkedIn makes one run per search, with a result cap per term and location; Indeed and Seek make one run per term and location. The actors charge per result, so keep `posted_within_days = 1` for a daily schedule and set `max_results`. Each run's actual cost is recorded in `scraper_runs.cost_usd`.
+   Cost: LinkedIn makes one run per search, with a result cap per term and location; Indeed and Seek make one run per term and location. The actors charge per result, including jobs you already have, so keep `posted_within_days = 1` for a daily schedule and set `max_results`. Each run's actual cost is recorded in `scraper_runs.cost_usd`.
 
 7. **Schedule the daily import.** In your GitHub repository, open Settings → Secrets and variables → Actions and add:
    - Secret `DATABASE_URL`
@@ -183,11 +194,11 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 ## How it decides
 
 **Duplicates.** Each scraper's output is first converted to the same fields (`src/jobflow/ingest/sources.py`). A job then counts as already seen if any of these match, in order:
-1. Same site and job ID (or, for a posting without an ID, the same URL without tracking parameters).
+1. Same site and job ID (or, for a posting without an ID, the same URL without tracking parameters), checked against every site's copy seen so far, not just the first.
 2. Identical company, title, location, and description.
-3. Same employer and title, ignoring suffixes like "Pty Ltd", first seen in the last 90 days, with descriptions that share at least half their words. This catches the same job on LinkedIn, Indeed, and Seek, and reposts with a new ID.
+3. Same employer and title, ignoring suffixes like "Pty Ltd", in the same city, first seen in the last 90 days, with descriptions that share at least half their words. This catches the same job on LinkedIn, Indeed, and Seek, and reposts with a new ID. "Same city" only rules out a match when both postings name different places, such as Sydney and Melbourne; a missing or country-only location doesn't. Suburbs count as different places, so a Parramatta and a Sydney listing of one job may stay separate.
 
-The job keeps the first site's details (and the longest description), and every sighting is still recorded with the scraper run it came from.
+The job keeps the first site's details (and the longest description). Each site's copy, with its own ID and link, is kept in the `job_sources` table, so later sightings match by ID and you can open the job on any site it was listed on. Every sighting is also recorded with the scraper run it came from.
 
 **Match scores.** The LLM lists the job's requirements, marks each required or preferred, and labels it matched, partial, or not evidenced in each CV, with CV quotes. Every quote is checked against the CV file. A "matched" item whose quote isn't found becomes "partial", and a "partial" one becomes "not evidenced". "Not evidenced" means the CV doesn't show it, not that you lack it. The score is calculated, not asked of the LLM: matched counts 1, partial 0.5, not evidenced 0, averaged within required and within preferred, then weighted by `required_weight` and `preferred_weight` in `profile.toml`. Use scores for ranking, not as a prediction.
 

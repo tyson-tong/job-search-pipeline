@@ -2,7 +2,7 @@ from datetime import date
 
 from jobflow.ingest.sources import normalise, to_date
 from jobflow.ingest.store import (canonical_url, description_similarity, fingerprint, identity,
-                                  match_key)
+                                  match_key, same_place)
 
 DESCRIPTION = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate "
                "reporting in Python for our finance and operations teams.")
@@ -76,3 +76,11 @@ def test_different_jobs_are_not_merged():
     assert description_similarity(normalise(LINKEDIN).description, other.description) < 0.5
     assert match_key(normalise({**SEEK, "title": "Senior Data Analyst"})) != match_key(normalise(SEEK))
     assert match_key(normalise({**SEEK, "advertiser": {}})) is None
+
+
+def test_same_role_in_different_cities_is_not_merged():
+    # The fuzzy step ignores location formatting, but not a different city.
+    assert same_place("Sydney NSW 2000", "Greater Sydney Area, New South Wales, Australia")
+    assert not same_place("Sydney, NSW", "Melbourne VIC")
+    # Unknown or country-only locations never block a match.
+    assert same_place(None, "Perth WA") and same_place("Singapore, Singapore", "Sydney NSW")
