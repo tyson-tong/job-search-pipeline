@@ -105,17 +105,3 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
                updated_at=now()""",
         (note_line, APPLIED_STATUSES, follow_up_on if set_follow_up else None, job_id,
          set_follow_up))
-
-
-def job_status(job_id: int, status: str | None = None, note: str | None = None) -> dict:
-    """Show a job's application status, optionally setting it and appending a note."""
-    with connect() as conn:
-        set_job_state(conn, job_id, status=status, note=note, via="cli")
-        row = conn.execute(
-            """SELECT j.id, j.title, j.company, j.status, j.status_updated_at,
-                      a.applied_at, a.notes, j.filter_reason
-               FROM jobs j LEFT JOIN applications a ON a.job_id = j.id
-               WHERE j.id=%s""", (job_id,)).fetchone()
-    keys = ("id", "title", "company", "status", "status_updated_at", "applied_at", "notes",
-            "filter_reason")
-    return dict(zip(keys, row))

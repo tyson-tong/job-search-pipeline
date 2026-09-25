@@ -189,7 +189,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <div class="card"><h3>Same site copy</h3>This site's ID (e.g. <code>seek:81234567</code>) is already in <code>job_sources</code>, or, for a posting without an ID, the same URL without tracking parameters.</div>
   <div class="card"><h3>Exact content</h3>Same fingerprint: a hash of company, title, location, and description. Catches exact reposts.</div>
   <div class="card"><h3>Same job on another site</h3>Same employer (ignoring "Pty Ltd" etc.) and title, same city when both name one, first seen in the last 90 days, and descriptions sharing at least half their words.</div>
-  <div class="card safety"><h3>Safety net: possible duplicates (never merged)</h3>The merge is strict, so a recruiter re-post under another name, a reworded title, or a suburb can stay separate. <code>jobflow web</code>, <code>jobflow status</code>, and <code>tailor-cv</code> compare against jobs from the last 180 days, ignoring employer and place (titles ≥ 60% alike, ads ≥ 40% alike), and warn if one is already applied, interviewing, offered, or accepted.</div>
+  <div class="card safety"><h3>Safety net: possible duplicates (never merged)</h3>The merge is strict, so a recruiter re-post under another name, a reworded title, or a suburb can stay separate. <code>jobflow web</code> and <code>tailor-cv</code> compare against jobs from the last 180 days, ignoring employer and place (titles ≥ 60% alike, ads ≥ 40% alike), and warn if one is already applied, interviewing, offered, or accepted.</div>
 </div>
 <p style="margin-top:14px">A merged job keeps the first site's details (and the longest description). Because status, notes, and scores belong to the job, marking it <code>applied</code> covers every site it was listed on:</p>
 <div class="example">jobs              id 42   source linkedin   "Data Analyst"   Acme Pty Ltd
@@ -220,7 +220,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="tbl"><h3>applications</h3><p>Your progress on a job.</p><ul>
     <li><span class="k">job_id</span> → jobs</li><li>status, notes <span class="muted">dated</span></li><li>applied_at, follow_up_on, updated_at</li></ul></div>
   <div class="tbl"><h3>status_history</h3><p>Every status change.</p><ul>
-    <li>job_id → jobs</li><li>from_status, to_status</li><li>via <span class="muted">web / cli</span>, changed_at</li></ul></div>
+    <li>job_id → jobs</li><li>from_status, to_status</li><li>via, changed_at</li></ul></div>
   <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, interview-prep.</p><ul>
     <li>job_id → jobs, kind, status</li><li>model_name, started_at, finished_at</li></ul></div>
 </div>
@@ -272,7 +272,6 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><td><code>jobflow ingest</code></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
   <tr><td><code>jobflow import-json FILE</code></td><td>Import a scraper export</td><td>ingest/store.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track</td><td>web/, candidate/matching.py</td></tr>
-  <tr><td><code>jobflow status ID [STATUS]</code></td><td>Track an application; possible duplicates</td><td>db.py, ingest/store.py</td></tr>
   <tr><td><code>jobflow tailor-cv ID</code></td><td>Tailored, fact-checked CV draft</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow interview-prep ID</code></td><td>Interview briefing HTML</td><td>candidate/interview.py</td></tr>
 </table></div>

@@ -10,7 +10,6 @@ from pathlib import Path
 def main() -> None:
     from .settings import load_env
     load_env()
-    from .db import STATUSES
     from .ingest.options import SITES
 
     parser = argparse.ArgumentParser(prog="jobflow")
@@ -33,10 +32,6 @@ def main() -> None:
                          help="Show all countries per site, or all Seek classifications")
     load = sub.add_parser("import-json", help="Import an Apify JSON array from a file or stdin")
     load.add_argument("file", nargs="?", default="-")
-    status = sub.add_parser("status", help="Show or set a job's application status")
-    status.add_argument("job_id", type=int)
-    status.add_argument("status", nargs="?", choices=STATUSES)
-    status.add_argument("--note", help="Append a dated note, e.g. who you spoke to")
     tailor = sub.add_parser("tailor-cv", help="Draft a CV tailored to a job, with a fact check")
     tailor.add_argument("job_id", type=int)
     tailor.add_argument("--cv", help="CV variant name (the part after CV_ in the file name); "
@@ -99,18 +94,6 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         source = "stdin" if args.file == "-" else Path(args.file).name
         added = save_run(f"manual-import:{source}", f"manual-{uuid.uuid4()}", None, payload)
         print(f"Imported {len(payload)} items, {added} new jobs")
-    elif args.command == "status":
-        from .db import job_status
-        job = job_status(args.job_id, args.status, args.note)
-        print(f"{job['id']}\t{job['company'] or ''} — {job['title']}")
-        print(f"status: {job['status']} (since {job['status_updated_at']:%Y-%m-%d})"
-              + (f", applied {job['applied_at']:%Y-%m-%d}" if job["applied_at"] else ""))
-        if job["status"] == "filtered" and job["filter_reason"]:
-            print(f"filtered on import: {job['filter_reason']}")
-        if job["notes"]:
-            print("notes:\n" + "\n".join(f"  {line}" for line in job["notes"].splitlines()))
-        warn_possible_duplicates(args.job_id, about_to_apply=args.status in
-                                 ("interested", "applied"))
     elif args.command == "tailor-cv":
         from .candidate.tailoring import tailor_cv
         warn_possible_duplicates(args.job_id, about_to_apply=True)
