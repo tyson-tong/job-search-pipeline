@@ -63,3 +63,11 @@ def test_init_never_overwrites_personal_files_and_keeps_env_private(tmp_path):
     (config / ".env").unlink()
     init_files(tmp_path)
     assert stat.S_IMODE((config / ".env").stat().st_mode) == 0o600
+
+
+def test_job_artifacts_share_company_role_directory(tmp_path):
+    from jobflow.candidate.paths import job_directory
+
+    job = {"company": "Acme Research", "title": "Quant Analyst"}
+    assert job_directory(321, job, tmp_path) == (
+        tmp_path / "acme-research" / "quant-analyst-321")

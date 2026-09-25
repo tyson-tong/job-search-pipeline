@@ -11,9 +11,9 @@ import yaml
 
 from ..db import connect, fetch_job
 from ..llm import complete
-from ..settings import tailored_directory
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, cv_sources, normalise_text, slug
+from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, cv_sources, normalise_text
 from .matching import best_variant, match_job
+from .paths import job_directory
 
 IDENTITY_FIELDS = ("name", "email", "phone", "location", "website", "photo", "social_networks")
 FACT_FIELDS = ("company", "position", "institution", "area", "degree", "start_date",
@@ -150,7 +150,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
     errors, warnings = fact_check(source_doc["cv"], draft_cv)
     # Design, locale, and settings are copied from the source, never from the LLM.
     draft_doc = {key: (draft_cv if key == "cv" else value) for key, value in source_doc.items()}
-    target_dir = output_dir or (tailored_directory() / f"{job_id}-{slug(job['company'])}-{slug(job['title'])}")
+    target_dir = output_dir or job_directory(job_id, job)
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"CV_{variant}_draft.yaml"
     target.write_text(yaml.safe_dump(draft_doc, sort_keys=False, allow_unicode=True, width=1000))

@@ -13,8 +13,9 @@ import requests
 
 from ..db import connect, fetch_job
 from ..llm import complete
-from ..settings import interview_directory, timezone
-from .cvs import CV_CHAR_LIMIT, cv_sources, slug
+from ..settings import timezone
+from .cvs import CV_CHAR_LIMIT, cv_sources
+from .paths import job_directory
 
 
 AGENTS = {
@@ -162,7 +163,7 @@ def prepare(job_id: int, email: str | None = None, output: Path | None = None) -
     brief, model = complete("You are the final interview-brief editor. Synthesize the specialists' "
                             "notes, remove repetition, and preserve source links and uncertainty.",
                             json.dumps(synth_input, ensure_ascii=False))
-    target = output or (interview_directory() / f"{job_id}-{slug(job['company'])}-{slug(job['title'])}.html")
+    target = output or (job_directory(job_id, job) / "interview-prep.html")
     target.parent.mkdir(parents=True, exist_ok=True)
     source_items = "\n".join(
         f'<li><a href="{html.escape(s["url"], quote=True)}" rel="noreferrer">'

@@ -2,8 +2,7 @@
 # config/profile.toml is ignored by Git. Never put API credentials here.
 [paths]
 cv_directory = "/path/to/your/private/cv"
-tailored_directory = "../output/tailored-cvs"
-interview_directory = "../output/interviews"
+output_directory = "../output"
 # Job searches to run on Apify (copy config/searches.example.toml).
 searches_file = "./searches.toml"
 

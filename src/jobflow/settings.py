@@ -97,12 +97,8 @@ def cv_directory() -> Path:
     return configured_path("paths", "cv_directory", "../private/cv")
 
 
-def tailored_directory() -> Path:
-    return configured_path("paths", "tailored_directory", "../output/tailored-cvs")
-
-
-def interview_directory() -> Path:
-    return configured_path("paths", "interview_directory", "../output/interviews")
+def output_directory() -> Path:
+    return configured_path("paths", "output_directory", "../output")
 
 
 def searches_file() -> Path:

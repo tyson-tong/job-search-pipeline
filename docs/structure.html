@@ -252,7 +252,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><td>Apify token</td><td><code>config/.env</code> APIFY_TOKEN</td><td>secret APIFY_TOKEN</td></tr>
   <tr><td>Searches</td><td><code>config/searches.toml</code></td><td>variable JOBFLOW_SEARCHES (same text)</td></tr>
   <tr><td>LLM and Tavily keys</td><td><code>config/.env</code></td><td>not needed</td></tr>
-  <tr><td>CV folder, outputs, weights, timezone</td><td><code>config/profile.toml</code></td><td>not needed</td></tr>
+  <tr><td>CV folder, output root, weights, timezone</td><td><code>config/profile.toml</code></td><td>not needed</td></tr>
 </table></div>
 <p class="small muted" style="margin-top:8px"><code>jobflow init</code> creates <code>config/.env</code>, <code>config/profile.toml</code>, and <code>config/searches.toml</code> from the templates, never overwriting existing files.</p>
 <p class="small muted" style="margin-top:8px"><code>config/.env</code>, <code>config/profile.toml</code>, <code>config/searches.toml</code>, and <code>output/</code> are ignored by Git; the <code>.example</code> files show what goes in them.</p>

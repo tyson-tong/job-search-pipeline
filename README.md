@@ -51,7 +51,7 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
    jobflow tailor-cv 123 --cv dev     # or choose one: CV_dev.yaml is "dev"
    ```
 
-   Output goes to `output/tailored-cvs/123-company-title/`:
+   Output goes to `output/<company>/<role>-<job-id>/`:
    - `CV_<variant>_draft.yaml`: the draft.
    - `REVIEW_REQUIRED.md`: the automated fact check. Errors mean something factual changed, and the PDF is not rendered.
    - The rendered PDF, if RenderCV is installed and the check found no errors.
@@ -59,7 +59,7 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
    Before drafting, it lists any possible duplicates of the job and warns if one is already applied for. Read the draft line by line. After fixing it, render it from its folder, so RenderCV's output (a `rendercv_output/` folder by default) is created there:
 
    ```
-   cd output/tailored-cvs/<folder> && rendercv render CV_<variant>_draft.yaml
+   cd output/<company>/<role>-<job-id> && rendercv render CV_<variant>_draft.yaml
    ```
 
 6. **Prepare for an interview.**
@@ -70,7 +70,7 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
    pbpaste | jobflow interview-prep 123 --email-file -    # email from the clipboard (macOS)
    ```
 
-   Output is one HTML file in `output/interviews/`; open it in a browser. It covers the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps to prepare for, questions to ask, and a 30-minute checklist. With an email it also covers interview logistics. The email is used only for that run and is never saved.
+   Output is `interview-prep.html` directly in `output/<company>/<role>-<job-id>/`; open it in a browser. It covers the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps to prepare for, questions to ask, and a 30-minute checklist. With an email it also covers interview logistics. The email is used only for that run and is never saved.
 
 ## Commands
 
@@ -108,7 +108,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
    `init` creates `config/.env`, `config/profile.toml`, and `config/searches.toml` from the `.example` templates, with comments on what to fill in. It never overwrites a file that already exists, so it's safe to rerun. The personal files are ignored by Git, and `config/.env` is readable only by you.
 
-3. **Point it at your CVs.** In `config/profile.toml`, set `cv_directory` to the folder containing your RenderCV files. Keep that folder outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. `config/profile.toml` also sets where `config/searches.toml` lives, the output folders, the scoring weights, and your timezone.
+3. **Point it at your CVs.** In `config/profile.toml`, set `cv_directory` to the folder containing your RenderCV files. Keep that folder outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. `config/profile.toml` also sets where `config/searches.toml` lives, the shared output root, the scoring weights, and your timezone.
 
 4. **Add credentials.** In `config/.env`, fill in:
 
