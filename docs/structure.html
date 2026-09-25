@@ -119,7 +119,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="step"><b>Plan runs per site</b><span class="mod">ingest/searches.py · ingest/options.py</span>
       <div class="what">Validates values and translates each search into each actor's input. LinkedIn: one run per search; Indeed and Seek: one per term and location.</div></div>
     <div class="step"><b>Run Apify actors</b><span class="mod">ingest/apify.py</span>
-      <div class="what">Calls the LinkedIn, Indeed, and Seek scrapers with a result cap and optional cost cap. A failed run is recorded and the rest continue.</div></div>
+      <div class="what">Calls the LinkedIn, Indeed, and Seek scrapers at the same time (one run per site at a time), with a result cap and optional cost cap. Results are imported one run at a time. A failed run is recorded and the rest continue.</div></div>
     <div class="step"><b>Normalise</b><span class="mod">ingest/sources.py</span>
       <div class="what">Maps each scraper's fields to one shape: company, title, location, date, description, salary (annualised), job type, arrangement.</div></div>
     <div class="step"><b>Filter, dedupe, store</b><span class="mod">ingest/store.py</span>

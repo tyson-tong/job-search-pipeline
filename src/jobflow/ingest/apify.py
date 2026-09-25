@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from datetime import timedelta
 from decimal import Decimal
 from functools import partial
@@ -9,6 +10,10 @@ from functools import partial
 from apify_client import ApifyClient
 
 from .searches import PlannedRun, filter_reason, load_searches, plan
+
+# Sites run at the same time, but imports take turns: two sites' copies of one job saved
+# at once would each miss the other and never merge.
+_save_lock = threading.Lock()
 
 
 def make_client() -> ApifyClient:
@@ -42,10 +47,11 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
             raise RuntimeError(f"Apify run {run.id} ended with {run.status}{detail}")
         items = list(client.dataset(run.default_dataset_id).iterate_items(clean=True))
         job_filter = partial(filter_reason, search=planned.search, site=planned.site)
-        added = save_run(actor_id, run.id, run.default_dataset_id, items,
-                         started_at=run.started_at, finished_at=run.finished_at,
-                         cost_usd=run.usage_total_usd, search_name=planned.search.name,
-                         run_input=planned.run_input, job_filter=job_filter)
+        with _save_lock:
+            added = save_run(actor_id, run.id, run.default_dataset_id, items,
+                             started_at=run.started_at, finished_at=run.finished_at,
+                             cost_usd=run.usage_total_usd, search_name=planned.search.name,
+                             run_input=planned.run_input, job_filter=job_filter)
         cost = f", ${run.usage_total_usd:.2f}" if run.usage_total_usd is not None else ""
         print(f"{name}: {len(items)} items, {added} new jobs{cost}")
     except Exception as exc:
@@ -66,14 +72,30 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
     runs = plan(load_searches(), only_search, only_site)
     if not runs:
         raise RuntimeError("No runs to do: check the search's sites and countries")
-    client = make_client()
     max_wait = timedelta(minutes=float(os.environ.get("APIFY_MAX_WAIT_MINUTES") or 60))
-    failed = []
+    by_site: dict[str, list[PlannedRun]] = {}
     for planned in runs:
-        try:
-            run_search(client, planned, max_wait)
-        except Exception as exc:
-            failed.append(f"{planned.search.name}/{planned.site} {planned.label}")
-            print(f"{failed[-1]}: FAILED — {exc}", file=sys.stderr)
+        by_site.setdefault(planned.site, []).append(planned)
+    failed: list[str] = []
+
+    def run_site(client: ApifyClient, site_runs: list[PlannedRun]) -> None:
+        # One site's runs go one after another, so at most one Apify run per site.
+        for planned in site_runs:
+            try:
+                run_search(client, planned, max_wait)
+            except Exception as exc:
+                run_name = f"{planned.search.name}/{planned.site} {planned.label}"
+                failed.append(run_name)
+                print(f"{run_name}: FAILED — {exc}", file=sys.stderr)
+
+    # Daemon threads so Ctrl+C ends ingest at once instead of waiting up to max_wait for
+    # each site's Apify call; an interrupted import rolls back its transaction.
+    threads = [threading.Thread(target=run_site, args=(make_client(), site_runs),
+                                name=f"ingest-{site}", daemon=True)
+               for site, site_runs in by_site.items()]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
     if failed:
         raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed")
