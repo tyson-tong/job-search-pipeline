@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import date
 from importlib import resources
 
@@ -23,10 +24,27 @@ def connect():
 
 
 def migration_files() -> list[tuple[str, str]]:
-    """Return (name, sql) for each packaged migration, in filename order."""
+    """Return (file-scoped migration key, SQL) pairs in file and local-ID order."""
     folder = resources.files("jobflow") / "migrations"
-    return sorted((entry.name, entry.read_text()) for entry in folder.iterdir()
-                  if entry.name.endswith(".sql"))
+    migrations = []
+    for entry in folder.iterdir():
+        if not entry.name.endswith(".sql"):
+            continue
+        sql = entry.read_text()
+        headers = list(re.finditer(r"^-- Migration ID: (\d{2})\s*$", sql, re.MULTILINE))
+        if not headers:
+            raise RuntimeError(f"Migration file {entry.name} is missing a '-- Migration ID: 01' header")
+        ids = [header.group(1) for header in headers]
+        expected = [f"{number:02d}" for number in range(1, len(ids) + 1)]
+        if ids != expected:
+            raise RuntimeError(f"Migration IDs in {entry.name} must start at 01 and increase by one")
+        for index, header in enumerate(headers):
+            end = headers[index + 1].start() if index + 1 < len(headers) else len(sql)
+            statement = sql[header.end():end].strip()
+            if not statement:
+                raise RuntimeError(f"Migration {entry.name}:{ids[index]} has no SQL")
+            migrations.append((f"{entry.name}:{ids[index]}", statement))
+    return sorted(migrations)
 
 
 def migrate() -> None:
@@ -49,7 +67,7 @@ def migrate() -> None:
         filled = backfill_keys(conn)
         if filled:
             print(f"Backfilled duplicate-detection keys for {filled} jobs")
-        if "008_job_sources.sql" in newly_applied:
+        if "008_job_sources.sql:01" in newly_applied:
             added = backfill_sources(conn)
             if added:
                 print(f"Recorded {added} more site copies in job_sources")

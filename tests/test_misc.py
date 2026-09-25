@@ -5,7 +5,7 @@ from jobflow.candidate.interview import _safe_markup
 def test_migrations_ship_inside_the_package():
     # A non-editable install (as in GitHub Actions) must still find them.
     names = [name for name, _ in migration_files()]
-    assert names and names[0] == "001_scraper_runs.sql" and names == sorted(names)
+    assert names and names[0] == "001_scraper_runs.sql:01" and names == sorted(names)
 
 
 def test_briefing_markup_cannot_inject_html():
