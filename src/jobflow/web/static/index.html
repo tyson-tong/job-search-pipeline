@@ -174,7 +174,7 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
       <option value="salary_asc">Lowest salary (USD)</option>
       <option value="added">Recently added</option><option value="follow_up">Follow-up date</option>
     </select>
-    <button class="btn" id="score-btn" disabled>Score all interested jobs</button>
+    <button class="btn" id="score-btn" disabled>Score all jobs</button>
     <a class="btn" id="export" href="#">Export CSV</a>
     <span class="meta" id="shown"></span>
   </div>
@@ -587,8 +587,8 @@ function renderScoring() {
   const button = document.getElementById("score-btn"), chip = document.getElementById("scoring");
   const running = state.scoring && state.scoring.running;
   const { unscored, cv_count: cvs, scoring_problem: problem } = state.summary || {};
-  // Filtered jobs are never scored, so the button has no place there.
-  button.hidden = state.view === "filtered";
+  // Interested jobs, the only ones scored, live in My jobs: saving one moves it out of the Inbox.
+  button.hidden = state.view !== "jobs";
   button.disabled = running || !unscored;
   // Only a configuration problem needs explaining; the button is otherwise self-explanatory.
   button.title = problem ? `Scoring unavailable: ${problem}` : "";

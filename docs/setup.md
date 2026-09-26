@@ -88,7 +88,7 @@ Scoring, tailored CVs, and interview briefings use any OpenAI-compatible chat-co
 
 What each command sends: scoring and tailoring send job text and your CV text; interview prep also sends the invitation email if you give one. See the README's [Privacy](../README.md#privacy) section, and choose a provider whose data handling you accept.
 
-Check it: mark a job Interested, save, and click **Score all interested jobs** in the tracker. A configuration problem shows as an error instead of a score.
+Check it: mark a job Interested, save, and click **Score all jobs** in the tracker's My jobs tab. A configuration problem shows as an error instead of a score.
 
 ## 4. Tavily (web search)
 

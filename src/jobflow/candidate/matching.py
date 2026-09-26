@@ -114,6 +114,16 @@ def _cached_assessments(conn, job_id: int) -> dict[str, dict]:
     return cached
 
 
+def _has_assessment(conn, job_id: int) -> bool:
+    return conn.execute("SELECT EXISTS (SELECT 1 FROM match_assessments WHERE job_id=%s)",
+                        (job_id,)).fetchone()[0]
+
+
+def _stored(cached: dict[str, dict], weights: tuple[float, float]) -> list[dict]:
+    return [_record(variant, hit["cv_sha256"], hit["items"], hit["rationale"], hit["model"],
+                    weights) for variant, hit in cached.items()]
+
+
 def match_job(job_id: int) -> list[dict]:
     """Assess one job against every CV variant.
 
@@ -124,10 +134,13 @@ def match_job(job_id: int) -> list[dict]:
     weights = matching_weights()
     with connect() as conn:
         cached = _cached_assessments(conn, job_id)
+        scored = _has_assessment(conn, job_id)
         status = conn.execute("SELECT status FROM jobs WHERE id=%s", (job_id,)).fetchone()
     if cached:
-        return [_record(variant, hit["cv_sha256"], hit["items"], hit["rationale"],
-                        hit["model"], weights) for variant, hit in cached.items()]
+        return _stored(cached, weights)
+    if scored:
+        # Only assessments in an older format: still scored, so never scored again.
+        raise RuntimeError(f"Job {job_id} was scored by an earlier version; it isn't scored again")
     if not status:
         raise RuntimeError(f"No job with database id {job_id}")
     if status[0] != "interested":
@@ -158,6 +171,11 @@ def match_job(job_id: int) -> list[dict]:
     # Saved together, only once every CV is assessed: a job counts as scored as soon as it
     # has any assessment and is never scored again, so a failure part-way must save none.
     with connect() as conn:
+        # Another process (a second tracker, or tailor-cv) may have scored this job while
+        # the LLM calls ran. Lock the job and keep whichever scores were saved first.
+        conn.execute("SELECT 1 FROM jobs WHERE id=%s FOR UPDATE", (job_id,))
+        if _has_assessment(conn, job_id):
+            return _stored(_cached_assessments(conn, job_id), weights)
         for record in results:
             conn.execute(
                 """INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score,
