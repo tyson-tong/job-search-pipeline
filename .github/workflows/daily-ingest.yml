@@ -2,7 +2,7 @@ name: Daily job ingestion
 
 on:
   schedule:
-    - cron: "30 20 * * *" # 06:30 daily in Sydney standard time; 07:30 during daylight time.
+    - cron: "30 14 * * *" # 00:30 daily in Sydney standard time; 01:30 during daylight time.
   workflow_dispatch:
 
 permissions:

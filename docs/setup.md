@@ -121,7 +121,7 @@ The daily import runs in GitHub Actions, so it needs its own copy of two keys. I
 
 The LLM and Tavily keys stay on your machine; GitHub never needs them.
 
-Then open **Actions → "Daily job ingestion" → Run workflow** to test it once. After that it runs every day at 06:30 Sydney time (07:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. If a run fails, GitHub emails you, and the error is recorded in the database (`scraper_runs`).
+Then open **Actions → "Daily job ingestion" → Run workflow** to test it once. After that it runs every day at 00:30 Sydney time (01:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. If a run fails, GitHub emails you, and the error is recorded in the database (`scraper_runs`).
 
 ## If a key leaks
 

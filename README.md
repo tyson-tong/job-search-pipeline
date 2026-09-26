@@ -18,7 +18,7 @@ More: [your searches](docs/searches.md) · [rules](docs/rules.md) (duplicates, s
 
 Run commands from this folder with `uv run` (or activate `.venv` once with `. .venv/bin/activate` and drop the prefix).
 
-1. **Open the tracker:** `uv run jobflow web`. It runs on your machine only (http://127.0.0.1:8765); this morning's import has already brought in the new jobs.
+1. **Open the tracker:** `uv run jobflow web`. It runs on your machine only (http://127.0.0.1:8765); last night's import has already brought in the new jobs.
 
 2. **Triage the Inbox.** Mark each new job **Interested** or **Not interested**, one at a time or by ticking several rows (shift-click selects a range). Changes are drafts until you click **Save** (or press Ctrl+S). Interested jobs move to **My jobs**; Not interested jobs leave the tracker (they stay in the database), so undo a misclick before saving.
 
