@@ -6,17 +6,27 @@ import io
 from datetime import date, datetime, timedelta
 
 from ..db import CLOSED_STATUSES, STATUSES, connect, set_job_state
+from ..ingest.options import CURRENCIES, USD_PER_UNIT
 from ..ingest.store import IN_PROGRESS, possible_duplicate_map, possible_duplicates
 
 DEFAULT_STATUSES = ["interested", "applied", "interviewing", "offered", "accepted"]
 # Statuses a person can choose; "filtered" is only set by imports.
 EDITABLE_STATUSES = [s for s in STATUSES if s != "filtered"]
+# The date the Posted column shows: the posted date, else the date first seen.
+POSTED_DATE = "coalesce(j.posted_at, j.first_seen_at::date)"
 SORTS = {
     "score": "best.score DESC NULLS LAST, j.first_seen_at DESC",
-    "posted": "j.posted_at DESC NULLS LAST, j.first_seen_at DESC",
+    "posted": f"{POSTED_DATE} DESC, j.first_seen_at DESC",
+    "posted_asc": f"{POSTED_DATE} ASC, j.first_seen_at ASC",
+    # Salary in US dollars by the top of the range; jobs without one always come last.
+    "salary": "usd.salary_max DESC NULLS LAST, j.first_seen_at DESC",
+    "salary_asc": "usd.salary_max ASC NULLS LAST, j.first_seen_at DESC",
     "added": "j.first_seen_at DESC",
     "follow_up": "a.follow_up_on ASC NULLS LAST, j.first_seen_at DESC",
 }
+# Each country code with its currency's value in US dollars, for converting salaries in SQL.
+FX_CODES = list(CURRENCIES)
+FX_RATES = [USD_PER_UNIT[CURRENCIES[code]] for code in FX_CODES]
 STALE_AFTER = timedelta(days=21)
 MAX_NOTE = 2000
 # A job's tracking version: when its status, notes, or follow-up last changed (in
@@ -38,21 +48,35 @@ class Conflict(Exception):
         self.conflicts = conflicts
 
 
+def _number(params: dict[str, list[str]], key: str) -> float | None:
+    try:
+        return float((params.get(key) or [""])[0]) or None
+    except ValueError:
+        return None
+
+
+# The Posted column filter: at most this many days ago, or "older" than a month.
+POSTED_WITHIN = {"1": 1, "7": 7, "14": 14, "30": 30}
+POSTED_OLDER_THAN = 30
+
+
 def parse_filters(params: dict[str, list[str]]) -> dict:
-    """Query-string filters -> validated values (unknown values fall back to defaults)."""
+    """Query-string filters -> validated values (unknown or malformed values are ignored)."""
     statuses = [s for s in params.get("status", []) if s in STATUSES] or DEFAULT_STATUSES
     sort = (params.get("sort") or ["score"])[0]
-    try:
-        salary_min = float((params.get("salary_min") or [""])[0]) or None
-    except ValueError:
-        salary_min = None
+    posted = (params.get("posted") or [""])[0]
     try:
         limit = max(1, min(int((params.get("limit") or ["300"])[0]), 2000))
     except ValueError:
         limit = 300
     return {"statuses": statuses, "q": (params.get("q") or [""])[0].strip(),
             "site": (params.get("site") or [""])[0].strip(),
-            "sort": sort if sort in SORTS else "score", "salary_min": salary_min,
+            "sort": sort if sort in SORTS else "score",
+            # One filter per column of the job list.
+            "score_min": _number(params, "score_min"),
+            "posted": posted if posted in POSTED_WITHIN or posted == "older" else "",
+            # In US dollars a year, compared after converting each job's own currency.
+            "salary_min_usd": _number(params, "salary_min_usd"),
             "limit": limit}
 
 
@@ -66,9 +90,14 @@ def list_jobs(filters: dict) -> list[dict]:
                        (SELECT s.url FROM job_sources s WHERE s.job_id = j.id
                         ORDER BY s.first_seen_at LIMIT 1) AS url,
                        a.follow_up_on, a.applied_at, a.notes IS NOT NULL AS has_notes,
-                       j.filter_reason, {VERSION_SQL} AS version
+                       j.filter_reason, j.country, {VERSION_SQL} AS version
                 FROM jobs j
                 LEFT JOIN applications a ON a.job_id = j.id
+                -- The job's salary in US dollars; NULL when its country (so currency) is unknown.
+                LEFT JOIN LATERAL (
+                    SELECT j.salary_max * fx.rate AS salary_max
+                    FROM unnest(%(fx_codes)s::text[], %(fx_rates)s::numeric[]) AS fx(code, rate)
+                    WHERE fx.code = j.country) usd ON true
                 LEFT JOIN LATERAL (
                     SELECT latest.score, latest.cv_variant FROM (
                         SELECT DISTINCT ON (cv_variant) cv_variant, score
@@ -80,15 +109,28 @@ def list_jobs(filters: dict) -> list[dict]:
                        OR j.location ILIKE %(pattern)s)
                   AND (%(site)s = '' OR EXISTS (SELECT 1 FROM job_sources s
                                                WHERE s.job_id = j.id AND s.source = %(site)s))
-                  AND (%(salary_min)s::numeric IS NULL OR j.salary_max IS NULL
-                       OR j.salary_max >= %(salary_min)s::numeric)
+                  -- Jobs without a salary, or without a known currency, are always kept.
+                  AND (%(salary_min_usd)s::numeric IS NULL OR usd.salary_max IS NULL
+                       OR usd.salary_max >= %(salary_min_usd)s::numeric)
+                  AND (%(score_min)s::numeric IS NULL OR best.score >= %(score_min)s::numeric)
+                  -- The Posted column shows the posted date, else the date first seen.
+                  AND (%(within_days)s::int IS NULL OR coalesce(j.posted_at, j.first_seen_at::date)
+                       >= current_date - %(within_days)s::int)
+                  AND (%(older_than_days)s::int IS NULL OR coalesce(j.posted_at, j.first_seen_at::date)
+                       < current_date - %(older_than_days)s::int)
                 ORDER BY {SORTS[filters['sort']]}
                 LIMIT %(limit)s""",
-            {**filters, "pattern": f"%{filters['q']}%"}).fetchall()
+            {**filters, "pattern": f"%{filters['q']}%",
+             "fx_codes": FX_CODES, "fx_rates": FX_RATES,
+             "within_days": POSTED_WITHIN.get(filters["posted"]),
+             "older_than_days": POSTED_OLDER_THAN if filters["posted"] == "older" else None}
+        ).fetchall()
         keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
                 "salary_min", "salary_max", "score", "cv_variant", "sites", "url",
-                "follow_up_on", "applied_at", "has_notes", "filter_reason", "version")
+                "follow_up_on", "applied_at", "has_notes", "filter_reason", "country", "version")
         jobs = [dict(zip(keys, row)) for row in rows]
+        for job in jobs:
+            job["currency"] = CURRENCIES.get(job["country"])
         duplicates = possible_duplicate_map(conn, [job["id"] for job in jobs])
     today = date.today()
     for job in jobs:
@@ -183,15 +225,16 @@ def job_detail(job_id: int) -> dict | None:
         row = conn.execute(
             f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
                       j.status, j.salary_min, j.salary_max, j.description, j.filter_reason,
-                      a.notes, a.applied_at, a.follow_up_on, {VERSION_SQL} AS version
+                      a.notes, a.applied_at, a.follow_up_on, j.country, {VERSION_SQL} AS version
                FROM jobs j LEFT JOIN applications a ON a.job_id = j.id WHERE j.id=%s""",
             (job_id,)).fetchone()
         if not row:
             return None
         keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
                 "salary_min", "salary_max", "description", "filter_reason", "notes",
-                "applied_at", "follow_up_on", "version")
+                "applied_at", "follow_up_on", "country", "version")
         job = dict(zip(keys, row))
+        job["currency"] = CURRENCIES.get(job["country"])
         job["sources"] = [dict(zip(("source", "url", "first_seen_at"), r)) for r in conn.execute(
             """SELECT source, url, first_seen_at FROM job_sources WHERE job_id=%s
                ORDER BY first_seen_at""", (job_id,)).fetchall()]
@@ -304,7 +347,7 @@ def export_csv(filters: dict) -> str:
                                   ([j["id"] for j in jobs],)).fetchall())
     out = io.StringIO()
     columns = ["id", "status", "title", "company", "location", "score", "cv_variant",
-               "posted_at", "first_seen_at", "salary_min", "salary_max", "sites", "url",
+               "posted_at", "first_seen_at", "salary_min", "salary_max", "currency", "sites", "url",
                "applied_at", "follow_up_on", "notes"]
     writer = csv.writer(out)
     writer.writerow(columns)

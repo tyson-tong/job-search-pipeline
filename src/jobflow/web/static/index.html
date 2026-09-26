@@ -63,6 +63,14 @@ table { border-collapse: collapse; width: 100%; }
 th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); background: var(--panel); position: sticky; top: 0; }
 tr:last-child td { border-bottom: 0; }
+/* Column filters: a second heading row, not sticky, with compact inputs. */
+tr.col-filters th { position: static; padding-top: 0; text-transform: none; letter-spacing: 0; font-weight: normal; }
+tr.col-filters input, tr.col-filters select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--panel);
+  border-radius: 6px; padding: 3px 5px; font-size: 0.82rem; }
+tr.col-filters input[type=number] { min-width: 70px; }
+.sort-head { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; }
+.sort-head:hover { color: var(--accent); }
+.sort-head.on { color: var(--ink); }
 tr.dirty td { background: var(--dirty); }
 tr.dirty td:first-child { box-shadow: inset 3px 0 0 var(--dirty-line); }
 /* Similar jobs sit together: an orange bar marks similar jobs in one country, a blue one the
@@ -134,7 +142,6 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 .toast.error { background: var(--bad); color: #fff; }
 @media (max-width: 760px) {
   th.hide-sm, td.hide-sm { display: none; }
-  .filters input[type=search] { min-width: 0; max-width: none; flex: 1 1 100%; }
 }
 </style>
 </head>
@@ -161,12 +168,10 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
       <summary id="status-summary">Statuses</summary>
       <div class="menu" id="status-menu"></div>
     </details>
-    <input type="search" id="q" placeholder="Search title, company, location">
-    <select id="site"><option value="">All sites</option><option value="linkedin">LinkedIn</option>
-      <option value="indeed">Indeed</option><option value="seek">Seek</option></select>
-    <input type="number" id="salary" placeholder="Min salary / yr" min="0" step="5000" style="width:150px">
     <select id="sort">
       <option value="score">Best match first</option><option value="posted">Newest posted</option>
+      <option value="posted_asc">Oldest posted</option><option value="salary">Highest salary (USD)</option>
+      <option value="salary_asc">Lowest salary (USD)</option>
       <option value="added">Recently added</option><option value="follow_up">Follow-up date</option>
     </select>
     <button class="btn" id="score-btn" disabled>Score all interested jobs</button>
@@ -175,8 +180,20 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
   </div>
   <div class="bulk" id="bulk" hidden></div>
   <div class="table-wrap" id="jobs-table"><table>
-    <thead><tr><th class="sel" id="select-col"><input type="checkbox" id="select-all" aria-label="Select all shown jobs"></th><th>Match</th><th>Job</th><th class="hide-sm">Sites</th><th class="hide-sm">Posted</th>
-      <th class="hide-sm">Salary</th><th>Status</th><th class="hide-sm">Follow up</th></tr></thead>
+    <thead><tr><th class="sel" id="select-col"><input type="checkbox" id="select-all" aria-label="Select all shown jobs"></th><th>Match</th><th>Job</th><th class="hide-sm">Sites</th><th class="hide-sm"><button class="sort-head" data-sort="posted" title="Sort by posted date; click again to reverse">Posted</button></th>
+      <th class="hide-sm"><button class="sort-head" data-sort="salary" title="Sort by salary in US dollars; click again to reverse">Salary</button></th><th>Status</th><th class="hide-sm fu-col">Follow up</th></tr>
+    <tr class="col-filters"><th class="sel" id="select-col-filter"></th>
+      <th><input type="number" id="f-score" min="0" max="100" step="5" placeholder="Min" aria-label="Minimum match score"></th>
+      <th><input type="search" id="q" placeholder="Title, company, location" aria-label="Search title, company, location"></th>
+      <th class="hide-sm"><select id="site" aria-label="Site"><option value="">All</option><option value="linkedin">LinkedIn</option>
+        <option value="indeed">Indeed</option><option value="seek">Seek</option></select></th>
+      <th class="hide-sm"><select id="f-posted" aria-label="Posted" title="Posted at most this long ago (or more than a month ago)">
+        <option value="">Any</option><option value="1">1 day ago</option><option value="7">1 week ago</option>
+        <option value="14">2 weeks ago</option><option value="30">1 month ago</option><option value="older">&gt; 1 month ago</option></select></th>
+      <th class="hide-sm"><input type="number" id="salary" min="0" step="5000" placeholder="Min USD / yr"
+        aria-label="Minimum salary in US dollars per year"
+        title="Each job's salary is converted to US dollars. Jobs without a listed salary are always kept"></th>
+      <th></th><th class="hide-sm fu-col"></th></tr></thead>
     <tbody id="rows"></tbody>
   </table></div>
   <section id="searches-view" hidden></section>
@@ -223,10 +240,10 @@ function fill(node, children, replace = true) {
 const safeUrl = (url) => /^https?:\/\//i.test(url || "") ? url : null;
 const label = (status) => LABELS[status] || status;
 const fmtDate = (value) => value ? String(value).slice(0, 10) : "";
-function fmtSalary(min, max) {
+function fmtSalary(min, max, currency) {
   if (min == null) return "";
   const k = (n) => `${Math.round(n / 1000)}k`;
-  return (min === max ? k(min) : `${k(min)}–${k(max)}`) + " /yr";
+  return (min === max ? k(min) : `${k(min)}–${k(max)}`) + (currency ? ` ${currency}` : "") + " /yr";
 }
 function toast(message, isError = false) {
   const node = el("div", { className: "toast" + (isError ? " error" : ""), role: "status" }, message);
@@ -339,13 +356,16 @@ window.addEventListener("beforeunload", (event) => {
 // ---- Loading -------------------------------------------------------------------------
 const qInput = document.getElementById("q"), siteInput = document.getElementById("site"),
   salaryInput = document.getElementById("salary"), sortInput = document.getElementById("sort");
+// Column filters beyond the search, site, and minimum salary: [input, query parameter].
+const COLUMN_FILTERS = [["f-score", "score_min"], ["f-posted", "posted"]].map(([id, param]) => [document.getElementById(id), param]);
 function filterParams() {
   const params = new URLSearchParams();
   const statuses = state.view === "inbox" ? ["new"] : state.view === "filtered" ? ["filtered"] : [...state.statuses];
   statuses.forEach((s) => params.append("status", s));
   if (qInput.value.trim()) params.set("q", qInput.value.trim());
   if (siteInput.value) params.set("site", siteInput.value);
-  if (salaryInput.value) params.set("salary_min", salaryInput.value);
+  if (salaryInput.value) params.set("salary_min_usd", salaryInput.value);
+  COLUMN_FILTERS.forEach(([input, param]) => { if (input.value) params.set(param, input.value); });
   params.set("sort", sortInput.value);
   return params;
 }
@@ -437,7 +457,16 @@ function duplicateFlag(job) {
       `${n} ${level}`) : null;
   });
 }
+function renderSortHeads() {
+  document.querySelectorAll(".sort-head").forEach((head) => {
+    const sort = sortInput.value, desc = head.dataset.sort;
+    head.classList.toggle("on", sort === desc || sort === `${desc}_asc`);
+    head.textContent = head.textContent.replace(/ [▲▼]$/, "")
+      + (sort === desc ? " ▼" : sort === `${desc}_asc` ? " ▲" : "");
+  });
+}
 function renderRows() {
+  renderSortHeads();
   const body = document.getElementById("rows");
   const n = state.jobs.length;
   document.getElementById("shown").textContent = `${n} job${n === 1 ? "" : "s"}`;
@@ -447,8 +476,10 @@ function renderRows() {
   const shown = new Set(state.jobs.map((job) => job.id));
   state.selected.forEach((id) => { if (!selectable || !shown.has(id)) state.selected.delete(id); });
   renderBulk();
+  // New jobs have no follow-up yet, so the Inbox has no Follow up column.
+  document.querySelectorAll(".fu-col").forEach((cell) => { cell.hidden = inbox; });
   if (!n) {
-    fill(body, [el("tr", {}, el("td", { colspan: selectable ? 8 : 7, className: "empty" },
+    fill(body, [el("tr", {}, el("td", { colspan: 6 + (selectable ? 1 : 0) + (inbox ? 0 : 1), className: "empty" },
       inbox ? "Inbox is empty: no new jobs to review."
         : filtered ? "No filtered jobs." : "No jobs match these filters."))]);
     return;
@@ -496,9 +527,9 @@ function renderRows() {
           job.has_notes || current(job, "note") ? el("span", { className: "flag" }, "Notes") : null)),
       el("td", { className: "hide-sm" }, job.sites.map((s) => el("span", { className: "site" }, SITE_NAMES[s] || s))),
       el("td", { className: "hide-sm meta" }, fmtDate(job.posted_at) || fmtDate(job.first_seen_at)),
-      el("td", { className: "hide-sm meta" }, fmtSalary(job.salary_min, job.salary_max)),
+      el("td", { className: "hide-sm meta" }, fmtSalary(job.salary_min, job.salary_max, job.currency)),
       el("td", {}, statusCell),
-      el("td", { className: "hide-sm" }, el("input", { type: "date", "aria-label": "Follow-up date",
+      inbox ? null : el("td", { className: "hide-sm" }, el("input", { type: "date", "aria-label": "Follow-up date",
         value: current(job, "follow_up_on") ? fmtDate(current(job, "follow_up_on")) : "",
         onchange: (event) => setPending(job, "follow_up_on", event.target.value) })));
   })]);
@@ -531,6 +562,7 @@ function renderBulk() {
   const inbox = state.view === "inbox", filtered = state.view === "filtered";
   const selectable = inbox || filtered, n = state.selected.size, total = state.jobs.length;
   document.getElementById("select-col").hidden = !selectable;
+  document.getElementById("select-col-filter").hidden = !selectable;
   const all = document.getElementById("select-all");
   all.checked = selectable && total > 0 && n === total;
   all.indeterminate = n > 0 && n < total;
@@ -707,7 +739,7 @@ function renderDetail() {
   fill(drawer, [
     el("button", { className: "close", "aria-label": "Close", onclick: closeDetail }, "×"),
     el("h2", {}, job.title),
-    el("div", { className: "meta" }, [job.company, job.location, fmtSalary(job.salary_min, job.salary_max)]
+    el("div", { className: "meta" }, [job.company, job.location, fmtSalary(job.salary_min, job.salary_max, job.currency)]
       .filter(Boolean).join(" · ")),
     el("div", { className: "meta" }, `Posted ${fmtDate(job.posted_at) || "unknown"} · added ${fmtDate(job.first_seen_at)}`
       + (job.applied_at ? ` · applied ${fmtDate(job.applied_at)}` : "")),
@@ -783,8 +815,16 @@ document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click",
 let searchTimer;
 qInput.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(refresh, 250); });
 salaryInput.addEventListener("change", refresh);
+COLUMN_FILTERS.forEach(([input]) => input.addEventListener("change", refresh));
 siteInput.addEventListener("change", () => { remember(); refresh(); });
 sortInput.addEventListener("change", () => { remember(); refresh(); });
+// Clicking the Posted or Salary heading sorts by it (newest or highest first); clicking the
+// same heading again reverses the order.
+document.querySelectorAll(".sort-head").forEach((head) => head.addEventListener("click", () => {
+  const desc = head.dataset.sort, asc = `${desc}_asc`;
+  sortInput.value = sortInput.value === desc ? asc : desc;
+  remember(); refresh();
+}));
 document.getElementById("save").addEventListener("click", () => save());
 document.getElementById("discard").addEventListener("click", () => {
   if (confirm("Discard all unsaved changes?")) {
