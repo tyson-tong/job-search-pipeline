@@ -23,12 +23,15 @@ COMPANY_NOISE = {"pty", "ltd", "limited", "inc", "llc", "co", "corp", "corporati
 # description word sets overlap at least this much (Jaccard similarity).
 SIMILAR_DESCRIPTION = 0.5
 FUZZY_WINDOW_DAYS = 90
-# Possible duplicates the merge didn't catch, e.g. a recruiter re-posting an employer's
+# Similar jobs (possible duplicates the merge didn't catch), e.g. a recruiter re-posting an employer's
 # ad under its own name. Only reported, never merged, so the bar is lower and employer
 # and city are ignored.
 POSSIBLE_TITLE = 0.6
 POSSIBLE_DESCRIPTION = 0.4
 POSSIBLE_WINDOW_DAYS = 180
+# Similar jobs (titles at least POSSIBLE_TITLE alike) whose ads are at least this alike
+# are shown as "highly similar"; the rest as "similar".
+HIGHLY_SIMILAR = 0.8
 IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
 # Ads at least this alike under the same title are the same job even when the sites spell
 # the employer or place differently, e.g. "Shenwan Hongyuan (H.K.)" on LinkedIn and
@@ -147,6 +150,12 @@ def looks_like_same_role(title_a: str | None, description_a: str | None,
     return similarity if similarity >= POSSIBLE_DESCRIPTION else None
 
 
+def similarity_level(title: float, description: float) -> str:
+    """How the tracker and tailor-cv describe a pair of similar jobs."""
+    return ("highly similar" if title >= POSSIBLE_TITLE and description >= HIGHLY_SIMILAR
+            else "similar")
+
+
 def possible_duplicates(job_id: int, limit: int = 5,
                         other_countries: bool = False) -> list[dict]:
     """Other jobs in the same country that may be the same role as this one but weren't
@@ -183,14 +192,19 @@ def possible_duplicates(job_id: int, limit: int = 5,
             continue
         similarity = looks_like_same_role(title, description, other_title, other_description)
         if similarity is not None:
+            titles = title_similarity(title, other_title)
             matches.append({"id": pk, "title": other_title, "company": company,
                             "location": location, "status": status, "url": url,
-                            "country": other_country, "similarity": similarity})
-    return sorted(matches, key=lambda m: m["similarity"], reverse=True)[:limit]
+                            "country": other_country, "similarity": similarity,
+                            "title_similarity": titles,
+                            "level": similarity_level(titles, similarity)})
+    return sorted(matches, key=lambda m: (m["level"] == "highly similar", m["similarity"]),
+                  reverse=True)[:limit]
 
 
 def possible_duplicate_map(conn, job_ids: list[int]) -> dict[int, list[dict]]:
-    """Similar ads for many jobs at once: {job id: [{id, status, country, same_country}]},
+    """Similar ads for many jobs at once: {job id: [{id, status, country, same_country,
+    level}]},
     using two queries in total (titles first, then descriptions only for close titles).
     Only same_country matches are possible duplicates; the others are one role advertised
     in several countries."""
@@ -206,12 +220,14 @@ def possible_duplicate_map(conn, job_ids: list[int]) -> dict[int, list[dict]]:
         for word in _normalise(title).split():
             if len(word) > 3:
                 by_word.setdefault(word, set()).add(pk)
-    pairs = set()
+    pairs: dict[tuple[int, int], float] = {}
     for pk in job_ids:
         words = [w for w in _normalise(titles.get(pk)).split() if len(w) > 3]
         candidates = set().union(*(by_word.get(w, set()) for w in words)) - {pk}
-        pairs.update((pk, other) for other in candidates
-                     if title_similarity(titles[pk], titles[other]) >= POSSIBLE_TITLE)
+        for other in candidates:
+            similarity = title_similarity(titles[pk], titles[other])
+            if similarity >= POSSIBLE_TITLE:
+                pairs[(pk, other)] = similarity
     if not pairs:
         return {}
     needed = sorted({pk for pair in pairs for pk in pair})
@@ -219,11 +235,13 @@ def possible_duplicate_map(conn, job_ids: list[int]) -> dict[int, list[dict]]:
                conn.execute("SELECT id, description, status, country FROM jobs WHERE id = ANY(%s)",
                             (needed,)).fetchall()}
     found: dict[int, list[dict]] = {}
-    for pk, other in sorted(pairs):
-        if description_similarity(details[pk][0], details[other][0]) >= POSSIBLE_DESCRIPTION:
+    for (pk, other), titles_alike in sorted(pairs.items()):
+        ads_alike = description_similarity(details[pk][0], details[other][0])
+        if ads_alike >= POSSIBLE_DESCRIPTION:
             found.setdefault(pk, []).append({
                 "id": other, "status": details[other][1], "country": details[other][2],
-                "same_country": same_country(details[pk][2], details[other][2])})
+                "same_country": same_country(details[pk][2], details[other][2]),
+                "level": similarity_level(titles_alike, ads_alike)})
     return found
 
 

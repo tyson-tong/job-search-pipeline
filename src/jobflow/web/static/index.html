@@ -65,7 +65,7 @@ th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; colo
 tr:last-child td { border-bottom: 0; }
 tr.dirty td { background: var(--dirty); }
 tr.dirty td:first-child { box-shadow: inset 3px 0 0 var(--dirty-line); }
-/* Similar jobs sit together: an orange bar marks possible duplicates, a blue one the
+/* Similar jobs sit together: an orange bar marks similar jobs in one country, a blue one the
    same ad in another country, with a line above each set. */
 tr.abroad td:first-child { border-left: 4px solid var(--accent); }
 tr.grouped td:first-child { border-left: 4px solid var(--warn); }
@@ -428,11 +428,12 @@ function duplicateFlag(job) {
     return el("span", { className: "flag bad", title: "A similar job is already in progress" },
       `Same role as #${started.id} (${label(started.status).toLowerCase()})?`);
   }
-  if (job.duplicates.length) {
-    return el("span", { className: "flag warn", title: "Similar title and ad text; open for details" },
-      `${job.duplicates.length} possible duplicate${job.duplicates.length > 1 ? "s" : ""}`);
-  }
-  return null;
+  // Highly similar: titles at least 60% and ads at least 80% alike; similar: the rest.
+  return ["highly similar", "similar"].map((level) => {
+    const n = job.duplicates.filter((d) => d.level === level).length;
+    return n ? el("span", { className: "flag warn", title: "Similar title and ad text; open for details" },
+      `${n} ${level}`) : null;
+  });
 }
 function renderRows() {
   const body = document.getElementById("rows");
@@ -464,7 +465,7 @@ function renderRows() {
     const areaStart = abroad && (index === 0 || state.jobs[index - 1].area !== job.area);
     return el("tr", { className: [state.pending.has(job.id) ? "dirty" : "", grouped ? "grouped" : "",
       groupStart ? "group-start" : "", abroad ? "abroad" : "", areaStart ? "area-start" : ""].filter(Boolean).join(" "),
-      title: grouped ? "Possible duplicates of each other, shown together"
+      title: grouped ? "Similar jobs, shown together"
         : abroad ? "The same ad in another country, shown together" : null },
       inbox ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
         el("input", { type: "checkbox", checked: state.selected.has(job.id), "aria-label": `Select ${job.title}` })) : null,
@@ -476,7 +477,7 @@ function renderRows() {
         el("div", { className: "meta" }, [job.company, job.location].filter(Boolean).join(" · ")),
         el("div", { className: "flags" },
           duplicateFlag(job),
-          job.elsewhere.length ? el("span", { className: "flag", title: "The same role advertised in another country; shown alongside, not a duplicate" },
+          job.elsewhere.length ? el("span", { className: "flag", title: "The same role advertised in another country; shown alongside" },
             `Same ad in ${[...new Set(job.elsewhere.map((d) => d.country || "another country"))].join(", ")}`) : null,
           job.overdue ? el("span", { className: "flag warn" }, "Follow-up overdue") : null,
           job.stale ? el("span", { className: "flag" }, "Applied 3+ weeks ago") : null,
@@ -725,8 +726,9 @@ function renderDetail() {
        [`uv run jobflow interview-prep ${job.id} --email-file invite.txt`, "Interview briefing"]].map(([command, what]) =>
         el("div", { className: "cmd" }, el("span", { className: "meta", style: "min-width:120px" }, what),
           el("code", {}, command), el("button", { className: "btn small", onclick: () => copyCommand(command) }, "Copy")))),
-    similarList("Possible duplicates", job.duplicates),
-    similarList("Same ad in other countries (not duplicates)", job.elsewhere),
+    similarList("Highly similar jobs", job.duplicates.filter((d) => d.level === "highly similar")),
+    similarList("Similar jobs", job.duplicates.filter((d) => d.level !== "highly similar")),
+    similarList("Same ad in other countries", job.elsewhere),
     job.history.length ? [el("h3", {}, "Status history"),
       el("ul", { className: "history" }, job.history.map((h) => el("li", { className: "meta" },
         `${fmtDate(h.changed_at)}: ${label(h.from_status || "new")} → ${label(h.to_status)} (${h.via})`)))] : null,
@@ -742,7 +744,7 @@ function similarList(title, jobs) {
     el("ul", { className: "dups" }, jobs.map((d) => el("li", {},
       el("button", { className: "title-btn", onclick: () => openDetail(d.id) }, `#${d.id} ${d.title}`),
       el("span", { className: "meta" }, ` — ${[d.company, d.location].filter(Boolean).join(", ")}, `
-        + `${label(d.status)}, ${Math.round(d.similarity * 100)}% same text`))))] : null;
+        + `${label(d.status)}, title ${Math.round(d.title_similarity * 100)}% and ad ${Math.round(d.similarity * 100)}% alike`))))] : null;
 }
 function renderMatch(m) {
   const items = (title, list, withQuotes) => list.length ? [el("div", { className: "meta", style: "margin-top:6px" }, title),

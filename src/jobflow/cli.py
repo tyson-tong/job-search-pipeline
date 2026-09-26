@@ -53,9 +53,9 @@ def warn_possible_duplicates(job_id: int, about_to_apply: bool) -> None:
     if started and about_to_apply:
         print(f"WARNING: this may be the same role as job {started[0]['id']}, which is "
               f"already {started[0]['status']}.")
-    print("possible duplicates (similar title and ad text; not merged):")
+    print("similar jobs (similar title and ad text; not merged):")
     for m in matches:
-        print(f"  {m['id']}\t{m['status']}\t{m['company'] or ''} — {m['title']}"
+        print(f"  {m['id']}\t{m['level']}\t{m['status']}\t{m['company'] or ''} — {m['title']}"
               f" ({m['location'] or 'no location'}), {m['similarity']:.0%} same text"
               + (f"\n\t{m['url']}" if m["url"] else ""))
 
