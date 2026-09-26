@@ -158,7 +158,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `exclude_title_terms` | `["Internship", "Fresh Grad", "Graduate"]` | Jobs whose title contains any of these words are stored as `filtered` and never reach the Inbox. Whole words, any capitalisation and punctuation ("Graduate" excludes "Graduate Analyst", not "Postgraduate"). Usually set under `[defaults]`; imports apply it to new jobs, and `jobflow update-searches` to jobs already in the Inbox |
    | `include_title_terms` | `["Quant Analyst", "Quantitative Analyst"]` | Overrides `exclude_title_terms`: a title containing any of these is kept even if it also contains an excluded term, so with `"Analyst"` excluded, "Quant Analyst – Equities" stays while "Credit Analyst" is filtered. Matched the same way (whole words, any capitalisation). Has no effect on titles that match no excluded term |
 
-   **Countries and cities for `locations`.** Cities must come from this list (any capitalisation); a misspelt or unlisted city is rejected rather than searched. Use `[]` to search the whole country. To list cities one per line, as the template does, write `locations` as a table at the end of its search: `[search.locations]`, then one line per country such as `AU = ["Sydney", "Melbourne"]` (which can itself span lines). It has to come last because every line after it belongs to it.
+   **Countries and cities for `locations`.** Cities must come from this list (any capitalisation); a misspelt or unlisted city is rejected rather than searched. Use `[]` to search the whole country.
 
    | Code | Country | Cities | Sites |
    |---|---|---|---|

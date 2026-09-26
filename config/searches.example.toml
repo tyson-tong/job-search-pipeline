@@ -1,9 +1,5 @@
-# Copy to config/searches.toml (ignored by Git) and edit. Check it with:
-#   jobflow web, then the Searches tab: checks this file, shows the Apify runs it would
-#   make (costs nothing), and lists allowed values and which site applies which filter.
-# GitHub Actions reads the same text from the JOBFLOW_SEARCHES repository variable. After
-# each edit, update it (and apply excluded titles to your Inbox) with:
-#   uv run jobflow update-searches
+# Your job searches. Check them in the tracker's Searches tab (jobflow web).
+# After each edit, run: uv run jobflow update-searches
 
 [defaults]
 sites = [
@@ -26,6 +22,7 @@ terms = [
     "data analyst",
     "business intelligence analyst",
 ]
+locations = { AU = ["Sydney"] }
 salary_min = 100_000
 salary_period = "annual"
 job_types = [            # full-time, part-time, contract, casual
@@ -39,9 +36,4 @@ work_arrangements = [    # on-site, hybrid, remote
 seek_classifications = [
     "information-communication-technology",
     "banking-financial-services-analysis-reporting",
-]
-
-[search.locations]
-AU = [
-    "Sydney",
 ]
