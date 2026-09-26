@@ -180,10 +180,10 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
   </div>
   <div class="bulk" id="bulk" hidden></div>
   <div class="table-wrap" id="jobs-table"><table>
-    <thead><tr><th class="sel" id="select-col"><input type="checkbox" id="select-all" aria-label="Select all shown jobs"></th><th>Match</th><th>Job</th><th class="hide-sm">Sites</th><th class="hide-sm"><button class="sort-head" data-sort="posted" title="Sort by posted date; click again to reverse">Posted</button></th>
+    <thead><tr><th class="sel" id="select-col"><input type="checkbox" id="select-all" aria-label="Select all shown jobs"></th><th class="match-col">Match</th><th>Job</th><th class="hide-sm">Sites</th><th class="hide-sm"><button class="sort-head" data-sort="posted" title="Sort by posted date; click again to reverse">Posted</button></th>
       <th class="hide-sm"><button class="sort-head" data-sort="salary" title="Sort by salary in US dollars; click again to reverse">Salary</button></th><th>Status</th><th class="hide-sm fu-col">Follow up</th></tr>
     <tr class="col-filters"><th class="sel" id="select-col-filter"></th>
-      <th><input type="number" id="f-score" min="0" max="100" step="5" placeholder="Min" aria-label="Minimum match score"></th>
+      <th class="match-col"><input type="number" id="f-score" min="0" max="100" step="5" placeholder="Min" aria-label="Minimum match score"></th>
       <th><input type="search" id="q" placeholder="Title, company, location" aria-label="Search title, company, location"></th>
       <th class="hide-sm"><select id="site" aria-label="Site"><option value="">All</option><option value="linkedin">LinkedIn</option>
         <option value="indeed">Indeed</option><option value="seek">Seek</option></select></th>
@@ -365,7 +365,9 @@ function filterParams() {
   if (qInput.value.trim()) params.set("q", qInput.value.trim());
   if (siteInput.value) params.set("site", siteInput.value);
   if (salaryInput.value) params.set("salary_min_usd", salaryInput.value);
-  COLUMN_FILTERS.forEach(([input, param]) => { if (input.value) params.set(param, input.value); });
+  // Only My jobs has scored jobs; elsewhere a minimum match set there would hide every job.
+  COLUMN_FILTERS.forEach(([input, param]) => {
+    if (input.value && !(param === "score_min" && state.view !== "jobs")) params.set(param, input.value); });
   params.set("sort", sortInput.value);
   return params;
 }
@@ -476,10 +478,12 @@ function renderRows() {
   const shown = new Set(state.jobs.map((job) => job.id));
   state.selected.forEach((id) => { if (!selectable || !shown.has(id)) state.selected.delete(id); });
   renderBulk();
-  // New jobs have no follow-up yet, so the Inbox has no Follow up column.
+  // New jobs have no follow-up yet, so the Inbox has no Follow up column; only My jobs
+  // holds scored jobs, so the others have no Match column.
   document.querySelectorAll(".fu-col").forEach((cell) => { cell.hidden = inbox; });
+  document.querySelectorAll(".match-col").forEach((cell) => { cell.hidden = selectable; });
   if (!n) {
-    fill(body, [el("tr", {}, el("td", { colspan: 6 + (selectable ? 1 : 0) + (inbox ? 0 : 1), className: "empty" },
+    fill(body, [el("tr", {}, el("td", { colspan: inbox ? 6 : 7, className: "empty" },
       inbox ? "Inbox is empty: no new jobs to review."
         : filtered ? "No filtered jobs." : "No jobs match these filters."))]);
     return;
@@ -511,7 +515,7 @@ function renderRows() {
         : abroad ? "The same ad in another country, shown together" : null },
       selectable ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
         el("input", { type: "checkbox", checked: state.selected.has(job.id), "aria-label": `Select ${job.title}` })) : null,
-      el("td", {}, el("span", { className: "score" + scoreClass,
+      selectable ? null : el("td", {}, el("span", { className: "score" + scoreClass,
         title: job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored: only interested jobs are scored" },
         score == null ? "–" : score)),
       el("td", {},
