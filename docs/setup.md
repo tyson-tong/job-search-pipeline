@@ -1,6 +1,22 @@
-# Getting your accounts and keys
+# Setup
 
-This guide covers the accounts `jobflow` needs and where each key goes. Do it alongside step 4 of the README's [one-time setup](../README.md#one-time-setup), after `uv run jobflow init` has created `config/.env`.
+Everything needed once, before the daily routine in the [README](../README.md). You need [uv](https://docs.astral.sh/uv/) and a GitHub account; [RenderCV](https://docs.rendercv.com) is optional (it renders tailored CVs as PDFs).
+
+1. **Make your own copy.** Create a *private* repository from this template (GitHub: "Use this template"), then clone it.
+2. **Install and create your settings files**, from the repository folder:
+
+   ```
+   uv sync --extra documents
+   uv run jobflow init
+   ```
+
+   `init` creates `config/.env`, `config/profile.toml`, and `config/searches.toml` from the `.example` templates. It never overwrites an existing file, so it's safe to rerun. These files are ignored by Git, and `config/.env` is readable only by you.
+3. **Get your accounts and keys** (sections 1 to 5 below) and put them in `config/.env`.
+4. **Point it at your CVs.** In `config/profile.toml`, set `cv_directory` to the folder with your RenderCV files, kept outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. The profile also sets the output folder, the scoring weights, and your timezone.
+5. **Define your searches** in `config/searches.toml`: see [searches.md](searches.md).
+6. **Schedule the daily import**: see [section 6](#6-github-secrets-and-the-daily-import).
+
+## Accounts and keys
 
 Sign-up screens and prices change, so the steps below describe what to look for rather than exact buttons, and link each provider's own documentation. Check current pricing on each provider's site before you start.
 
@@ -13,6 +29,8 @@ Sign-up screens and prices change, so the steps below describe what to look for 
 | [GitHub CLI](#5-github-cli) | `jobflow update-searches`, setting GitHub secrets | logged in on your machine |
 
 Keep every key out of Git: `config/.env` is ignored by Git and readable only by you. Never paste a key into `config/searches.toml`, `config/profile.toml`, or an issue.
+
+Optional: `APIFY_MAX_WAIT_MINUTES` in `config/.env` sets how long to wait for each Apify run (default 60). `jobflow` reads `config/.env` by itself; variables already set in your shell take precedence. The database tables are created the first time you run any command other than `init`.
 
 ## 1. Database (Neon)
 
@@ -94,14 +112,16 @@ The [GitHub CLI](https://cli.github.com), `gh`, sets the `JOBFLOW_SEARCHES` vari
 2. Log in: `gh auth login`, choose GitHub.com, and follow the browser prompt.
 3. Check it from this project's folder: `gh variable list` should run without an error (it may list nothing yet).
 
-## 6. GitHub secrets for the daily import
+## 6. GitHub secrets and the daily import
 
 The daily import runs in GitHub Actions, so it needs its own copy of two keys. In your repository on GitHub, open **Settings → Secrets and variables → Actions**:
 
 - **Secrets:** `DATABASE_URL` and `APIFY_TOKEN`, with the same values as in `config/.env`. Or from this folder: `gh secret set DATABASE_URL` and `gh secret set APIFY_TOKEN`, pasting each value when asked (it isn't echoed or saved in your shell history).
 - **Variable:** `JOBFLOW_SEARCHES`, your searches. Run `uv run jobflow update-searches` to set it.
 
-The LLM and Tavily keys stay on your machine; GitHub never needs them. Then continue with step 6 of the README's setup to test the daily import.
+The LLM and Tavily keys stay on your machine; GitHub never needs them.
+
+Then open **Actions → "Daily job ingestion" → Run workflow** to test it once. After that it runs every day at 06:30 Sydney time (07:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. If a run fails, GitHub emails you, and the error is recorded in the database (`scraper_runs`).
 
 ## If a key leaks
 
