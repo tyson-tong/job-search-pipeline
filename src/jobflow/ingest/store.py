@@ -441,6 +441,37 @@ def backfill_sources(conn) -> int:
     return conn.execute("SELECT count(*) FROM job_sources").fetchone()[0] - before
 
 
+def exclude_inbox_titles(dry_run: bool = False) -> tuple[list[dict], int]:
+    """Apply exclude_title_terms to jobs already in the Inbox: each New job whose title
+    contains a term of the search that found it becomes 'filtered', with the reason an
+    import would record. Only New jobs are touched. Returns (the jobs matched, the number
+    of Inbox jobs checked); with dry_run, nothing is changed."""
+    from ..db import connect
+    from .searches import excluded_title_term, load_searches
+
+    terms_by_search = {search.name: search.exclude_title_terms for search in load_searches()}
+    with connect() as conn:
+        # A job's search is the one whose run first found it.
+        rows = conn.execute(
+            """SELECT j.id, j.title, j.company, r.search_name FROM jobs j
+               LEFT JOIN LATERAL (SELECT scraper_run_id FROM job_observations o
+                                  WHERE o.job_id = j.id ORDER BY observed_at LIMIT 1) first ON true
+               LEFT JOIN scraper_runs r ON r.id = first.scraper_run_id
+               WHERE j.status = 'new' ORDER BY j.id""").fetchall()
+        matched = []
+        for job_id, title, company, search_name in rows:
+            term = excluded_title_term(title, terms_by_search.get(search_name, ()))
+            if term:
+                matched.append({"id": job_id, "title": title, "company": company,
+                                "reason": f"title contains {term!r}"})
+        if not dry_run:
+            for job in matched:
+                conn.execute("""UPDATE jobs SET status='filtered', filter_reason=%s,
+                                    status_updated_at=now() WHERE id=%s AND status='new'""",
+                             (job["reason"], job["id"]))
+    return matched, len(rows)
+
+
 def backfill_countries(conn) -> int:
     """Fill jobs.country from the run that first found each job (run once, when the
     column is added), falling back to the job's location."""

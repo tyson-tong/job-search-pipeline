@@ -271,6 +271,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
 <div class="table-wrap"><table>
   <tr><th>Command</th><th>Does</th><th>Module</th></tr>
   <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
+  <tr><td><code>jobflow exclude-titles</code></td><td>Apply excluded title terms to jobs already in the Inbox</td><td>ingest/store.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv ID</code></td><td>Tailored, fact-checked CV draft</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow interview-prep ID</code></td><td>Interview briefing HTML</td><td>candidate/interview.py</td></tr>

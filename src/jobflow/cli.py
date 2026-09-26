@@ -13,7 +13,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="jobflow",
         description="First time: init. Everyday: web (job tracker, including your searches), "
-        "tailor-cv, and interview-prep. The daily GitHub Action runs ingest.")
+        "tailor-cv, and interview-prep. After editing exclude_title_terms: exclude-titles. "
+        "The daily GitHub Action runs ingest.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Create config/.env, config/profile.toml, and config/searches.toml from the "
                    "templates (never overwrites existing files)")
@@ -21,6 +22,11 @@ def main() -> None:
                             "import the results (the daily Action runs this; costs Apify credits)")
     ingest.add_argument("--search", help="Only this search name")
     ingest.add_argument("--site", choices=SITES, help="Only this job site")
+    exclude = sub.add_parser("exclude-titles", help="Apply exclude_title_terms in "
+                             "config/searches.toml to jobs already in the Inbox (imports apply "
+                             "them to new jobs)")
+    exclude.add_argument("--dry-run", action="store_true",
+                         help="Only list the jobs that would be filtered")
     web = sub.add_parser("web", help="Open the job tracker in your browser (local only)")
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--no-browser", action="store_true", help="Don't open a browser tab")
@@ -86,6 +92,16 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         from .ingest.apify import ingest_searches
         migrate()
         ingest_searches(args.search, args.site)
+    elif args.command == "exclude-titles":
+        from .db import migrate
+        from .ingest.store import exclude_inbox_titles
+        migrate()
+        matched, checked = exclude_inbox_titles(dry_run=args.dry_run)
+        for job in matched:
+            print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
+                  f"{job['reason']}")
+        print(f"{'Would filter' if args.dry_run else 'Filtered'} {len(matched)} of {checked} "
+              f"Inbox jobs{' (dry run: nothing changed)' if args.dry_run else ''}.")
     elif args.command == "web":
         from .db import migrate
         from .web.server import serve

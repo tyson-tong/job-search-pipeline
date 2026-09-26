@@ -84,6 +84,7 @@ Everyday:
 | `jobflow web [--port N]` | Job tracker in your browser: score jobs against your CVs, browse and filter, track applications (saves on Save), and check your searches. | Database (LLM and CVs to score) |
 | `jobflow tailor-cv ID [--cv VARIANT]` | Writes a tailored CV draft and fact check. | Database, LLM, CVs |
 | `jobflow interview-prep ID [--email-file FILE]` | Writes an interview briefing HTML. | Database, LLM, CVs, Tavily |
+| `jobflow exclude-titles [--dry-run]` | Applies your `exclude_title_terms` to jobs already in the Inbox (imports apply them to new jobs); `--dry-run` only lists them. See [Changing your searches](#changing-your-searches). | Database, `config/searches.toml` |
 
 Every command except `init` brings the database tables up to date itself when it starts.
 
@@ -92,6 +93,17 @@ Run by the daily GitHub Action (you rarely need it):
 | Command | What it does | Needs |
 |---|---|---|
 | `jobflow ingest [--search NAME] [--site SITE]` | Runs your searches on Apify and imports the results. Run it yourself only to test a changed search now instead of waiting for tomorrow; it uses Apify credits. | Database, Apify, `config/searches.toml` |
+
+## Changing your searches
+
+After editing `config/searches.toml` (for example switching an `exclude_title_terms` entry on or off), run:
+
+```
+gh variable set JOBFLOW_SEARCHES < config/searches.toml   # the daily GitHub import reads this copy
+uv run jobflow exclude-titles                            # filter matching jobs already in your Inbox
+```
+
+The first command updates the copy the daily import uses; without it, tomorrow's import still runs your old searches. The second applies excluded title terms to jobs already in your Inbox, since imports only apply them to jobs they bring in. Add `--dry-run` to see which jobs it would filter first. Filtered jobs go to the tracker's Filtered tab, where **Move to Inbox** brings one back; switching a term off doesn't bring back jobs it already filtered. Click **Reload** on the Searches tab to check the file.
 
 ## One-time setup
 
