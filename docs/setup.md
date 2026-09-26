@@ -1,0 +1,108 @@
+# Getting your accounts and keys
+
+This guide covers the accounts `jobflow` needs and where each key goes. Do it alongside step 4 of the README's [one-time setup](../README.md#one-time-setup), after `uv run jobflow init` has created `config/.env`.
+
+Sign-up screens and prices change, so the steps below describe what to look for rather than exact buttons, and link each provider's own documentation. Check current pricing on each provider's site before you start.
+
+| Service | Needed for | Goes in |
+|---|---|---|
+| [PostgreSQL on Neon](#1-database-neon) | everything | `DATABASE_URL` in `config/.env`, and a GitHub secret |
+| [Apify](#2-apify-job-scrapers) | the daily import | `APIFY_TOKEN` in `config/.env`, and a GitHub secret |
+| [An LLM provider](#3-llm-provider) | scoring, tailor-cv, interview-prep | `LLM_API_KEY`, `LLM_MODEL` (and `LLM_BASE_URL`) in `config/.env` |
+| [Tavily](#4-tavily-web-search) | interview-prep | `WEB_SEARCH_API_KEY` in `config/.env` |
+| [GitHub CLI](#5-github-cli) | `jobflow update-searches`, setting GitHub secrets | logged in on your machine |
+
+Keep every key out of Git: `config/.env` is ignored by Git and readable only by you. Never paste a key into `config/searches.toml`, `config/profile.toml`, or an issue.
+
+## 1. Database (Neon)
+
+Any PostgreSQL database reachable from the internet works (Supabase, Amazon RDS, and others). These steps use [Neon](https://neon.tech), which has a free tier.
+
+1. Sign up at [neon.tech](https://neon.tech) and create a project. Choose the region nearest to you; the tracker talks to the database on every page load.
+2. Open the project's **Connect** (connection details) panel and copy the connection string. Use the **direct** connection, not the pooled one (the pooled host name contains `-pooler`): the direct one is the one this project is tested with.
+3. Make sure the string ends with `sslmode=require` (Neon's usually does), so the connection is encrypted.
+4. In `config/.env`:
+
+   ```
+   DATABASE_URL=postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require
+   ```
+
+5. Check it: `uv run jobflow web` creates the tables on first run and opens the tracker. An error mentioning the host or password means the string is wrong.
+
+The connection string contains your database password: treat it like one. Neon's docs: [Connect from any application](https://neon.tech/docs/connect/connect-from-any-app).
+
+## 2. Apify (job scrapers)
+
+The daily import runs three scrapers ("actors") from the Apify Store on your Apify account: `curious_coder/linkedin-jobs-scraper`, `curious_coder/indeed-scraper`, and `websift/seek-job-scraper`. You don't need an account on LinkedIn, Indeed, or Seek.
+
+1. Sign up at [apify.com](https://apify.com).
+2. Open each actor's page in the [Apify Store](https://apify.com/store) and read its pricing. They charge per result, including jobs you already have. Some actors ask you to start a trial or accept terms before first use; if a run fails with a permissions or rental message, open that actor's page and follow its prompt.
+3. Find your API token in the Apify Console under **Settings → API & Integrations** (Apify's docs: [API tokens](https://docs.apify.com/platform/integrations/api#api-token)).
+4. In `config/.env`:
+
+   ```
+   APIFY_TOKEN=apify_api_...
+   ```
+
+5. Keep costs down in `config/searches.toml`: `posted_within_days = 1` for a daily schedule, `max_results` per run, `max_cost_usd` as a hard cap per run, and only the `sites` you need. The Searches tab in the tracker shows how many runs and results a day your searches can cost, without running anything.
+6. Check it once with a single site: `uv run jobflow ingest --site seek`. Each run's actual cost is recorded in the database (`scraper_runs.cost_usd`) and shown in the Apify Console.
+
+Your Apify plan may limit how much memory runs can use at once. `jobflow ingest` runs one scraper per site at the same time (three at most); if a run fails with a memory-limit message, see your plan's limits in the Apify Console.
+
+## 3. LLM provider
+
+Scoring, tailored CVs, and interview briefings use any OpenAI-compatible chat-completions API.
+
+**OpenAI:**
+
+1. Sign up at [platform.openai.com](https://platform.openai.com), add billing, and set a monthly spending limit in the billing settings.
+2. Create an API key (OpenAI's docs: [API keys](https://platform.openai.com/api-keys)). It is shown once: copy it straight into `config/.env`.
+3. Choose a model from OpenAI's [model list](https://platform.openai.com/docs/models) that supports JSON output.
+4. In `config/.env`:
+
+   ```
+   LLM_API_KEY=sk-...
+   LLM_MODEL=<model name>
+   LLM_BASE_URL=
+   ```
+
+**Another provider** (for example a hosted open model, or a gateway): set `LLM_BASE_URL` to its OpenAI-compatible endpoint (usually ending in `/v1`), and `LLM_API_KEY` and `LLM_MODEL` to its key and model name. Use an `https://` address, so your key isn't sent unencrypted.
+
+What each command sends: scoring and tailoring send job text and your CV text; interview prep also sends the invitation email if you give one. See the README's [Privacy](../README.md#privacy) section, and choose a provider whose data handling you accept.
+
+Check it: mark a job Interested, save, and click **Score all interested jobs** in the tracker. A configuration problem shows as an error instead of a score.
+
+## 4. Tavily (web search)
+
+`jobflow interview-prep` uses [Tavily](https://tavily.com) to research the company. It is only needed for interview briefings.
+
+1. Sign up at [tavily.com](https://tavily.com); there is a free monthly allowance, and each briefing makes two searches.
+2. Copy your API key from the Tavily dashboard (Tavily's docs: [Quickstart](https://docs.tavily.com)).
+3. In `config/.env`:
+
+   ```
+   WEB_SEARCH_API_KEY=tvly-...
+   ```
+
+Tavily receives the company name and job title, nothing from your CVs.
+
+## 5. GitHub CLI
+
+The [GitHub CLI](https://cli.github.com), `gh`, sets the `JOBFLOW_SEARCHES` variable that the daily import reads; `jobflow update-searches` uses it after every edit to your searches.
+
+1. Install it: see [cli.github.com](https://cli.github.com) for your system (on Ubuntu and WSL, the instructions there add GitHub's package repository).
+2. Log in: `gh auth login`, choose GitHub.com, and follow the browser prompt.
+3. Check it from this project's folder: `gh variable list` should run without an error (it may list nothing yet).
+
+## 6. GitHub secrets for the daily import
+
+The daily import runs in GitHub Actions, so it needs its own copy of two keys. In your repository on GitHub, open **Settings → Secrets and variables → Actions**:
+
+- **Secrets:** `DATABASE_URL` and `APIFY_TOKEN`, with the same values as in `config/.env`. Or from this folder: `gh secret set DATABASE_URL` and `gh secret set APIFY_TOKEN`, pasting each value when asked (it isn't echoed or saved in your shell history).
+- **Variable:** `JOBFLOW_SEARCHES`, your searches. Run `uv run jobflow update-searches` to set it.
+
+The LLM and Tavily keys stay on your machine; GitHub never needs them. Then continue with step 6 of the README's setup to test the daily import.
+
+## If a key leaks
+
+Revoke it at the provider straight away and create a new one: Neon (reset the database password), Apify (regenerate the token), your LLM provider, or Tavily. Then update `config/.env`, and for the database or Apify, the GitHub secret too.

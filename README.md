@@ -112,7 +112,7 @@ Add `--dry-run` to check the file and see which jobs it would filter, without up
 
 ## One-time setup
 
-You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from the internet (for example Neon, Supabase, or RDS), an [Apify](https://apify.com) account, an API key for an OpenAI-compatible LLM, and a [Tavily](https://tavily.com) API key. [RenderCV](https://docs.rendercv.com) is optional and is installed below.
+You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from the internet (for example Neon, Supabase, or RDS), an [Apify](https://apify.com) account, an API key for an OpenAI-compatible LLM, and a [Tavily](https://tavily.com) API key. [RenderCV](https://docs.rendercv.com) is optional and is installed below. For step-by-step sign-up and where to find each key, see [docs/setup.md](docs/setup.md).
 
 1. **Make your own copy.** Create a *private* repository from this template (GitHub: "Use this template"), then clone it.
 
@@ -127,7 +127,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 
 3. **Point it at your CVs.** In `config/profile.toml`, set `cv_directory` to the folder containing your RenderCV files. Keep that folder outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. `config/profile.toml` also sets where `config/searches.toml` lives, the shared output root, the scoring weights, and your timezone.
 
-4. **Add credentials.** In `config/.env`, fill in:
+4. **Add credentials.** In `config/.env`, fill in (how to get each one: [docs/setup.md](docs/setup.md)):
 
    | Variable | Used for |
    |---|---|
