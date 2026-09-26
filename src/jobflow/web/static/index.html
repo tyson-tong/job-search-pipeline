@@ -469,11 +469,30 @@ function duplicateFlag(job) {
       `Same role as #${started.id} (${label(started.status).toLowerCase()})?`);
   }
   // Highly similar: titles at least 60% and ads at least 80% alike; similar: the rest.
-  return ["highly similar", "similar"].map((level) => {
-    const n = job.duplicates.filter((d) => d.level === level).length;
-    return n ? el("span", { className: "flag warn", title: "Similar title and ad text; open for details" },
-      `${n} ${level}`) : null;
+  // Similar jobs in this list sit next to this one; any others are counted by where they are.
+  const counts = new Map();
+  job.duplicates.forEach((d) => {
+    const key = `${d.level}|${similarPlace(d) || ""}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
   });
+  return ["highly similar", "similar"].flatMap((level) => [...counts]
+    .filter(([key]) => key.startsWith(`${level}|`))
+    .map(([key, n]) => {
+      const place = key.slice(level.length + 1);
+      return el("span", { className: "flag warn", title: place
+        ? `Similar title and ad text; not in this list (${place}). Open for details`
+        : "Similar title and ad text; shown next to this job. Open for details" },
+        `${n} ${level}` + (place ? ` (${place})` : ""));
+    }));
+}
+// Where a similar job is when it isn't in the list shown: its tab, or "hidden by your
+// filters" when it belongs to this tab; null when it's in the list.
+function similarPlace(similar) {
+  if (state.jobs.some((job) => job.id === similar.id)) return null;
+  const tab = similar.status === "new" ? "inbox" : similar.status === "filtered" ? "filtered"
+    : similar.status === "not_interested" ? null : "jobs";
+  if (tab === state.view) return "hidden by your filters";
+  return { inbox: "Inbox", filtered: "Filtered", jobs: "My jobs" }[tab] || "Not interested";
 }
 function renderSortHeads() {
   document.querySelectorAll(".sort-head").forEach((head) => {
