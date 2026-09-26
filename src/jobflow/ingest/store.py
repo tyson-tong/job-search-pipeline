@@ -116,13 +116,18 @@ def title_patterns(title: str | None) -> list[str]:
     return [f"%{w}%" for w in words]
 
 
+def same_country(a: str | None, b: str | None) -> bool:
+    """False only when both countries are known and differ."""
+    return not (a and b and a != b)
+
+
 def is_same_ad(title_a: str | None, description_a: str | None,
                title_b: str | None, description_b: str | None,
                country_a: str | None = None, country_b: str | None = None) -> bool:
     """True when two postings carry the same ad under the same title (ignoring case and
     punctuation), whoever posted it and wherever in one country it is listed. An unknown
     country doesn't block a match."""
-    if country_a and country_b and country_a != country_b:
+    if not same_country(country_a, country_b):
         return False
     if not _normalise(title_a) or _normalise(title_a) != _normalise(title_b):
         return False
@@ -142,16 +147,19 @@ def looks_like_same_role(title_a: str | None, description_a: str | None,
     return similarity if similarity >= POSSIBLE_DESCRIPTION else None
 
 
-def possible_duplicates(job_id: int, limit: int = 5) -> list[dict]:
-    """Other jobs that may be the same role as this one but weren't merged."""
+def possible_duplicates(job_id: int, limit: int = 5,
+                        other_countries: bool = False) -> list[dict]:
+    """Other jobs in the same country that may be the same role as this one but weren't
+    merged; with other_countries, the similar ads found in other countries instead (one
+    role advertised for several countries' offices, which is not a duplicate)."""
     from ..db import connect
 
     with connect() as conn:
-        job = conn.execute("SELECT title, description FROM jobs WHERE id=%s",
+        job = conn.execute("SELECT title, description, country FROM jobs WHERE id=%s",
                            (job_id,)).fetchone()
         if not job or not job[1]:
             return []
-        title, description = job
+        title, description, country = job
         patterns = title_patterns(title)
         if not patterns:
             return []
@@ -167,21 +175,25 @@ def possible_duplicates(job_id: int, limit: int = 5) -> list[dict]:
         rows = conn.execute(
             """SELECT j.id, j.title, j.company, j.location, j.status, j.description,
                       (SELECT url FROM job_sources s WHERE s.job_id = j.id
-                       ORDER BY s.first_seen_at LIMIT 1)
+                       ORDER BY s.first_seen_at LIMIT 1), j.country
                FROM jobs j WHERE j.id = ANY(%s)""", (close[:100],)).fetchall()
     matches = []
-    for pk, other_title, company, location, status, other_description, url in rows:
+    for pk, other_title, company, location, status, other_description, url, other_country in rows:
+        if same_country(country, other_country) == other_countries:
+            continue
         similarity = looks_like_same_role(title, description, other_title, other_description)
         if similarity is not None:
             matches.append({"id": pk, "title": other_title, "company": company,
                             "location": location, "status": status, "url": url,
-                            "similarity": similarity})
+                            "country": other_country, "similarity": similarity})
     return sorted(matches, key=lambda m: m["similarity"], reverse=True)[:limit]
 
 
 def possible_duplicate_map(conn, job_ids: list[int]) -> dict[int, list[dict]]:
-    """possible_duplicates for many jobs at once: {job id: [{id, status}]}, using two
-    queries in total (titles first, then descriptions only for close titles)."""
+    """Similar ads for many jobs at once: {job id: [{id, status, country, same_country}]},
+    using two queries in total (titles first, then descriptions only for close titles).
+    Only same_country matches are possible duplicates; the others are one role advertised
+    in several countries."""
     if not job_ids:
         return {}
     rows = conn.execute(
@@ -203,12 +215,15 @@ def possible_duplicate_map(conn, job_ids: list[int]) -> dict[int, list[dict]]:
     if not pairs:
         return {}
     needed = sorted({pk for pair in pairs for pk in pair})
-    details = {pk: (description, status) for pk, description, status in conn.execute(
-        "SELECT id, description, status FROM jobs WHERE id = ANY(%s)", (needed,)).fetchall()}
+    details = {pk: (description, status, country) for pk, description, status, country in
+               conn.execute("SELECT id, description, status, country FROM jobs WHERE id = ANY(%s)",
+                            (needed,)).fetchall()}
     found: dict[int, list[dict]] = {}
     for pk, other in sorted(pairs):
         if description_similarity(details[pk][0], details[other][0]) >= POSSIBLE_DESCRIPTION:
-            found.setdefault(pk, []).append({"id": other, "status": details[other][1]})
+            found.setdefault(pk, []).append({
+                "id": other, "status": details[other][1], "country": details[other][2],
+                "same_country": same_country(details[pk][2], details[other][2])})
     return found
 
 

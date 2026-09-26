@@ -471,6 +471,8 @@ function renderRows() {
         el("div", { className: "meta" }, [job.company, job.location].filter(Boolean).join(" · ")),
         el("div", { className: "flags" },
           duplicateFlag(job),
+          job.elsewhere.length ? el("span", { className: "flag", title: "The same role advertised in another country; shown alongside, not a duplicate" },
+            `Same ad in ${[...new Set(job.elsewhere.map((d) => d.country || "another country"))].join(", ")}`) : null,
           job.overdue ? el("span", { className: "flag warn" }, "Follow-up overdue") : null,
           job.stale ? el("span", { className: "flag" }, "Applied 3+ weeks ago") : null,
           job.has_notes || current(job, "note") ? el("span", { className: "flag" }, "Notes") : null)),
@@ -718,10 +720,8 @@ function renderDetail() {
        [`uv run jobflow interview-prep ${job.id} --email-file invite.txt`, "Interview briefing"]].map(([command, what]) =>
         el("div", { className: "cmd" }, el("span", { className: "meta", style: "min-width:120px" }, what),
           el("code", {}, command), el("button", { className: "btn small", onclick: () => copyCommand(command) }, "Copy")))),
-    job.duplicates.length ? [el("h3", {}, "Possible duplicates"),
-      el("ul", { className: "dups" }, job.duplicates.map((d) => el("li", {},
-        el("button", { className: "title-btn", onclick: () => openDetail(d.id) }, `#${d.id} ${d.title}`),
-        el("span", { className: "meta" }, ` — ${d.company || ""}, ${label(d.status)}, ${Math.round(d.similarity * 100)}% same text`))))] : null,
+    similarList("Possible duplicates", job.duplicates),
+    similarList("Same ad in other countries (not duplicates)", job.elsewhere),
     job.history.length ? [el("h3", {}, "Status history"),
       el("ul", { className: "history" }, job.history.map((h) => el("li", { className: "meta" },
         `${fmtDate(h.changed_at)}: ${label(h.from_status || "new")} → ${label(h.to_status)} (${h.via})`)))] : null,
@@ -731,6 +731,13 @@ function renderDetail() {
       el("button", { className: "btn", onclick: closeDetail }, "Close"),
       el("button", { className: "btn primary", id: "d-save", onclick: () => save() }, "Save"))]);
   renderSaveBar();
+}
+function similarList(title, jobs) {
+  return jobs.length ? [el("h3", {}, title),
+    el("ul", { className: "dups" }, jobs.map((d) => el("li", {},
+      el("button", { className: "title-btn", onclick: () => openDetail(d.id) }, `#${d.id} ${d.title}`),
+      el("span", { className: "meta" }, ` — ${[d.company, d.location].filter(Boolean).join(", ")}, `
+        + `${label(d.status)}, ${Math.round(d.similarity * 100)}% same text`))))] : null;
 }
 function renderMatch(m) {
   const items = (title, list, withQuotes) => list.length ? [el("div", { className: "meta", style: "margin-top:6px" }, title),

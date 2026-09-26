@@ -92,8 +92,11 @@ def list_jobs(filters: dict) -> list[dict]:
         duplicates = possible_duplicate_map(conn, [job["id"] for job in jobs])
     today = date.today()
     for job in jobs:
-        dups = duplicates.get(job["id"], [])
+        similar = duplicates.get(job["id"], [])
+        dups = [d for d in similar if d["same_country"]]
         job["duplicates"] = dups
+        # The same ad in another country: not a duplicate, but listed next to it.
+        job["elsewhere"] = [d for d in similar if not d["same_country"]]
         job["duplicate_in_progress"] = next((d for d in dups if d["status"] in IN_PROGRESS), None)
         job["overdue"] = bool(job["follow_up_on"] and job["follow_up_on"] < today
                               and job["status"] not in CLOSED_STATUSES)
@@ -103,12 +106,10 @@ def list_jobs(filters: dict) -> list[dict]:
     return group_duplicates(jobs)
 
 
-def group_duplicates(jobs: list[dict]) -> list[dict]:
-    """Move each set of possible duplicates in the list next to each other, at the place
-    of its best-ranked member, keeping the sort order otherwise. Members of a set get the
-    same "group" number (the first member's id); other jobs get None."""
-    shown = {job["id"] for job in jobs}
-    parent = {pk: pk for pk in shown}
+def _sets(jobs: list[dict], fields: tuple[str, ...]) -> dict[int, int]:
+    """{job id: id of its set} for jobs linked (directly or via others) through the given
+    lists of similar jobs, counting only jobs in this list."""
+    parent = {job["id"]: job["id"] for job in jobs}
 
     def root(pk: int) -> int:
         while parent[pk] != pk:
@@ -117,22 +118,39 @@ def group_duplicates(jobs: list[dict]) -> list[dict]:
         return pk
 
     for job in jobs:
-        for dup in job["duplicates"]:
-            if dup["id"] in shown:
-                parent[root(dup["id"])] = root(job["id"])
+        for field in fields:
+            for other in job[field]:
+                if other["id"] in parent:
+                    parent[root(other["id"])] = root(job["id"])
+    return {pk: root(pk) for pk in parent}
+
+
+def group_duplicates(jobs: list[dict]) -> list[dict]:
+    """Place similar jobs next to each other, at the place of the best-ranked one,
+    keeping the sort order otherwise: possible duplicates, and the same ad in other
+    countries. Each set of possible duplicates stays together and its members get the
+    same "group" number (the first member's id); other jobs get None, so the same ad in
+    another country sits alongside without being marked as a duplicate."""
+    near = _sets(jobs, ("duplicates", "elsewhere"))
+    duplicate_set = _sets(jobs, ("duplicates",))
     members: dict[int, list[dict]] = {}
     for job in jobs:
-        members.setdefault(root(job["id"]), []).append(job)
-    ordered, placed = [], set()
+        members.setdefault(duplicate_set[job["id"]], []).append(job)
+    # A set of possible duplicates always lies within one set of similar jobs.
+    by_area: dict[int, list[dict]] = {}
     for job in jobs:
-        key = root(job["id"])
-        if key in placed:
-            continue
-        placed.add(key)
-        group = members[key]
-        for member in group:
-            member["group"] = group[0]["id"] if len(group) > 1 else None
-        ordered.extend(group)
+        by_area.setdefault(near[job["id"]], []).append(job)
+    ordered, placed = [], set()
+    for area_jobs in by_area.values():
+        for job in area_jobs:
+            key = duplicate_set[job["id"]]
+            if key in placed:
+                continue
+            placed.add(key)
+            group = members[key]
+            for member in group:
+                member["group"] = group[0]["id"] if len(group) > 1 else None
+            ordered.extend(group)
     return ordered
 
 
@@ -188,6 +206,7 @@ def job_detail(job_id: int) -> dict | None:
             """SELECT from_status, to_status, via, changed_at FROM status_history
                WHERE job_id=%s ORDER BY changed_at""", (job_id,)).fetchall()]
     job["duplicates"] = possible_duplicates(job_id)
+    job["elsewhere"] = possible_duplicates(job_id, other_countries=True)
     return job
 
 
