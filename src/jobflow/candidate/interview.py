@@ -78,6 +78,12 @@ def _agent(name: str, instruction: str, job: dict, email: str | None,
                     json.dumps(payload, ensure_ascii=False))
 
 
+def _web_url(url: object) -> str:
+    """The URL if it is an http(s) link, else "" (a "javascript:" link would run script)."""
+    url = str(url or "")
+    return url if re.match(r"https?://", url, re.I) else ""
+
+
 LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)"
                   r"|(https?://[^\s<>()\"']*[^\s<>()\"'.,;:!?])")
 
@@ -166,9 +172,13 @@ def prepare(job_id: int, email: str | None = None, output: Path | None = None) -
     target = output or (job_directory(job_id, job) / "interview-prep.html")
     target.parent.mkdir(parents=True, exist_ok=True)
     source_items = "\n".join(
-        f'<li><a href="{html.escape(s["url"], quote=True)}" rel="noreferrer">'
-        f'{html.escape(s["title"] or s["url"])}</a><p>{html.escape(s["content"])}</p></li>'
+        (f'<li><a href="{html.escape(_web_url(s["url"]), quote=True)}" rel="noreferrer">'
+         f'{html.escape(s["title"] or s["url"])}</a>' if _web_url(s["url"])
+         else f'<li>{html.escape(s["title"] or s["url"])}')
+        + f'<p>{html.escape(s["content"])}</p></li>'
         for s in sources)
+    posting_link = (f'<p><a href="{html.escape(_web_url(job["url"]), quote=True)}" rel="noreferrer">'
+                    "Open job posting</a></p>" if _web_url(job["url"]) else "")
     tz = timezone()
     generated = datetime.now(tz).astimezone(tz).strftime("%Y-%m-%d %H:%M %Z")
     page = f"""<!doctype html>
@@ -182,7 +192,7 @@ h1,h2,h3{{line-height:1.25}}code{{background:#eef1f4;padding:0 .25em;border-radi
 </style></head><body>
 <header><p class="meta">Interview preparation • Generated {generated}</p>
 <h1>{html.escape(job['company'] or 'Company')} — {html.escape(job['title'])}</h1>
-<p>{html.escape(job['location'] or '')}</p><p><a href="{html.escape(job['url'] or '', quote=True)}">Open job posting</a></p></header>
+<p>{html.escape(job['location'] or '')}</p>{posting_link}</header>
 <main><section><h2>Preparation brief</h2>{_safe_markup(brief)}</section>
 <section><h2>Research sources</h2><ul>{source_items}</ul></section></main>
 <footer><p>Generated with model {html.escape(model)}. Verify current facts and review every suggested answer against your own experience. Interview email contents are not stored in the workflow database.</p></footer>

@@ -54,7 +54,8 @@ def canonical_url(value: str | None) -> str | None:
     if not value:
         return None
     parts = urlsplit(value.strip())
-    if not parts.scheme or not parts.netloc:
+    # Only web links: a scraped "javascript:" URL would run script when clicked.
+    if parts.scheme.casefold() not in ("http", "https") or not parts.netloc:
         return None
     query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
              if k.casefold() not in TRACKING_PARAMS and not k.casefold().startswith("utm_")]

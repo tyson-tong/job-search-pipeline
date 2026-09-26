@@ -29,6 +29,8 @@ def test_canonical_url_drops_tracking_so_repeat_links_match():
     assert canonical_url("HTTPS://Example.com/jobs/1/?utm_source=x&b=2&a=1&trk=y") == \
         "https://example.com/jobs/1?a=1&b=2"
     assert canonical_url("not a url") is None
+    # A scraped script link must never become a clickable link in the tracker or briefing.
+    assert canonical_url("javascript://example.com/%0Aalert(1)") is None
 
 
 def test_each_scraper_format_is_normalised():
