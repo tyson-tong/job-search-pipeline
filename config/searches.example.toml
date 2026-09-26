@@ -5,60 +5,43 @@
 # each edit, update it (and apply excluded titles to your Inbox) with:
 #   uv run jobflow update-searches
 
-# Settings every search inherits unless it sets its own.
 [defaults]
-# Job sites to search: any of "linkedin", "indeed", "seek". Unlisted sites are never
-# called (so cost nothing). A search can override this with its own sites = [...].
-sites = ["linkedin", "indeed", "seek"]
-# 1 (24 hours), 7 (1 week), 14 (2 weeks), or 30 (1 month). Use 1 for the daily schedule;
-# a longer window is useful for a first run. LinkedIn has no 2-week option and Indeed no
-# 1-month option: those sites search wider and older jobs are filtered after import.
+sites = [
+    "linkedin",
+    "indeed",
+    "seek",
+]
 posted_within_days = 1
-max_results = 50           # per Apify run (LinkedIn: per term and location). Caps cost.
-# Jobs whose title contains any of these words are filtered on import and never reach
-# the Inbox (whole words, any capitalisation: "Graduate" also excludes "graduate
-# analyst" but not "Postgraduate"). A search can set its own list instead.
-# exclude_title_terms = ["Internship", "Intern", "Grad", "Graduate"]
-# Titles containing any of these are kept even when they match an excluded term: with
-# "Analyst" excluded, "Quant Analyst" here keeps "Quant Analyst - Equities".
-# include_title_terms = ["Quant Analyst", "Quantitative Analyst"]
-# max_cost_usd = 1.00      # optional hard cap per Apify run, in USD
+max_results = 50
+exclude_title_terms = [
+
+]
+include_title_terms = [
+    
+]
 
 [[search]]
 name = "data-analyst-au"
-terms = ["data analyst", "business intelligence analyst"]
-locations = { AU = ["Sydney"] }
-# Optional salary bounds go here in AUD; omit both for no salary filter.
-# salary_min = 200_000
-# salary_max = 300_000
-salary_period = "annual"   # annual | monthly | hourly
-job_types = ["full-time"]
-work_arrangements = ["on-site", "hybrid", "remote"]
-# Seek only; LinkedIn and Indeed ignore classifications. Use search terms there.
-classifications = ["information-communication-technology", "banking-financial-services-analysis-reporting"]
+terms = [
+    "data analyst",
+    "business intelligence analyst",
+]
+salary_min = 100_000
+salary_period = "annual"
+job_types = [            # full-time, part-time, contract, casual
+    "full-time",
+]
+work_arrangements = [    # on-site, hybrid, remote
+    "on-site",
+    "hybrid",
+    "remote",
+]
+classifications = [
+    "information-communication-technology",
+    "banking-financial-services-analysis-reporting",
+]
 
-# [[search]]
-# name = "data-analyst-sg"
-# terms = ["data analyst", "business intelligence analyst"]
-# locations = { SG = ["Singapore"] }
-# Optional salary bounds go here in SGD. Set values separately from the AU search.
-# salary_min = 150_000
-# salary_max = 300_000
-# salary_period = "annual"
-# job_types = ["full-time"]
-# work_arrangements = ["on-site", "hybrid", "remote"]
-# Seek only; LinkedIn and Indeed ignore classifications. Use search terms there.
-# classifications = ["information-communication-technology", "banking-financial-services-analysis-reporting"]
-
-# [[search]]
-# name = "data-analyst-hk"
-# terms = ["data analyst", "business intelligence analyst"]
-# locations = { HK = ["Hong Kong"] }
-# Optional salary bounds go here in HKD. Set values separately from the AU search.
-# salary_min = 850_000
-# salary_max = 2_000_000
-# salary_period = "annual"
-# job_types = ["full-time"]
-# work_arrangements = ["on-site", "hybrid", "remote"]
-# Seek only; LinkedIn and Indeed ignore classifications. Use search terms there.
-# classifications = ["information-communication-technology", "banking-financial-services-analysis-reporting"]
+[search.locations]
+AU = [
+    "Sydney",
+]

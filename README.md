@@ -122,7 +122,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    uv run jobflow init
    ```
 
-   `init` creates `config/.env`, `config/profile.toml`, and `config/searches.toml` from the `.example` templates, with comments on what to fill in. It never overwrites a file that already exists, so it's safe to rerun. The personal files are ignored by Git, and `config/.env` is readable only by you.
+   `init` creates `config/.env`, `config/profile.toml`, and `config/searches.toml` from the `.example` templates. The settings for each are described below. It never overwrites a file that already exists, so it's safe to rerun. The personal files are ignored by Git, and `config/.env` is readable only by you.
 
 3. **Point it at your CVs.** In `config/profile.toml`, set `cv_directory` to the folder containing your RenderCV files. Keep that folder outside this repository. Files must be named `CV_<variant>.yaml`; the variant name is what `--cv` takes. `config/profile.toml` also sets where `config/searches.toml` lives, the shared output root, the scoring weights, and your timezone.
 
@@ -158,7 +158,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `exclude_title_terms` | `["Internship", "Fresh Grad", "Graduate"]` | Jobs whose title contains any of these words are stored as `filtered` and never reach the Inbox. Whole words, any capitalisation and punctuation ("Graduate" excludes "Graduate Analyst", not "Postgraduate"). Usually set under `[defaults]`; imports apply it to new jobs, and `jobflow update-searches` to jobs already in the Inbox |
    | `include_title_terms` | `["Quant Analyst", "Quantitative Analyst"]` | Overrides `exclude_title_terms`: a title containing any of these is kept even if it also contains an excluded term, so with `"Analyst"` excluded, "Quant Analyst – Equities" stays while "Credit Analyst" is filtered. Matched the same way (whole words, any capitalisation). Has no effect on titles that match no excluded term |
 
-   **Countries and cities for `locations`.** Cities must come from this list (any capitalisation); a misspelt or unlisted city is rejected rather than searched. Use `[]` to search the whole country.
+   **Countries and cities for `locations`.** Cities must come from this list (any capitalisation); a misspelt or unlisted city is rejected rather than searched. Use `[]` to search the whole country. To list cities one per line, as the template does, write `locations` as a table at the end of its search: `[search.locations]`, then one line per country such as `AU = ["Sydney", "Melbourne"]` (which can itself span lines). It has to come last because every line after it belongs to it.
 
    | Code | Country | Cities | Sites |
    |---|---|---|---|
@@ -169,7 +169,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `GB` (or `UK`) | United Kingdom | London, Manchester, Birmingham, Edinburgh, Glasgow, Leeds, Bristol | LinkedIn, Indeed |
    | `US` | United States | New York, San Francisco, Los Angeles, Chicago, Boston, Seattle, Houston | LinkedIn, Indeed |
 
-   Seek has no UK or US site, so it skips those countries. The lists are `CITIES` in `src/jobflow/ingest/options.py`; to add a city or country, edit it there. The template's active search covers Sydney, with Singapore and Hong Kong searches commented out.
+   Seek has no UK or US site, so it skips those countries. The lists are `CITIES` in `src/jobflow/ingest/options.py`; to add a city or country, edit it there. The template has one example search, for Sydney.
 
    For different salary cutoffs in AUD, SGD, and HKD, make one `[[search]]` entry per country and put `salary_min`, `salary_max`, and `salary_period` inside that country’s entry. The amounts are interpreted in the posting’s local currency; the workflow does not convert currencies. Leave salary fields out to disable salary filtering for that country. Separate searches may increase LinkedIn scraper runs because LinkedIn runs once per search.
 
