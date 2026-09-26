@@ -5,7 +5,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from jobflow.ingest import apify
-from jobflow.ingest.searches import SearchConfigError, filter_reason, parse_config, plan
+from jobflow.ingest.searches import (SearchConfigError, country_from_location, filter_reason,
+                                     parse_config, plan)
 from jobflow.ingest.sources import normalise, parse_salary
 
 CONFIG = """
@@ -247,3 +248,20 @@ def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
         apify.ingest_searches()
     assert seen.count("indeed") == 8 and seen.count("seek") == 7
     assert "FAILED — boom" in capsys.readouterr().err
+
+
+def test_each_run_knows_its_country_so_one_ad_in_two_countries_stays_two_jobs():
+    runs = plan(searches())
+    for run in runs:
+        if run.site != "linkedin":
+            assert run.country == {"au": "AU", "nz": "NZ", "us": "US", "australia": "AU",
+                                   "new zealand": "NZ"}[run.run_input["country"]]
+    # One LinkedIn run covers every place in a search, so a multi-country search has no
+    # single country; a one-country search does.
+    assert next(r for r in runs if r.site == "linkedin" and r.search.name == "analyst").country is None
+    single = parse_config(CONFIG.replace(', NZ = [], US = ["Austin"]', ""))
+    assert next(r for r in plan(single) if r.site == "linkedin").country == "AU"
+    # Without a run country, LinkedIn-style locations still give one.
+    assert country_from_location("Sydney, New South Wales, Australia") == "AU"
+    assert country_from_location("Hong Kong SAR") == "HK"
+    assert country_from_location("Admiralty, Central and Western District") is None

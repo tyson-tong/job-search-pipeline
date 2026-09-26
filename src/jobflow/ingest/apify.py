@@ -51,7 +51,8 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
             added = save_run(actor_id, run.id, run.default_dataset_id, items,
                              started_at=run.started_at, finished_at=run.finished_at,
                              cost_usd=run.usage_total_usd, search_name=planned.search.name,
-                             run_input=planned.run_input, job_filter=job_filter)
+                             run_input=planned.run_input, job_filter=job_filter,
+                             country=planned.country)
         cost = f", ${run.usage_total_usd:.2f}" if run.usage_total_usd is not None else ""
         print(f"{name}: {len(items)} items, {added} new jobs{cost}")
     except Exception as exc:

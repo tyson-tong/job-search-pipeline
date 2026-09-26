@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import psycopg.types.json
 
 from .options import LINKEDIN_COUNTRIES
+from .searches import country_from_location, run_country
 from .sources import Posting, normalise
 
 JobFilter = Callable[[Posting], "str | None"]
@@ -231,8 +232,12 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None,
     return None
 
 
-def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None) -> bool:
+def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
+             country: str | None = None) -> bool:
     """Upsert one scraped job and record the observation. Returns True if new.
+
+    country is the one country the run searched, if known; otherwise it is read from
+    the job's location where that names one.
 
     A new job failing job_filter is still stored, with status 'filtered' and the reason,
     so it stays out of the default view and scoring but remains a known duplicate.
@@ -242,18 +247,19 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None)
     fp, mkey = fingerprint(posting), match_key(posting)
     description = posting.description or None
     raw = psycopg.types.json.Jsonb(item)
+    country = country or country_from_location(posting.location)
     found = find_duplicate(conn, key, fp, mkey, description, posting.location)
     if found is None:
         reason = job_filter(posting) if job_filter else None
         job_pk = conn.execute(
             """INSERT INTO jobs(canonical_key, source_job_id, canonical_url, title, company,
                    location, posted_at, description, raw_json, fingerprint, source, match_key,
-                   salary_min, salary_max, status, filter_reason)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                   salary_min, salary_max, status, filter_reason, country)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (key, posting.source_id, url, posting.title, posting.company, posting.location,
              posting.posted_at, description, raw, fp, posting.source, mkey,
              posting.salary_min, posting.salary_max, "filtered" if reason else "new",
-             reason)).fetchone()[0]
+             reason, country)).fetchone()[0]
     else:
         job_pk, is_first_copy = found
         # Another site's copy keeps the first site's record; its own copy is kept in
@@ -269,10 +275,11 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None)
                    source=coalesce(source, %s),
                    match_key=coalesce(match_key, %s),
                    salary_min=coalesce(salary_min, %s),
-                   salary_max=coalesce(salary_max, %s)
+                   salary_max=coalesce(salary_max, %s),
+                   country=coalesce(country, %s)
                WHERE id=%s""",
             (is_first_copy, raw, description, description, url, posting.posted_at, fp,
-             posting.source, mkey, posting.salary_min, posting.salary_max, job_pk))
+             posting.source, mkey, posting.salary_min, posting.salary_max, country, job_pk))
     record_source(conn, job_pk, key, posting, url)
     conn.execute(
         """INSERT INTO job_observations(job_id, scraper_run_id, observed_json)
@@ -293,7 +300,8 @@ def record_source(conn, job_pk: int, key: str, posting: Posting, url: str | None
 def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict], *,
              started_at: datetime | None = None, finished_at: datetime | None = None,
              cost_usd: float | None = None, search_name: str | None = None,
-             run_input: dict | None = None, job_filter: JobFilter | None = None) -> int:
+             run_input: dict | None = None, job_filter: JobFilter | None = None,
+             country: str | None = None) -> int:
     from ..db import connect
 
     with connect() as conn:
@@ -310,7 +318,7 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
             (actor_id, run_id, dataset_id, started_at, finished_at, len(jobs), cost_usd,
              search_name, psycopg.types.json.Jsonb(run_input) if run_input else None)
         ).fetchone()[0]
-        return sum(save_job(conn, run_pk, job, job_filter) for job in jobs)
+        return sum(save_job(conn, run_pk, job, job_filter, country) for job in jobs)
 
 
 def record_failed_run(actor_id: str, run_id: str | None, dataset_id: str | None, status: str,
@@ -345,6 +353,25 @@ def backfill_sources(conn) -> int:
                VALUES (%s,%s,%s,%s,%s) ON CONFLICT (source_key) DO NOTHING""",
             (key, job_pk, posting.source, posting.source_id, url))
     return conn.execute("SELECT count(*) FROM job_sources").fetchone()[0] - before
+
+
+def backfill_countries(conn) -> int:
+    """Fill jobs.country from the run that first found each job (run once, when the
+    column is added), falling back to the job's location."""
+    rows = conn.execute(
+        """SELECT j.id, j.location, r.actor_id, r.input FROM jobs j
+           LEFT JOIN LATERAL (SELECT scraper_run_id FROM job_observations o
+                              WHERE o.job_id = j.id ORDER BY observed_at LIMIT 1) first ON true
+           LEFT JOIN scraper_runs r ON r.id = first.scraper_run_id
+           WHERE j.country IS NULL""").fetchall()
+    filled = 0
+    for job_pk, location, actor_id, run_input in rows:
+        site = (actor_id or "").split(":", 1)[0]
+        country = run_country(site, run_input) or country_from_location(location)
+        if country:
+            conn.execute("UPDATE jobs SET country=%s WHERE id=%s", (country, job_pk))
+            filled += 1
+    return filled
 
 
 def backfill_keys(conn) -> int:

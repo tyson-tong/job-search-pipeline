@@ -29,3 +29,7 @@ CREATE INDEX IF NOT EXISTS jobs_fingerprint_idx ON jobs (fingerprint);
 CREATE INDEX IF NOT EXISTS jobs_match_key_idx ON jobs (match_key, first_seen_at DESC);
 CREATE INDEX IF NOT EXISTS jobs_description_fts_idx
     ON jobs USING GIN (to_tsvector('english', coalesce(description, '')));
+
+-- Migration ID: 02
+-- The country a job was found in, so one ad for offices in two countries stays two jobs.
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS country TEXT;

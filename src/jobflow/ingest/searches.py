@@ -10,7 +10,7 @@ import tomllib
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from itertools import product
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import options as opt
 from .sources import ANNUAL_FACTOR, Posting
@@ -54,6 +54,10 @@ class PlannedRun:
     run_input: dict
     # Shown in the tracker's Searches tab: options this site can't apply, widened date windows.
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def country(self) -> str | None:
+        return run_country(self.site, self.run_input)
 
 
 class SearchConfigError(RuntimeError):
@@ -265,6 +269,29 @@ def _notes(site: str, search: Search, window_note: str | None) -> list[str]:
     if search.classifications and opt.FILTER_SUPPORT[site]["classifications"] == "unsupported":
         notes.append("classifications skipped (Seek only; use search terms instead)")
     return notes
+
+
+_COUNTRY_BY_NAME = {name.casefold(): code for code, name in opt.LINKEDIN_COUNTRIES.items()}
+
+
+def country_from_location(location: str | None) -> str | None:
+    """ISO code when a location ends in a country name, as LinkedIn's do ("Sydney, New
+    South Wales, Australia", "Hong Kong SAR"); None for "Admiralty, Central and Western
+    District" and other locations that don't name one."""
+    last = (location or "").rsplit(",", 1)[-1].strip().casefold().removesuffix(" sar")
+    return _COUNTRY_BY_NAME.get(last)
+
+
+def run_country(site: str, run_input: dict | None) -> str | None:
+    """ISO code of the one country an actor input searches, else None (a LinkedIn run
+    covering several countries, or an input this code didn't build)."""
+    run_input = run_input or {}
+    if site in ("indeed", "seek"):
+        table = opt.INDEED_COUNTRIES if site == "indeed" else opt.SEEK_COUNTRIES
+        return next((code for code, value in table.items() if value == run_input.get("country")), None)
+    countries = {country_from_location((parse_qs(urlsplit(url).query).get("location") or [""])[0])
+                 for url in run_input.get("urls") or []}
+    return countries.pop() if len(countries) == 1 else None
 
 
 BUILDERS = {"linkedin": linkedin_runs, "indeed": indeed_runs, "seek": seek_runs}
