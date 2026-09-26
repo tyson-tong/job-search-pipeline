@@ -30,7 +30,7 @@ Cities must come from this list (any capitalisation); a misspelt or unlisted cit
 | `SG` | Singapore | Singapore | all three |
 | `HK` | Hong Kong | Hong Kong | all three |
 | `GB` (or `UK`) | United Kingdom | London, Manchester, Birmingham, Edinburgh, Glasgow, Leeds, Bristol | LinkedIn, Indeed |
-| `US` | United States | New York, San Francisco, Los Angeles, Chicago, Boston, Seattle, Houston | LinkedIn, Indeed |
+| `US` | United States | New York, San Francisco, Los Angeles, Chicago, Boston, Seattle, Houston, San Jose, Dallas, Atlanta, Washington D.C., Minneapolis, Philadelphia, Charlotte, Denver, Miami, San Antonio, Omaha | LinkedIn, Indeed |
 
 Seek has no UK or US site, so it skips those countries. The lists are `CITIES` in `src/jobflow/ingest/options.py`; to add a city or country, edit it there.
 

@@ -55,7 +55,8 @@ CITIES = {
     "HK": ("Hong Kong",),
     "GB": ("London", "Manchester", "Birmingham", "Edinburgh", "Glasgow", "Leeds", "Bristol"),
     "US": ("New York", "San Francisco", "Los Angeles", "Chicago", "Boston", "Seattle",
-           "Houston"),
+           "Houston", "San Jose", "Dallas", "Atlanta", "Washington D.C.", "Minneapolis",
+           "Philadelphia", "Charlotte", "Denver", "Miami", "San Antonio", "Omaha"),
 }
 # Other spellings of a country code accepted in searches.
 COUNTRY_ALIASES = {"UK": "GB"}
@@ -71,6 +72,10 @@ USD_PER_UNIT = {"AUD": 0.66, "NZD": 0.60, "SGD": 0.77, "HKD": 0.128, "GBP": 1.30
 # LinkedIn takes the location as free text, "City, Country"; these are its country names.
 LINKEDIN_COUNTRIES = {"AU": "Australia", "NZ": "New Zealand", "SG": "Singapore",
                       "HK": "Hong Kong", "GB": "United Kingdom", "US": "United States"}
+# Cities LinkedIn reads as a smaller place of the same name unless the state is given
+# ("Charlotte, United States" searches Charlotte, Arkansas).
+LINKEDIN_CITY_NAMES = {"Charlotte": "Charlotte, North Carolina", "Miami": "Miami, Florida",
+                       "Denver": "Denver, Colorado"}
 
 # Search URL f_TPR values (seconds) for LinkedIn's own date filter: past 24 hours,
 # past week, past month. LinkedIn has no 2-week option.

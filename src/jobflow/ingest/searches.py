@@ -257,7 +257,8 @@ def linkedin_runs(search: Search) -> list[PlannedRun]:
     for term, (country, city) in product(search.terms, search.places()):
         country_name = opt.LINKEDIN_COUNTRIES[country]
         params = {"keywords": term,
-                  "location": f"{city}, {country_name}" if city else country_name}
+                  "location": (f"{opt.LINKEDIN_CITY_NAMES.get(city, city)}, {country_name}"
+                               if city else country_name)}
         if window:
             params["f_TPR"] = window
         if search.radius_km and city:
