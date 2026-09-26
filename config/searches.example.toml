@@ -14,6 +14,10 @@ sites = ["linkedin", "indeed", "seek"]
 # 1-month option: those sites search wider and older jobs are filtered after import.
 posted_within_days = 1
 max_results = 50           # per Apify run (LinkedIn: per term and location). Caps cost.
+# Jobs whose title contains any of these words are filtered on import and never reach
+# the Inbox (whole words, any capitalisation: "Graduate" also excludes "graduate
+# analyst" but not "Postgraduate"). A search can set its own list instead.
+# exclude_title_terms = ["Internship", "Intern", "Grad", "Graduate"]
 # max_cost_usd = 1.00      # optional hard cap per Apify run, in USD
 
 [[search]]

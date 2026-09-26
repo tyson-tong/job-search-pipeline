@@ -6,6 +6,7 @@ See config/searches.example.toml for the format and options.py for allowed value
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -18,7 +19,7 @@ from .sources import ANNUAL_FACTOR, Posting
 DEFAULTS = {"posted_within_days": 1, "max_results": 50, "sites": list(opt.SITES)}
 SEARCH_KEYS = {"name", "terms", "locations", "sites", "posted_within_days", "max_results",
                "max_cost_usd", "radius_km", "salary_min", "salary_max", "salary_period",
-               "job_types", "work_arrangements", "classifications"}
+               "job_types", "work_arrangements", "classifications", "exclude_title_terms"}
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,8 @@ class Search:
     job_types: tuple[str, ...] = ()
     work_arrangements: tuple[str, ...] = ()
     classifications: tuple[str, ...] = ()
+    # Jobs whose title contains any of these words are filtered on import.
+    exclude_title_terms: tuple[str, ...] = ()
 
     def places(self) -> list[tuple[str, str | None]]:
         """(country, city) pairs; city None means the whole country."""
@@ -131,6 +134,12 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     salary_min, salary_max = merged.get("salary_min"), merged.get("salary_max")
     if salary_min is not None and salary_max is not None and salary_min > salary_max:
         raise SearchConfigError(f"{where}: salary_min is greater than salary_max")
+    excluded = merged.get("exclude_title_terms") or []
+    if isinstance(excluded, str):
+        excluded = [excluded]
+    if not isinstance(excluded, list) or not all(isinstance(t, str) and _words(t) for t in excluded):
+        raise SearchConfigError(f"{where}: exclude_title_terms must be a list of words, "
+                                'e.g. ["Internship", "Graduate"]')
     period = merged.get("salary_period", "annual")
     _choices(f"{where} salary_period", [period], opt.SALARY_PERIODS)
     return Search(
@@ -146,6 +155,7 @@ def parse_search(raw: dict, defaults: dict) -> Search:
                                    merged.get("work_arrangements"), opt.WORK_ARRANGEMENTS),
         classifications=_choices(f"{where} classifications", merged.get("classifications"),
                                  _all_classifications()),
+        exclude_title_terms=tuple(t.strip() for t in excluded),
     )
 
 
@@ -317,9 +327,21 @@ def plan(searches: list[Search], only_search: str | None = None,
 # --- Local filtering -------------------------------------------------------------------
 
 
+def _words(text: str | None) -> str:
+    """Lower-case words separated by single spaces, ignoring punctuation."""
+    return re.sub(r"[^a-z0-9]+", " ", (text or "").casefold()).strip()
+
+
+def excluded_title_term(title: str | None, terms: tuple[str, ...]) -> str | None:
+    """The first term found in the title as whole words (ignoring case and punctuation),
+    so "Graduate" excludes "Graduate Analyst" but not "Postgraduate Researcher"."""
+    padded = f" {_words(title)} "
+    return next((term for term in terms if f" {_words(term)} " in padded), None)
+
+
 def local_filters(site: str, search: Search) -> list[str]:
     support = opt.FILTER_SUPPORT.get(site, {})
-    active = []
+    active = ["title_terms"] if search.exclude_title_terms else []
     if (search.salary_min is not None or search.salary_max is not None) \
             and support.get("salary") == "local":
         active.append("salary")
@@ -340,6 +362,9 @@ def filter_reason(posting: Posting, search: Search, site: str,
     posted date listed means the job is kept.
     """
     active = local_filters(site, search)
+    term = excluded_title_term(posting.title, search.exclude_title_terms)
+    if term:
+        return f"title contains {term!r}"
     if "posted_date" in active and posting.posted_at is not None:
         # One day of slack: sites and time zones disagree on what "today" is.
         oldest = (today or date.today()) - timedelta(days=search.posted_within_days + 1)

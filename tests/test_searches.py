@@ -269,3 +269,18 @@ def test_each_run_knows_its_country_so_one_ad_in_two_countries_stays_two_jobs():
     assert country_from_location("Sydney, New South Wales, Australia") == "AU"
     assert country_from_location("Hong Kong SAR") == "HK"
     assert country_from_location("Admiralty, Central and Western District") is None
+
+
+def test_excluded_title_terms_keep_jobs_out_of_the_inbox():
+    config = CONFIG.replace("max_results = 40",
+                            'max_results = 40\nexclude_title_terms = ["Internship", "Fresh Grad", "Graduate"]')
+    search = parse_config(config)[0]
+    def reason(title):
+        return filter_reason(normalise({"title": title, "companyName": "Acme"}), search, "linkedin")
+    # Any capitalisation or punctuation, anywhere in the title.
+    assert reason("Quant INTERNSHIP - Summer 2027") == "title contains 'Internship'"
+    assert reason("Fresh-Grad Trader") == "title contains 'Fresh Grad'"
+    assert reason("2027 Graduate Program") == "title contains 'Graduate'"
+    # Whole words only: a longer word containing a term is kept.
+    assert reason("Postgraduate Researcher") is None
+    assert reason("Quant Analyst") is None
