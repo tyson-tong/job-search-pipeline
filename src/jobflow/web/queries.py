@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from ..db import CLOSED_STATUSES, STATUSES, connect, set_job_state
 from ..ingest.store import IN_PROGRESS, possible_duplicate_map, possible_duplicates
 
-DEFAULT_STATUSES = ["interested", "applied"]
+DEFAULT_STATUSES = ["interested", "applied", "interviewing", "offered", "accepted"]
 # Statuses a person can choose; "filtered" is only set by imports.
 EDITABLE_STATUSES = [s for s in STATUSES if s != "filtered"]
 SORTS = {

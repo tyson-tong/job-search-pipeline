@@ -193,7 +193,7 @@ const SITE_NAMES = { linkedin: "LinkedIn", indeed: "Indeed", seek: "Seek" };
 const AUTO_REFRESH_MS = 3 * 60 * 1000;
 // versions: each edited job's tracking version when you started editing it, sent with
 // Save so changes made elsewhere in the meantime are caught instead of overwritten.
-const state = { view: "jobs", statuses: new Set(["interested", "applied"]), jobs: [], summary: null,
+const state = { view: "jobs", statuses: new Set(["interested", "applied", "interviewing", "offered", "accepted"]), jobs: [], summary: null,
   pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null,
   // Rows ticked for a bulk change (Inbox triage, Filtered back to the Inbox); lastPicked anchors shift-click ranges.
   selected: new Set(), lastPicked: null };

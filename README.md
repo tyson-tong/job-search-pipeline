@@ -32,7 +32,7 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
 
 2. **Pick jobs worth applying to.**
    - **Inbox**: newly scraped jobs, most recently added first. A job here can only be marked Interested or Not interested; the other statuses are for My jobs. Tick several rows (shift-click selects a range) to mark them all at once.
-   - **My jobs**: jobs you marked Interested and everything after (Interested and Applied by default; the status menu selects the others). Not interested and filtered jobs never appear here. Search, filter by site or minimum salary, sort by match, posted date, date added, or follow-up date, and export the view as CSV.
+   - **My jobs**: jobs you marked Interested and everything after (Interested, Applied, Interviewing, Offered, and Accepted by default; the status menu selects the others, and its **Default** button restores these). Not interested and filtered jobs never appear here. Search, filter by site or minimum salary, sort by match, posted date, date added, or follow-up date, and export the view as CSV.
    - **Filtered**: jobs your search filters kept out of the Inbox, each with its reason ("title contains 'Trader'", a salary below your minimum). **Move to Inbox** brings one back, or tick several to move them together; saved with Save like any other change.
    - **Pipeline counts** at the top (click one to filter), and overdue follow-ups.
    - **Job panel** (click a title): the ad, a link to each site it's listed on, why it scored as it did (each requirement matched, partial, or not evidenced, with the CV quotes), similar jobs, notes, status history, and the tailor-cv and interview-prep commands for that job, ready to copy.
