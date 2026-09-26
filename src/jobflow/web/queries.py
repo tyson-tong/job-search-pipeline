@@ -66,7 +66,7 @@ def list_jobs(filters: dict) -> list[dict]:
                        (SELECT s.url FROM job_sources s WHERE s.job_id = j.id
                         ORDER BY s.first_seen_at LIMIT 1) AS url,
                        a.follow_up_on, a.applied_at, a.notes IS NOT NULL AS has_notes,
-                       {VERSION_SQL} AS version
+                       j.filter_reason, {VERSION_SQL} AS version
                 FROM jobs j
                 LEFT JOIN applications a ON a.job_id = j.id
                 LEFT JOIN LATERAL (
@@ -87,7 +87,7 @@ def list_jobs(filters: dict) -> list[dict]:
             {**filters, "pattern": f"%{filters['q']}%"}).fetchall()
         keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
                 "salary_min", "salary_max", "score", "cv_variant", "sites", "url",
-                "follow_up_on", "applied_at", "has_notes", "version")
+                "follow_up_on", "applied_at", "has_notes", "filter_reason", "version")
         jobs = [dict(zip(keys, row)) for row in rows]
         duplicates = possible_duplicate_map(conn, [job["id"] for job in jobs])
     today = date.today()

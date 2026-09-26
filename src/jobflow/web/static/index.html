@@ -45,6 +45,7 @@ main { padding: 12px 16px 60px; max-width: 1500px; margin: 0 auto; }
 .tabs { display: flex; gap: 4px; margin-bottom: 10px; }
 .tab { border: 0; background: none; padding: 8px 14px; border-bottom: 2px solid transparent; font-weight: 600; color: var(--muted); }
 .tab.on { color: var(--ink); border-color: var(--accent); }
+.count.muted-count { background: var(--chip); color: var(--muted); }
 .count { background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 7px; font-size: 0.75rem; margin-left: 4px; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
 .filters input, .filters select { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 9px; }
@@ -153,6 +154,7 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
   <div class="tabs">
     <button class="tab" data-view="inbox">Inbox<span class="count" id="inbox-count">0</span></button>
     <button class="tab" data-view="jobs">My jobs</button>
+    <button class="tab" data-view="filtered">Filtered<span class="count muted-count" id="filtered-count">0</span></button>
     <button class="tab" data-view="searches">Searches</button>
   </div>
   <div class="filters" id="filters">
@@ -194,7 +196,7 @@ const AUTO_REFRESH_MS = 3 * 60 * 1000;
 // Save so changes made elsewhere in the meantime are caught instead of overwritten.
 const state = { view: "jobs", statuses: new Set(["interested", "applied"]), jobs: [], summary: null,
   pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null,
-  // Inbox rows ticked for a bulk Interested / Not interested; lastPicked anchors shift-click ranges.
+  // Rows ticked for a bulk change (Inbox triage, Filtered back to the Inbox); lastPicked anchors shift-click ranges.
   selected: new Set(), lastPicked: null };
 // A job still in the Inbox can only be triaged; the other statuses come after Interested.
 const TRIAGE_STATUSES = ["new", "interested", "not_interested"];
@@ -340,7 +342,7 @@ const qInput = document.getElementById("q"), siteInput = document.getElementById
   salaryInput = document.getElementById("salary"), sortInput = document.getElementById("sort");
 function filterParams() {
   const params = new URLSearchParams();
-  const statuses = state.view === "inbox" ? ["new"] : [...state.statuses];
+  const statuses = state.view === "inbox" ? ["new"] : state.view === "filtered" ? ["filtered"] : [...state.statuses];
   statuses.forEach((s) => params.append("status", s));
   if (qInput.value.trim()) params.set("q", qInput.value.trim());
   if (siteInput.value) params.set("site", siteInput.value);
@@ -393,7 +395,8 @@ function renderPipeline() {
 function renderTabs() {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("on", tab.dataset.view === state.view));
   document.getElementById("inbox-count").textContent = state.summary.counts.new || 0;
-  document.getElementById("status-filter").hidden = state.view === "inbox";
+  document.getElementById("filtered-count").textContent = state.summary.counts.filtered || 0;
+  document.getElementById("status-filter").hidden = state.view !== "jobs";
 }
 function renderStatusMenu() {
   const menu = document.getElementById("status-menu");
@@ -416,7 +419,8 @@ function renderStatusMenu() {
 }
 function statusSelect(job) {
   const value = current(job, "status");
-  const choices = job.status === "new" ? TRIAGE_STATUSES : state.summary.editable;
+  // A filtered job can only go back to the Inbox; a new one can only be triaged.
+  const choices = job.status === "filtered" ? ["new"] : job.status === "new" ? TRIAGE_STATUSES : state.summary.editable;
   const options = choices.map((s) => el("option", { value: s, selected: s === value }, label(s)));
   if (value === "filtered") options.unshift(el("option", { value: "filtered", selected: true, disabled: true }, "Filtered"));
   return el("select", { "aria-label": "Status", onchange: (event) => setPending(job, "status", event.target.value) }, options);
@@ -440,13 +444,15 @@ function renderRows() {
   const n = state.jobs.length;
   document.getElementById("shown").textContent = `${n} job${n === 1 ? "" : "s"}`;
   document.getElementById("export").href = "/api/export.csv?" + filterParams() + "&token=" + encodeURIComponent(TOKEN);
-  const inbox = state.view === "inbox";
+  const inbox = state.view === "inbox", filtered = state.view === "filtered";
+  const selectable = inbox || filtered;
   const shown = new Set(state.jobs.map((job) => job.id));
-  state.selected.forEach((id) => { if (!inbox || !shown.has(id)) state.selected.delete(id); });
+  state.selected.forEach((id) => { if (!selectable || !shown.has(id)) state.selected.delete(id); });
   renderBulk();
   if (!n) {
-    fill(body, [el("tr", {}, el("td", { colspan: inbox ? 8 : 7, className: "empty" },
-      state.view === "inbox" ? "Inbox is empty: no new jobs to review." : "No jobs match these filters."))]);
+    fill(body, [el("tr", {}, el("td", { colspan: selectable ? 8 : 7, className: "empty" },
+      inbox ? "Inbox is empty: no new jobs to review."
+        : filtered ? "No filtered jobs." : "No jobs match these filters."))]);
     return;
   }
   fill(body, [...state.jobs.map((job, index) => {
@@ -459,6 +465,13 @@ function renderRows() {
           return el("button", { className: "btn small" + (on ? " on" : ""), "aria-pressed": String(on),
             onclick: () => setPending(job, "status", on ? "new" : s) }, text);
         }))
+      : filtered
+      ? (() => {
+          const on = current(job, "status") === "new";
+          // Clicking again keeps the job filtered.
+          return el("button", { className: "btn small" + (on ? " on" : ""), "aria-pressed": String(on),
+            onclick: () => setPending(job, "status", on ? "filtered" : "new") }, "Move to Inbox");
+        })()
       : statusSelect(job);
     const grouped = job.group != null, abroad = job.area != null;
     const groupStart = grouped && (index === 0 || state.jobs[index - 1].group !== job.group);
@@ -467,7 +480,7 @@ function renderRows() {
       groupStart ? "group-start" : "", abroad ? "abroad" : "", areaStart ? "area-start" : ""].filter(Boolean).join(" "),
       title: grouped ? "Similar jobs, shown together"
         : abroad ? "The same ad in another country, shown together" : null },
-      inbox ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
+      selectable ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
         el("input", { type: "checkbox", checked: state.selected.has(job.id), "aria-label": `Select ${job.title}` })) : null,
       el("td", {}, el("span", { className: "score" + scoreClass,
         title: job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored: only interested jobs are scored" },
@@ -475,6 +488,7 @@ function renderRows() {
       el("td", {},
         el("button", { className: "title-btn", onclick: () => openDetail(job.id) }, job.title),
         el("div", { className: "meta" }, [job.company, job.location].filter(Boolean).join(" · ")),
+        filtered && job.filter_reason ? el("div", { className: "meta" }, `Filtered: ${job.filter_reason}`) : null,
         el("div", { className: "flags" },
           duplicateFlag(job),
           job.elsewhere.length ? el("span", { className: "flag", title: "The same role advertised in another country; shown alongside" },
@@ -492,7 +506,7 @@ function renderRows() {
   })]);
 }
 
-// ---- Selecting Inbox rows for bulk triage -------------------------------------------------
+// ---- Selecting rows (Inbox, Filtered) for bulk changes ------------------------------------
 function pick(id, index, event) {
   const on = !state.selected.has(id);
   const anchor = event.shiftKey && state.lastPicked !== null ? state.lastPicked : index;
@@ -505,7 +519,7 @@ function pick(id, index, event) {
   state.lastPicked = index;
   renderRows();
 }
-function markSelected(status) {
+function markSelected(status, done = `marked ${label(status).toLowerCase()}`) {
   const jobs = state.jobs.filter((job) => state.selected.has(job.id));
   jobs.forEach((job) => stagePending(job, "status", status));
   state.selected.clear();
@@ -513,20 +527,22 @@ function markSelected(status) {
   renderSaveBar();
   renderRows();
   if (state.detail && jobs.some((job) => job.id === state.detail.id)) renderDetail();
-  toast(`${jobs.length} job${jobs.length === 1 ? "" : "s"} marked ${label(status).toLowerCase()}: click Save to keep`);
+  toast(`${jobs.length} job${jobs.length === 1 ? "" : "s"} ${done}: click Save to keep`);
 }
 function renderBulk() {
-  const inbox = state.view === "inbox", n = state.selected.size, total = state.jobs.length;
-  document.getElementById("select-col").hidden = !inbox;
+  const inbox = state.view === "inbox", filtered = state.view === "filtered";
+  const selectable = inbox || filtered, n = state.selected.size, total = state.jobs.length;
+  document.getElementById("select-col").hidden = !selectable;
   const all = document.getElementById("select-all");
-  all.checked = inbox && total > 0 && n === total;
+  all.checked = selectable && total > 0 && n === total;
   all.indeterminate = n > 0 && n < total;
   const bar = document.getElementById("bulk");
-  bar.hidden = !inbox || !n;
+  bar.hidden = !selectable || !n;
   if (bar.hidden) return;
   fill(bar, [el("strong", {}, `${n} selected`),
-    el("button", { className: "btn small", onclick: () => markSelected("interested") }, "Mark interested"),
-    el("button", { className: "btn small", onclick: () => markSelected("not_interested") }, "Mark not interested"),
+    inbox ? [el("button", { className: "btn small", onclick: () => markSelected("interested") }, "Mark interested"),
+      el("button", { className: "btn small", onclick: () => markSelected("not_interested") }, "Mark not interested")]
+      : el("button", { className: "btn small", onclick: () => markSelected("new", "moved to the Inbox") }, "Move to Inbox"),
     el("button", { className: "btn small", onclick: () => { state.selected.clear(); state.lastPicked = null; renderRows(); } }, "Clear selection"),
     el("span", { className: "meta" }, "Shift-click a checkbox to select a range.")]);
 }
@@ -702,7 +718,7 @@ function renderDetail() {
       ? el("div", { className: "banner" }, `This may be the same role as job #${inProgress[0].id} `
           + `(${inProgress[0].company || "unknown employer"}), which is already ${label(inProgress[0].status).toLowerCase()}.`)
       : null,
-    job.filter_reason ? el("div", { className: "banner" }, `Filtered on import: ${job.filter_reason}`) : null,
+    job.status === "filtered" && job.filter_reason ? el("div", { className: "banner" }, `Filtered on import: ${job.filter_reason}`) : null,
     el("div", { className: "edit" },
       el("label", { for: "d-status" }, "Status"),
       Object.assign(statusSelect(target), { id: "d-status" }),
