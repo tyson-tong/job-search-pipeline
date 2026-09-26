@@ -30,6 +30,14 @@ POSSIBLE_TITLE = 0.6
 POSSIBLE_DESCRIPTION = 0.4
 POSSIBLE_WINDOW_DAYS = 180
 IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
+# Ads at least this alike under the same title are the same job even when the sites spell
+# the employer or place differently, e.g. "Shenwan Hongyuan (H.K.)" on LinkedIn and
+# "Shenwan Hongyuan Securities (H.K.)" in Admiralty on Seek. The title must match exactly:
+# employers reuse one ad for different roles (Susquehanna's research and trading
+# internships). Short ads are left out: boilerplate such as "Apply on our website" is
+# identical across unrelated jobs. One ad for offices in two countries stays two jobs.
+SAME_AD = 0.95
+SAME_AD_MIN_WORDS = 30
 # Location words that don't identify a city: states, countries, and generic terms.
 NOT_PLACE_WORDS = ({"nsw", "vic", "qld", "tas", "act", "wa", "sa", "nt", "area", "greater",
                     "metropolitan", "metro", "region", "remote", "hybrid", "onsite", "site",
@@ -83,9 +91,12 @@ def fingerprint(posting: Posting) -> str | None:
     return _digest("|".join((company, title, _normalise(posting.location), description)))
 
 
+def _description_words(text: str | None) -> set[str]:
+    return {w for w in _normalise(text).split() if len(w) > 2}
+
+
 def description_similarity(a: str | None, b: str | None) -> float:
-    words_a = {w for w in _normalise(a).split() if len(w) > 2}
-    words_b = {w for w in _normalise(b).split() if len(w) > 2}
+    words_a, words_b = _description_words(a), _description_words(b)
     if not words_a or not words_b:
         return 0.0
     return len(words_a & words_b) / len(words_a | words_b)
@@ -96,6 +107,28 @@ def title_similarity(a: str | None, b: str | None) -> float:
     if not words_a or not words_b:
         return 0.0
     return len(words_a & words_b) / len(words_a | words_b)
+
+
+def title_patterns(title: str | None) -> list[str]:
+    """ILIKE patterns that narrow titles in SQL before they are compared in Python."""
+    words = [w for w in _normalise(title).split() if len(w) > 3] or _normalise(title).split()
+    return [f"%{w}%" for w in words]
+
+
+def is_same_ad(title_a: str | None, description_a: str | None,
+               title_b: str | None, description_b: str | None,
+               country_a: str | None = None, country_b: str | None = None) -> bool:
+    """True when two postings carry the same ad under the same title (ignoring case and
+    punctuation), whoever posted it and wherever in one country it is listed. An unknown
+    country doesn't block a match."""
+    if country_a and country_b and country_a != country_b:
+        return False
+    if not _normalise(title_a) or _normalise(title_a) != _normalise(title_b):
+        return False
+    if min(len(_description_words(description_a)),
+           len(_description_words(description_b))) < SAME_AD_MIN_WORDS:
+        return False
+    return description_similarity(description_a, description_b) >= SAME_AD
 
 
 def looks_like_same_role(title_a: str | None, description_a: str | None,
@@ -118,15 +151,15 @@ def possible_duplicates(job_id: int, limit: int = 5) -> list[dict]:
         if not job or not job[1]:
             return []
         title, description = job
-        words = [w for w in _normalise(title).split() if len(w) > 3] or _normalise(title).split()
-        if not words:
+        patterns = title_patterns(title)
+        if not patterns:
             return []
         # Cheap title prefilter in SQL; descriptions are only loaded for close titles.
         rows = conn.execute(
             """SELECT id, title FROM jobs
                WHERE id <> %s AND first_seen_at > now() - make_interval(days => %s)
                  AND title ILIKE ANY(%s)""",
-            (job_id, POSSIBLE_WINDOW_DAYS, [f"%{w}%" for w in words])).fetchall()
+            (job_id, POSSIBLE_WINDOW_DAYS, patterns)).fetchall()
         close = [pk for pk, other in rows if title_similarity(title, other) >= POSSIBLE_TITLE]
         if not close:
             return []
@@ -201,14 +234,17 @@ def identity(posting: Posting) -> tuple[str, str | None]:
     return f"fingerprint:{_digest(parts + '|' + _normalise(posting.description)[:1500])}", None
 
 
-def find_duplicate(conn, key: str, fp: str | None, mkey: str | None,
-                   description: str | None, location: str | None) -> tuple[int, bool] | None:
+def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str | None,
+                   description: str | None, location: str | None,
+                   country: str | None = None) -> tuple[int, bool] | None:
     """Return (job id, is_first_copy) for an existing copy of this posting, if any.
 
     is_first_copy is True when this is the copy the jobs row was created from.
     Tried in order: this site's ID/URL on any known copy (job_sources), exact content
-    fingerprint, then the same employer and title seen recently in the same place with
-    a similar description (another site's copy, or a repost).
+    fingerprint, the same employer and title seen recently in the same place with a
+    similar description (another site's copy, or a repost), then a recent job with the
+    same title and a near-identical ad under any employer or place in the same country
+    (is_same_ad).
     """
     row = conn.execute("""SELECT s.job_id, j.canonical_key = s.source_key
                           FROM job_sources s JOIN jobs j ON j.id = s.job_id
@@ -229,6 +265,21 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None,
             if same_place(location, existing_location) and \
                     description_similarity(description, existing) >= SIMILAR_DESCRIPTION:
                 return job_pk, False
+    patterns = title_patterns(title)
+    if description and patterns and title != "Untitled":
+        # Titles first; descriptions are only loaded for the same title.
+        rows = conn.execute(
+            """SELECT id, title FROM jobs
+               WHERE first_seen_at > now() - make_interval(days => %s) AND title ILIKE ANY(%s)
+               ORDER BY first_seen_at DESC""", (FUZZY_WINDOW_DAYS, patterns)).fetchall()
+        close = [pk for pk, other in rows if _normalise(other) == _normalise(title)]
+        if close:
+            candidates = conn.execute(
+                """SELECT id, title, description, country FROM jobs WHERE id = ANY(%s)
+                   ORDER BY first_seen_at DESC""", (close[:50],)).fetchall()
+            for job_pk, other_title, existing, other_country in candidates:
+                if is_same_ad(title, description, other_title, existing, country, other_country):
+                    return job_pk, False
     return None
 
 
@@ -248,7 +299,8 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
     description = posting.description or None
     raw = psycopg.types.json.Jsonb(item)
     country = country or country_from_location(posting.location)
-    found = find_duplicate(conn, key, fp, mkey, description, posting.location)
+    found = find_duplicate(conn, key, fp, mkey, posting.title, description, posting.location,
+                           country)
     if found is None:
         reason = job_filter(posting) if job_filter else None
         job_pk = conn.execute(

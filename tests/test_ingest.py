@@ -2,7 +2,7 @@ from datetime import date
 
 from jobflow.ingest.sources import normalise, to_date
 from jobflow.ingest.store import (canonical_url, description_similarity, fingerprint, identity,
-                                  looks_like_same_role, match_key, same_place)
+                                  is_same_ad, looks_like_same_role, match_key, same_place)
 
 DESCRIPTION = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate "
                "reporting in Python for our finance and operations teams.")
@@ -99,3 +99,24 @@ def test_possible_duplicate_catches_a_recruiter_repost_the_merge_misses():
     # Same title but a different job is not flagged.
     assert looks_like_same_role("Data Analyst", DESCRIPTION, "Data Analyst",
                                 "Lead our retail store team, manage rosters and stock.") is None
+
+
+LONG_AD = " ".join(f"duty{i}" for i in range(60))
+
+
+def test_identical_ad_under_the_same_title_merges_whoever_posts_it():
+    # Seen live: LinkedIn and Seek spelled the employer and district differently, so the
+    # employer-and-city step missed one ad posted on both.
+    assert is_same_ad("VP-Director, Portfolio Management (Equity)", LONG_AD,
+                      "VP Director Portfolio Management Equity", LONG_AD + " apply")
+    # Susquehanna reused one ad for two different internships: never merged.
+    assert not is_same_ad("Quantitative Research Internship", LONG_AD,
+                          "Quantitative Systematic Trading Internship", LONG_AD)
+    # A short boilerplate ad is not enough, nor is an ad that is only mostly the same.
+    assert not is_same_ad("Analyst", "Apply on our website today", "Analyst",
+                          "Apply on our website today")
+    edited = " ".join(f"duty{i}" for i in range(54)) + " " + " ".join(f"other{i}" for i in range(6))
+    assert not is_same_ad("Analyst", LONG_AD, "Analyst", edited)
+    # CPP Investments posted one ad for Sydney and Hong Kong: two jobs, one per country.
+    assert not is_same_ad("Analyst", LONG_AD, "Analyst", LONG_AD, "AU", "HK")
+    assert is_same_ad("Analyst", LONG_AD, "Analyst", LONG_AD, "HK", None)
