@@ -45,7 +45,6 @@ main { padding: 12px 16px 60px; max-width: 1500px; margin: 0 auto; }
 .tabs { display: flex; gap: 4px; margin-bottom: 10px; }
 .tab { border: 0; background: none; padding: 8px 14px; border-bottom: 2px solid transparent; font-weight: 600; color: var(--muted); }
 .tab.on { color: var(--ink); border-color: var(--accent); }
-.count.muted-count { background: var(--chip); color: var(--muted); }
 .count { background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 7px; font-size: 0.75rem; margin-left: 4px; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
 .filters input, .filters select { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 9px; }
@@ -154,7 +153,7 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
   <div class="tabs">
     <button class="tab" data-view="inbox">Inbox<span class="count" id="inbox-count">0</span></button>
     <button class="tab" data-view="jobs">My jobs</button>
-    <button class="tab" data-view="filtered">Filtered<span class="count muted-count" id="filtered-count">0</span></button>
+    <button class="tab" data-view="filtered">Filtered</button>
     <button class="tab" data-view="searches">Searches</button>
   </div>
   <div class="filters" id="filters">
@@ -170,7 +169,7 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
       <option value="score">Best match first</option><option value="posted">Newest posted</option>
       <option value="added">Recently added</option><option value="follow_up">Follow-up date</option>
     </select>
-    <button class="btn" id="score-btn" disabled>Score interested jobs</button>
+    <button class="btn" id="score-btn" disabled>Score all interested jobs</button>
     <a class="btn" id="export" href="#">Export CSV</a>
     <span class="meta" id="shown"></span>
   </div>
@@ -395,7 +394,6 @@ function renderPipeline() {
 function renderTabs() {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("on", tab.dataset.view === state.view));
   document.getElementById("inbox-count").textContent = state.summary.counts.new || 0;
-  document.getElementById("filtered-count").textContent = state.summary.counts.filtered || 0;
   document.getElementById("status-filter").hidden = state.view !== "jobs";
 }
 function renderStatusMenu() {
@@ -557,10 +555,11 @@ function renderScoring() {
   const button = document.getElementById("score-btn"), chip = document.getElementById("scoring");
   const running = state.scoring && state.scoring.running;
   const { unscored, cv_count: cvs, scoring_problem: problem } = state.summary || {};
+  // Filtered jobs are never scored, so the button has no place there.
+  button.hidden = state.view === "filtered";
   button.disabled = running || !unscored;
-  button.textContent = unscored ? `Score ${unscored} interested job${unscored === 1 ? "" : "s"}` : "All interested jobs scored";
-  button.title = problem ? `Scoring unavailable: ${problem}`
-    : "Scores interested jobs that haven't been scored. A job is scored once and never again.";
+  // Only a configuration problem needs explaining; the button is otherwise self-explanatory.
+  button.title = problem ? `Scoring unavailable: ${problem}` : "";
   chip.hidden = !running;
   if (running) chip.textContent = `Scoring ${state.scoring.done} / ${state.scoring.total}…`;
 }
