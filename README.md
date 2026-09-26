@@ -151,7 +151,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `salary_min`, `salary_max`, `salary_period` | `100000`, `160000`, `"annual"` | Local currency. Jobs without a listed salary are kept |
    | `job_types` | `["full-time", "contract"]` | full-time, part-time, contract, casual |
    | `work_arrangements` | `["hybrid", "remote"]` | on-site, hybrid, remote |
-   | `classifications` | `["information-communication-technology"]` | Seek only; the tracker's Searches tab lists them all |
+   | `seek_classifications` | `["information-communication-technology"]` | Seek only; the tracker's Searches tab lists them all. Earlier files may call it `classifications`, which still works |
    | `sites` | `["seek", "linkedin"]` | Which job sites to search; see below |
    | `posted_within_days` | `1` | 1 (24 hours), 7 (1 week), 14 (2 weeks), or 30 (1 month); see below |
    | `max_results`, `max_cost_usd`, `radius_km` | `30`, `0.50`, `25` | Usually set once under `[defaults]` |
@@ -204,7 +204,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | Terms, country, city, date posted | on site | on site | on site |
    | Salary | after import | after import | after import |
    | Job type, work arrangement | after import | after import | on site |
-   | Classification | no | no | on site |
+   | Seek classifications | no | no | on site |
    | Excluded title terms | after import | after import | after import |
 
    "On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match, or whose title contains an excluded term; the job is stored with status `filtered` and the reason, and appears in the tracker's Filtered tab. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. LinkedIn results rarely list a salary and never say whether a job is remote, so in practice those filters seldom remove LinkedIn jobs. Salary bounds are applied after import for all three sites. Missing salary data is kept; Seek is deliberately scraped without salary bounds so it cannot hide salaryless postings upstream. This can increase the number of Seek results and Apify usage.

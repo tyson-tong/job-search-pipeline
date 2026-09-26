@@ -23,7 +23,7 @@ salary_min = 100000
 salary_max = 150000
 job_types = ["full-time", "contract"]
 work_arrangements = ["hybrid", "remote"]
-classifications = ["information-communication-technology", "engineering-software"]
+seek_classifications = ["information-communication-technology", "engineering-software"]
 
 [[search]]
 name = "counsel"
@@ -296,3 +296,11 @@ def test_included_title_terms_override_excluded_ones():
     assert reason("Quant Analyst - Equities") is None
     assert reason("MGR/AVP, Quantitative Analyst") is None
 
+
+def test_old_setting_names_still_work():
+    # The GitHub copy of a searches file may predate a rename; the daily import must still
+    # read it. Setting both names at once is an error rather than a silent choice.
+    old = parse_config(CONFIG.replace("seek_classifications = ", "classifications = "))
+    assert old == parse_config(CONFIG)
+    with pytest.raises(SearchConfigError, match="set seek_classifications only"):
+        parse_config(CONFIG.replace("seek_classifications = [", 'classifications = ["engineering"]\nseek_classifications = ['))

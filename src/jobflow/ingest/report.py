@@ -46,7 +46,7 @@ def describe_searches() -> dict:
             "radius_km": search.radius_km, "salary_min": search.salary_min,
             "salary_max": search.salary_max, "salary_period": search.salary_period,
             "job_types": list(search.job_types), "work_arrangements": list(search.work_arrangements),
-            "classifications": list(search.classifications),
+            "seek_classifications": list(search.seek_classifications),
             "exclude_title_terms": list(search.exclude_title_terms),
             "include_title_terms": list(search.include_title_terms), "sites": sites})
     return {"ok": True, "source": source, "path": path, "error": None, "searches": described,
@@ -70,7 +70,7 @@ def reference() -> dict:
                                                      ("indeed", opt.INDEED_COUNTRIES),
                                                      ("seek", opt.SEEK_COUNTRIES)) if code in table]}
                       for code, cities in opt.CITIES.items()],
-        "classifications": [{"key": key, "name": name,
+        "seek_classifications": [{"key": key, "name": name,
                              "subclassifications": [{"key": k, "name": n} for k, n in
                                                     opt.SEEK_SUBCLASSIFICATIONS.get(key, {}).items()]}
                             for key, name in opt.SEEK_CLASSIFICATIONS.items()],

@@ -36,7 +36,7 @@ work_arrangements = [    # on-site, hybrid, remote
     "hybrid",
     "remote",
 ]
-classifications = [
+seek_classifications = [
     "information-communication-technology",
     "banking-financial-services-analysis-reporting",
 ]

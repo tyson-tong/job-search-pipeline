@@ -633,7 +633,7 @@ function renderSearchCard(search) {
       item("Salary", salary),
       item("Job types", search.job_types.length ? search.job_types.join(", ") : "any"),
       item("Work arrangements", search.work_arrangements.length ? search.work_arrangements.join(", ") : "any"),
-      item("Classifications", search.classifications.length ? search.classifications.join(", ") + " (Seek only)" : "any"),
+      item("Seek classifications", search.seek_classifications.length ? search.seek_classifications.join(", ") : "any"),
       item("Excluded titles", search.exclude_title_terms.length
         ? search.exclude_title_terms.map((t) => el("span", { className: "pill" }, t)) : "none"),
       item("Kept titles", search.include_title_terms.length
@@ -654,7 +654,7 @@ function renderReference(ref) {
     el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c) => el("td", {}, c)))))));
   const filterNames = Object.keys(ref.filter_support[ref.sites[0]]);
   const classList = el("div");
-  const drawClasses = (q) => fill(classList, ref.classifications.map((c) => {
+  const drawClasses = (q) => fill(classList, ref.seek_classifications.map((c) => {
     const subs = c.subclassifications.filter((sc) => !q || `${sc.key} ${sc.name}`.toLowerCase().includes(q));
     const own = !q || `${c.key} ${c.name}`.toLowerCase().includes(q);
     if (!own && !subs.length) return null;
@@ -679,7 +679,7 @@ function renderReference(ref) {
     el("p", { className: "meta", style: "margin:0 0 4px" }, "Use [] for the whole country. UK also works for GB."),
     table(["Code", "Country", "Cities", "Sites"], ref.countries.map((c) =>
       [el("code", {}, c.code), c.name, c.cities.join(", "), c.sites.map(siteName).join(", ")])),
-    el("details", {}, el("summary", {}, el("strong", {}, "Seek classifications")),
+    el("details", {}, el("summary", {}, el("strong", {}, "seek_classifications (Seek only)")),
       el("input", { type: "search", placeholder: "Filter classifications", oninput: (e) => drawClasses(e.target.value.toLowerCase()) }),
       el("div", { className: "scroll", style: "padding:6px 10px" }, classList)));
 }

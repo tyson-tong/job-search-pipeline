@@ -19,8 +19,11 @@ from .sources import ANNUAL_FACTOR, Posting
 DEFAULTS = {"posted_within_days": 1, "max_results": 50, "sites": list(opt.SITES)}
 SEARCH_KEYS = {"name", "terms", "locations", "sites", "posted_within_days", "max_results",
                "max_cost_usd", "radius_km", "salary_min", "salary_max", "salary_period",
-               "job_types", "work_arrangements", "classifications", "exclude_title_terms",
+               "job_types", "work_arrangements", "seek_classifications", "exclude_title_terms",
                "include_title_terms"}
+# Earlier names still accepted, so a searches file (or the GitHub copy) written before a
+# rename keeps working until it is next edited.
+OLD_NAMES = {"classifications": "seek_classifications"}
 
 
 @dataclass(frozen=True)
@@ -39,7 +42,7 @@ class Search:
     salary_period: str = "annual"
     job_types: tuple[str, ...] = ()
     work_arrangements: tuple[str, ...] = ()
-    classifications: tuple[str, ...] = ()
+    seek_classifications: tuple[str, ...] = ()
     # Jobs whose title contains any of these words are filtered on import, unless it also
     # contains one of include_title_terms, which take precedence.
     exclude_title_terms: tuple[str, ...] = ()
@@ -88,9 +91,21 @@ def _all_classifications() -> set[str]:
     return keys
 
 
+def _current_names(raw: dict, where: str) -> dict:
+    """The settings with any earlier names (OLD_NAMES) changed to the current ones."""
+    raw = dict(raw)
+    for old, new in OLD_NAMES.items():
+        if old in raw:
+            if new in raw:
+                raise SearchConfigError(f"{where}: set {new} only ({old} is its old name)")
+            raw[new] = raw.pop(old)
+    return raw
+
+
 def parse_search(raw: dict, defaults: dict) -> Search:
     name = str(raw.get("name") or "").strip()
     where = f"search {name!r}" if name else "a [[search]] entry"
+    raw = _current_names(raw, where)
     unknown = set(raw) - SEARCH_KEYS
     if unknown:
         raise SearchConfigError(f"{where}: unknown setting(s) {sorted(unknown)}")
@@ -152,7 +167,7 @@ def parse_search(raw: dict, defaults: dict) -> Search:
         job_types=_choices(f"{where} job_types", merged.get("job_types"), opt.JOB_TYPES),
         work_arrangements=_choices(f"{where} work_arrangements",
                                    merged.get("work_arrangements"), opt.WORK_ARRANGEMENTS),
-        classifications=_choices(f"{where} classifications", merged.get("classifications"),
+        seek_classifications=_choices(f"{where} seek_classifications", merged.get("seek_classifications"),
                                  _all_classifications()),
         exclude_title_terms=excluded,
         include_title_terms=included,
@@ -174,8 +189,9 @@ def parse_config(text: str) -> list[Search]:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise SearchConfigError(f"searches config is not valid TOML: {exc}") from exc
-    defaults = {**DEFAULTS, **data.get("defaults", {})}
-    unknown = set(data.get("defaults", {})) - SEARCH_KEYS
+    given_defaults = _current_names(data.get("defaults", {}), "[defaults]")
+    defaults = {**DEFAULTS, **given_defaults}
+    unknown = set(given_defaults) - SEARCH_KEYS
     if unknown:
         raise SearchConfigError(f"[defaults]: unknown setting(s) {sorted(unknown)}")
     searches = [parse_search(raw, defaults) for raw in data.get("search", [])]
@@ -280,7 +296,7 @@ def seek_runs(search: Search) -> list[PlannedRun]:
         if search.work_arrangements:
             run_input["workArrangements"] = [opt.SEEK_WORK_ARRANGEMENTS[w]
                                              for w in search.work_arrangements]
-        for key in search.classifications:
+        for key in search.seek_classifications:
             run_input[key] = True
         runs.append(PlannedRun("seek", opt.ACTORS["seek"], search,
                                f"{term!r} in {city or country}", run_input, notes))
@@ -289,8 +305,8 @@ def seek_runs(search: Search) -> list[PlannedRun]:
 
 def _notes(site: str, search: Search, window_note: str | None) -> list[str]:
     notes = [window_note] if window_note else []
-    if search.classifications and opt.FILTER_SUPPORT[site]["classifications"] == "unsupported":
-        notes.append("classifications skipped (Seek only; use search terms instead)")
+    if search.seek_classifications and opt.FILTER_SUPPORT[site]["seek_classifications"] == "unsupported":
+        notes.append("seek_classifications skipped (Seek only; use search terms instead)")
     return notes
 
 

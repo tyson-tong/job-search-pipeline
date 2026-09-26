@@ -115,7 +115,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="lane-title">Daily, in GitHub Actions</div>
     <div class="lane-sub">06:30 Sydney time · <code>jobflow ingest</code></div>
     <div class="step"><b>Your searches</b><span class="mod">JOBFLOW_SEARCHES variable (= config/searches.toml)</span>
-      <div class="what">Terms, countries and cities, sites, salary, job type, work arrangement, classification, posted window, excluded title terms.</div></div>
+      <div class="what">Terms, countries and cities, sites, salary, job type, work arrangement, Seek classifications, posted window, excluded title terms.</div></div>
     <div class="step"><b>Plan runs per site</b><span class="mod">ingest/searches.py · ingest/options.py</span>
       <div class="what">Validates values and translates each search into each actor's input. LinkedIn: one run per search; Indeed and Seek: one per term and location.</div></div>
     <div class="step"><b>Run Apify actors</b><span class="mod">ingest/apify.py</span>
@@ -177,7 +177,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td>Terms, country, city, radius</td><td class="yes">on site</td><td class="yes">on site</td><td class="yes">on site (AU, NZ, SG, HK)</td></tr>
   <tr><td>Salary</td><td>after import</td><td>after import</td><td>after import</td></tr>
   <tr><td>Job type, work arrangement</td><td>after import</td><td>after import</td><td class="yes">on site</td></tr>
-  <tr><td>Classification</td><td class="no">not available</td><td class="no">not available</td><td class="yes">on site</td></tr>
+  <tr><td>Seek classifications</td><td class="no">not available</td><td class="no">not available</td><td class="yes">on site</td></tr>
   <tr><td>Excluded title terms</td><td>after import</td><td>after import</td><td>after import</td></tr>
   <tr><td>Posted: 24 hours, 1 week</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
   <tr><td>Posted: 2 weeks</td><td class="no">uses 1 month, then filters</td><td class="yes">✓</td><td class="yes">✓</td></tr>
@@ -263,7 +263,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
 <h2 id="cost">Keeping Apify cost down</h2>
 <div class="grid">
   <div class="card"><h3>Ask for less</h3><ul><li><code>posted_within_days = 1</code> for daily runs.</li><li><code>max_results</code> per run.</li><li><code>max_cost_usd</code> hard cap per run.</li><li>Only the <code>sites</code> you list are called.</li></ul></div>
-  <div class="card"><h3>Filter on the site</h3><ul><li>Seek applies job type, arrangement, and classification before charging. Salary bounds are applied after import so salaryless postings are retained.</li><li>LinkedIn skips company-page scraping.</li></ul></div>
+  <div class="card"><h3>Filter on the site</h3><ul><li>Seek applies job type, arrangement, and Seek classifications before charging. Salary bounds are applied after import so salaryless postings are retained.</li><li>LinkedIn skips company-page scraping.</li></ul></div>
   <div class="card"><h3>Still paid for</h3><ul><li>Jobs you already have (actors can't skip them).</li><li>The same job on several sites, or matched by two terms.</li><li>Extra results from a widened date window.</li></ul></div>
 </div>
 <p class="small muted" style="margin-top:8px">Each run's actual cost is stored in <code>scraper_runs.cost_usd</code>.</p>
