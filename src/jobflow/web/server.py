@@ -80,10 +80,14 @@ def make_handler(token: str, port: int):
             if url.path == "/":
                 if self.headers.get("Host") not in allowed_hosts:
                     return self._error(HTTPStatus.FORBIDDEN, "Unexpected host")
+                # No framing: another site could otherwise load the tracker in a hidden
+                # frame and trick you into clicking Save (clickjacking).
                 return self._send(200, page.encode(), "text/html; charset=utf-8",
                                   {"Content-Security-Policy":
                                    "default-src 'self'; style-src 'unsafe-inline'; "
-                                   "script-src 'unsafe-inline'; img-src 'self' data:"})
+                                   "script-src 'unsafe-inline'; img-src 'self' data:; "
+                                   "frame-ancestors 'none'",
+                                   "X-Frame-Options": "DENY"})
             if not url.path.startswith("/api/"):
                 return self._error(HTTPStatus.NOT_FOUND, "Not found")
             if not self._allowed(query):
