@@ -68,6 +68,11 @@ tr.col-filters th { position: static; padding-top: 0; text-transform: none; lett
 tr.col-filters input, tr.col-filters select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--panel);
   border-radius: 6px; padding: 3px 5px; font-size: 0.82rem; }
 tr.col-filters input[type=number] { min-width: 70px; }
+tr.col-filters details.multi summary { padding: 3px 5px; font-size: 0.82rem; border-radius: 6px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+tr.col-filters details.multi .menu { max-height: 320px; overflow-y: auto; }
+tr.col-filters .menu input[type=checkbox] { width: auto; }
+tr.col-filters .menu label { white-space: nowrap; }
 .sort-head { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; }
 .sort-head:hover { color: var(--accent); }
 .sort-head.on { color: var(--ink); }
@@ -180,11 +185,13 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
   </div>
   <div class="bulk" id="bulk" hidden></div>
   <div class="table-wrap" id="jobs-table"><table>
-    <thead><tr><th class="sel" id="select-col"><input type="checkbox" id="select-all" aria-label="Select all shown jobs"></th><th class="match-col">Match</th><th>Job</th><th class="hide-sm">Sites</th><th class="hide-sm"><button class="sort-head" data-sort="posted" title="Sort by posted date; click again to reverse">Posted</button></th>
+    <thead><tr><th class="sel" id="select-col"><input type="checkbox" id="select-all" aria-label="Select all shown jobs"></th><th class="match-col">Match</th><th>Job</th><th class="hide-sm">Country</th><th class="hide-sm">Sites</th><th class="hide-sm"><button class="sort-head" data-sort="posted" title="Sort by posted date; click again to reverse">Posted</button></th>
       <th class="hide-sm"><button class="sort-head" data-sort="salary" title="Sort by salary in US dollars; click again to reverse">Salary</button></th><th>Status</th><th class="hide-sm fu-col">Follow up</th></tr>
     <tr class="col-filters"><th class="sel" id="select-col-filter"></th>
       <th class="match-col"><input type="number" id="f-score" min="0" max="100" step="5" placeholder="Min" aria-label="Minimum match score"></th>
       <th><input type="search" id="q" placeholder="Title, company, location" aria-label="Search title, company, location"></th>
+      <th class="hide-sm"><details class="multi" id="country-filter"><summary id="country-summary">All</summary>
+        <div class="menu" id="country-menu"></div></details></th>
       <th class="hide-sm"><select id="site" aria-label="Site"><option value="">All</option><option value="linkedin">LinkedIn</option>
         <option value="indeed">Indeed</option><option value="seek">Seek</option></select></th>
       <th class="hide-sm"><select id="f-posted" aria-label="Posted" title="When the job was posted (or first seen, if the site gives no date)">
@@ -213,7 +220,9 @@ const AUTO_REFRESH_MS = 3 * 60 * 1000;
 const state = { view: "jobs", statuses: new Set(["interested", "applied", "interviewing", "offered", "accepted"]), jobs: [], summary: null,
   pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null,
   // Rows ticked for a bulk change (Inbox triage, Filtered back to the Inbox); lastPicked anchors shift-click ranges.
-  selected: new Set(), lastPicked: null };
+  selected: new Set(), lastPicked: null,
+  // Country filter (empty = all), and the countries among this tab's jobs with counts.
+  countries: new Set(), countryCounts: null };
 // A job still in the Inbox can only be triaged; the other statuses come after Interested.
 const TRIAGE_STATUSES = ["new", "interested", "not_interested"];
 // My jobs holds only jobs you picked as Interested and what followed; these never show there.
@@ -358,10 +367,15 @@ const qInput = document.getElementById("q"), siteInput = document.getElementById
   salaryInput = document.getElementById("salary"), sortInput = document.getElementById("sort");
 // Column filters beyond the search, site, and minimum salary: [input, query parameter].
 const COLUMN_FILTERS = [["f-score", "score_min"], ["f-posted", "posted"]].map(([id, param]) => [document.getElementById(id), param]);
-function filterParams() {
+function statusParams() {
   const params = new URLSearchParams();
   const statuses = state.view === "inbox" ? ["new"] : state.view === "filtered" ? ["filtered"] : [...state.statuses];
   statuses.forEach((s) => params.append("status", s));
+  return params;
+}
+function filterParams() {
+  const params = statusParams();
+  state.countries.forEach((c) => params.append("country", c));
   if (qInput.value.trim()) params.set("q", qInput.value.trim());
   if (siteInput.value) params.set("site", siteInput.value);
   if (salaryInput.value) params.set("salary_min_usd", salaryInput.value);
@@ -379,9 +393,11 @@ async function refresh() {
       renderAll();
       return;
     }
-    const [summary, jobs] = await Promise.all([api("/api/summary"), api("/api/jobs?" + filterParams())]);
+    const [summary, jobs, countries] = await Promise.all([api("/api/summary"), api("/api/jobs?" + filterParams()),
+      api("/api/countries?" + statusParams())]);
     state.summary = summary;
     state.jobs = jobs;
+    state.countryCounts = countries;
     state.lastPicked = null;  // rows may have moved
     state.loadedAt = new Date();
     renderAll();
@@ -469,6 +485,7 @@ function renderSortHeads() {
 }
 function renderRows() {
   renderSortHeads();
+  renderCountryFilter();
   const body = document.getElementById("rows");
   const n = state.jobs.length;
   document.getElementById("shown").textContent = `${n} job${n === 1 ? "" : "s"}`;
@@ -483,7 +500,7 @@ function renderRows() {
   document.querySelectorAll(".fu-col").forEach((cell) => { cell.hidden = inbox; });
   document.querySelectorAll(".match-col").forEach((cell) => { cell.hidden = selectable; });
   if (!n) {
-    fill(body, [el("tr", {}, el("td", { colspan: inbox ? 6 : 7, className: "empty" },
+    fill(body, [el("tr", {}, el("td", { colspan: inbox ? 7 : 8, className: "empty" },
       inbox ? "Inbox is empty: no new jobs to review."
         : filtered ? "No filtered jobs." : "No jobs match these filters."))]);
     return;
@@ -529,6 +546,7 @@ function renderRows() {
           job.overdue ? el("span", { className: "flag warn" }, "Follow-up overdue") : null,
           job.stale ? el("span", { className: "flag" }, "Applied 3+ weeks ago") : null,
           job.has_notes || current(job, "note") ? el("span", { className: "flag" }, "Notes") : null)),
+      el("td", { className: "hide-sm meta", title: state.countryCounts.names[job.country] || null }, job.country || "–"),
       el("td", { className: "hide-sm" }, job.sites.map((s) => el("span", { className: "site" }, SITE_NAMES[s] || s))),
       el("td", { className: "hide-sm meta" }, fmtDate(job.posted_at) || fmtDate(job.first_seen_at)),
       el("td", { className: "hide-sm meta" }, fmtSalary(job.salary_min, job.salary_max, job.currency)),
@@ -537,6 +555,27 @@ function renderRows() {
         value: current(job, "follow_up_on") ? fmtDate(current(job, "follow_up_on")) : "",
         onchange: (event) => setPending(job, "follow_up_on", event.target.value) })));
   })]);
+}
+
+// ---- Country filter ------------------------------------------------------------------------
+function renderCountryFilter() {
+  const { counts, names, unknown } = state.countryCounts;
+  const chosen = state.countries;
+  const name = (code) => code === unknown ? "Unknown" : `${names[code] || code} (${code})`;
+  // A choice with no jobs on this tab stays listed, so it can be unticked.
+  const codes = [...new Set([...Object.keys(counts), ...chosen])]
+    .sort((a, b) => (a === unknown) - (b === unknown) || name(a).localeCompare(name(b)));
+  fill(document.getElementById("country-menu"), [
+    codes.length ? codes.map((code) => el("label", {},
+      el("input", { type: "checkbox", checked: chosen.has(code), onchange: (event) => {
+        event.target.checked ? chosen.add(code) : chosen.delete(code); refresh(); } }),
+      name(code), el("span", { className: "meta" }, ` (${counts[code] || 0})`)))
+      : el("div", { className: "meta" }, "No jobs"),
+    el("div", { className: "row" }, el("button", { className: "btn small", disabled: !chosen.size,
+      onclick: () => { chosen.clear(); refresh(); } }, "All"))]);
+  const picked = [...chosen].map((code) => code === unknown ? "Unknown" : code);
+  document.getElementById("country-summary").textContent =
+    (!picked.length ? "All" : picked.length > 3 ? `${picked.length} selected` : picked.join(", ")) + " ▾";
 }
 
 // ---- Selecting rows (Inbox, Filtered) for bulk changes ------------------------------------
@@ -848,8 +887,8 @@ document.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === "s") { event.preventDefault(); if (state.pending.size) save(); }
 });
 document.addEventListener("click", (event) => {
-  const menu = document.getElementById("status-filter");
-  if (menu.open && !menu.contains(event.target)) menu.open = false;
+  document.querySelectorAll("details.multi[open]").forEach((menu) => {
+    if (!menu.contains(event.target)) menu.open = false; });
 });
 recall();
 refresh().then(async () => {

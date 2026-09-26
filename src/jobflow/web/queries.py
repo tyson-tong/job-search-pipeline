@@ -6,7 +6,7 @@ import io
 from datetime import date, datetime, timedelta
 
 from ..db import CLOSED_STATUSES, STATUSES, connect, set_job_state
-from ..ingest.options import CURRENCIES, USD_PER_UNIT
+from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
 from ..ingest.store import IN_PROGRESS, possible_duplicate_map, possible_duplicates
 
 DEFAULT_STATUSES = ["interested", "applied", "interviewing", "offered", "accepted"]
@@ -29,6 +29,8 @@ FX_CODES = list(CURRENCIES)
 FX_RATES = [USD_PER_UNIT[CURRENCIES[code]] for code in FX_CODES]
 STALE_AFTER = timedelta(days=21)
 MAX_NOTE = 2000
+# The Country filter's value for a job whose country isn't known.
+UNKNOWN_COUNTRY = "none"
 # A job's tracking version: when its status, notes, or follow-up last changed (in
 # microseconds). Imports never change these, so they can't cause false conflicts.
 VERSION_SQL = """(extract(epoch from greatest(j.status_updated_at,
@@ -72,6 +74,8 @@ def parse_filters(params: dict[str, list[str]]) -> dict:
         limit = 300
     return {"statuses": statuses, "q": (params.get("q") or [""])[0].strip(),
             "site": (params.get("site") or [""])[0].strip(),
+            # Chosen countries; none chosen means all.
+            "countries": [c for c in params.get("country", []) if 0 < len(c) <= 10][:50],
             "sort": sort if sort in SORTS else "score",
             # One filter per column of the job list.
             "score_min": _number(params, "score_min"),
@@ -108,6 +112,8 @@ def list_jobs(filters: dict) -> list[dict]:
                 WHERE j.status = ANY(%(statuses)s)
                   AND (%(q)s = '' OR j.title ILIKE %(pattern)s OR j.company ILIKE %(pattern)s
                        OR j.location ILIKE %(pattern)s)
+                  AND (cardinality(%(countries)s::text[]) = 0
+                       OR coalesce(j.country, %(unknown)s) = ANY(%(countries)s::text[]))
                   AND (%(site)s = '' OR EXISTS (SELECT 1 FROM job_sources s
                                                WHERE s.job_id = j.id AND s.source = %(site)s))
                   -- Jobs without a salary, or without a known currency, are always kept.
@@ -121,7 +127,7 @@ def list_jobs(filters: dict) -> list[dict]:
                        < %(today)s::date - %(older_than_days)s::int)
                 ORDER BY {SORTS[filters['sort']]}
                 LIMIT %(limit)s""",
-            {**filters, "pattern": f"%{filters['q']}%",
+            {**filters, "pattern": f"%{filters['q']}%", "unknown": UNKNOWN_COUNTRY,
              "fx_codes": FX_CODES, "fx_rates": FX_RATES,
              # This machine's date, as the rows' overdue flags use: the database's date is
              # UTC, a day behind Sydney every morning.
@@ -202,6 +208,17 @@ def group_duplicates(jobs: list[dict]) -> list[dict]:
                 member["group"] = group[0]["id"] if len(group) > 1 else None
             ordered.extend(group)
     return ordered
+
+
+def countries(filters: dict) -> dict:
+    """The countries among jobs with the chosen statuses, with job counts, for the Country
+    filter to offer."""
+    with connect() as conn:
+        rows = conn.execute(
+            """SELECT coalesce(country, %(unknown)s), count(*) FROM jobs
+               WHERE status = ANY(%(statuses)s) GROUP BY 1 ORDER BY 1""",
+            {"statuses": filters["statuses"], "unknown": UNKNOWN_COUNTRY}).fetchall()
+    return {"counts": dict(rows), "names": LINKEDIN_COUNTRIES, "unknown": UNKNOWN_COUNTRY}
 
 
 def summary() -> dict:
@@ -350,9 +367,9 @@ def export_csv(filters: dict) -> str:
         notes = dict(conn.execute("SELECT job_id, notes FROM applications WHERE job_id = ANY(%s)",
                                   ([j["id"] for j in jobs],)).fetchall())
     out = io.StringIO()
-    columns = ["id", "status", "title", "company", "location", "score", "cv_variant",
-               "posted_at", "first_seen_at", "salary_min", "salary_max", "currency", "sites", "url",
-               "applied_at", "follow_up_on", "notes"]
+    columns = ["id", "status", "title", "company", "location", "country", "score",
+               "cv_variant", "posted_at", "first_seen_at", "salary_min", "salary_max", "currency",
+               "sites", "url", "applied_at", "follow_up_on", "notes"]
     writer = csv.writer(out)
     writer.writerow(columns)
     for job in jobs:
