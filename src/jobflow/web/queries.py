@@ -100,7 +100,40 @@ def list_jobs(filters: dict) -> list[dict]:
         job["stale"] = bool(job["status"] == "applied" and job["applied_at"]
                             and datetime.now(job["applied_at"].tzinfo) - job["applied_at"]
                             > STALE_AFTER)
-    return jobs
+    return group_duplicates(jobs)
+
+
+def group_duplicates(jobs: list[dict]) -> list[dict]:
+    """Move each set of possible duplicates in the list next to each other, at the place
+    of its best-ranked member, keeping the sort order otherwise. Members of a set get the
+    same "group" number (the first member's id); other jobs get None."""
+    shown = {job["id"] for job in jobs}
+    parent = {pk: pk for pk in shown}
+
+    def root(pk: int) -> int:
+        while parent[pk] != pk:
+            parent[pk] = parent[parent[pk]]
+            pk = parent[pk]
+        return pk
+
+    for job in jobs:
+        for dup in job["duplicates"]:
+            if dup["id"] in shown:
+                parent[root(dup["id"])] = root(job["id"])
+    members: dict[int, list[dict]] = {}
+    for job in jobs:
+        members.setdefault(root(job["id"]), []).append(job)
+    ordered, placed = [], set()
+    for job in jobs:
+        key = root(job["id"])
+        if key in placed:
+            continue
+        placed.add(key)
+        group = members[key]
+        for member in group:
+            member["group"] = group[0]["id"] if len(group) > 1 else None
+        ordered.extend(group)
+    return ordered
 
 
 def summary() -> dict:
