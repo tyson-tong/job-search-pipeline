@@ -19,6 +19,9 @@ max_results = 50           # per Apify run (LinkedIn: per term and location). Ca
 # the Inbox (whole words, any capitalisation: "Graduate" also excludes "graduate
 # analyst" but not "Postgraduate"). A search can set its own list instead.
 # exclude_title_terms = ["Internship", "Intern", "Grad", "Graduate"]
+# Titles containing any of these are kept even when they match an excluded term: with
+# "Analyst" excluded, "Quant Analyst" here keeps "Quant Analyst - Equities".
+# include_title_terms = ["Quant Analyst", "Quantitative Analyst"]
 # max_cost_usd = 1.00      # optional hard cap per Apify run, in USD
 
 [[search]]

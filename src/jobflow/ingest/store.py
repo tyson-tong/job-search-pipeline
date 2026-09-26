@@ -443,13 +443,15 @@ def backfill_sources(conn) -> int:
 
 def exclude_inbox_titles(searches: list, dry_run: bool = False) -> tuple[list[dict], int]:
     """Apply exclude_title_terms to jobs already in the Inbox: each New job whose title
-    contains a term of the search that found it becomes 'filtered', with the reason an
+    contains a term of the search that found it, and none of its include_title_terms,
+    becomes 'filtered', with the reason an
     import would record. Only New jobs are touched. Returns (the jobs matched, the number
     of Inbox jobs checked); with dry_run, nothing is changed."""
     from ..db import connect
     from .searches import excluded_title_term
 
-    terms_by_search = {search.name: search.exclude_title_terms for search in searches}
+    terms_by_search = {search.name: (search.exclude_title_terms, search.include_title_terms)
+                       for search in searches}
     with connect() as conn:
         # A job's search is the one whose run first found it.
         rows = conn.execute(
@@ -460,7 +462,7 @@ def exclude_inbox_titles(searches: list, dry_run: bool = False) -> tuple[list[di
                WHERE j.status = 'new' ORDER BY j.id""").fetchall()
         matched = []
         for job_id, title, company, search_name in rows:
-            term = excluded_title_term(title, terms_by_search.get(search_name, ()))
+            term = excluded_title_term(title, *terms_by_search.get(search_name, ((), ())))
             if term:
                 matched.append({"id": job_id, "title": title, "company": company,
                                 "reason": f"title contains {term!r}"})

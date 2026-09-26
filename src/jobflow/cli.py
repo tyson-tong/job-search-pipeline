@@ -26,7 +26,8 @@ def main() -> None:
     ingest.add_argument("--site", choices=SITES, help="Only this job site")
     update = sub.add_parser("update-searches", help="After editing config/searches.toml: check "
                             "it, update the GitHub copy the daily import reads, and filter Inbox "
-                            "jobs matching its exclude_title_terms")
+                            "jobs matching its exclude_title_terms (and none of its "
+                            "include_title_terms)")
     update.add_argument("--dry-run", action="store_true",
                         help="Check the file and list the jobs that would be filtered; change nothing")
     web = sub.add_parser("web", help="Open the job tracker in your browser (local only)")

@@ -284,3 +284,15 @@ def test_excluded_title_terms_keep_jobs_out_of_the_inbox():
     # Whole words only: a longer word containing a term is kept.
     assert reason("Postgraduate Researcher") is None
     assert reason("Quant Analyst") is None
+
+
+def test_included_title_terms_override_excluded_ones():
+    config = CONFIG.replace("max_results = 40", 'max_results = 40\nexclude_title_terms = ["Analyst"]\n'
+                            'include_title_terms = ["Quant Analyst", "Quantitative Analyst"]')
+    search = parse_config(config)[0]
+    def reason(title):
+        return filter_reason(normalise({"title": title, "companyName": "Acme"}), search, "linkedin")
+    assert reason("Credit Analyst") == "title contains 'Analyst'"
+    assert reason("Quant Analyst - Equities") is None
+    assert reason("MGR/AVP, Quantitative Analyst") is None
+

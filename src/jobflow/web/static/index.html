@@ -635,7 +635,10 @@ function renderSearchCard(search) {
       item("Work arrangements", search.work_arrangements.length ? search.work_arrangements.join(", ") : "any"),
       item("Classifications", search.classifications.length ? search.classifications.join(", ") + " (Seek only)" : "any"),
       item("Excluded titles", search.exclude_title_terms.length
-        ? search.exclude_title_terms.map((t) => el("span", { className: "pill" }, t)) : "none")),
+        ? search.exclude_title_terms.map((t) => el("span", { className: "pill" }, t)) : "none"),
+      item("Kept titles", search.include_title_terms.length
+        ? [search.include_title_terms.map((t) => el("span", { className: "pill" }, t)),
+           el("span", { className: "meta" }, " (override excluded titles)")] : "none")),
     search.sites.map((site) => el("div", { className: "site-block" },
       el("strong", {}, siteName(site.site)),
       el("span", { className: "meta" }, ` · ${site.runs.length} run${site.runs.length === 1 ? "" : "s"}, up to ${site.max_results_per_run} results each`

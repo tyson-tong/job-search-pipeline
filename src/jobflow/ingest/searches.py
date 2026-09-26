@@ -19,7 +19,8 @@ from .sources import ANNUAL_FACTOR, Posting
 DEFAULTS = {"posted_within_days": 1, "max_results": 50, "sites": list(opt.SITES)}
 SEARCH_KEYS = {"name", "terms", "locations", "sites", "posted_within_days", "max_results",
                "max_cost_usd", "radius_km", "salary_min", "salary_max", "salary_period",
-               "job_types", "work_arrangements", "classifications", "exclude_title_terms"}
+               "job_types", "work_arrangements", "classifications", "exclude_title_terms",
+               "include_title_terms"}
 
 
 @dataclass(frozen=True)
@@ -39,8 +40,10 @@ class Search:
     job_types: tuple[str, ...] = ()
     work_arrangements: tuple[str, ...] = ()
     classifications: tuple[str, ...] = ()
-    # Jobs whose title contains any of these words are filtered on import.
+    # Jobs whose title contains any of these words are filtered on import, unless it also
+    # contains one of include_title_terms, which take precedence.
     exclude_title_terms: tuple[str, ...] = ()
+    include_title_terms: tuple[str, ...] = ()
 
     def places(self) -> list[tuple[str, str | None]]:
         """(country, city) pairs; city None means the whole country."""
@@ -134,12 +137,8 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     salary_min, salary_max = merged.get("salary_min"), merged.get("salary_max")
     if salary_min is not None and salary_max is not None and salary_min > salary_max:
         raise SearchConfigError(f"{where}: salary_min is greater than salary_max")
-    excluded = merged.get("exclude_title_terms") or []
-    if isinstance(excluded, str):
-        excluded = [excluded]
-    if not isinstance(excluded, list) or not all(isinstance(t, str) and _words(t) for t in excluded):
-        raise SearchConfigError(f"{where}: exclude_title_terms must be a list of words, "
-                                'e.g. ["Internship", "Graduate"]')
+    excluded = _title_terms(merged, "exclude_title_terms", where)
+    included = _title_terms(merged, "include_title_terms", where)
     period = merged.get("salary_period", "annual")
     _choices(f"{where} salary_period", [period], opt.SALARY_PERIODS)
     return Search(
@@ -155,8 +154,19 @@ def parse_search(raw: dict, defaults: dict) -> Search:
                                    merged.get("work_arrangements"), opt.WORK_ARRANGEMENTS),
         classifications=_choices(f"{where} classifications", merged.get("classifications"),
                                  _all_classifications()),
-        exclude_title_terms=tuple(t.strip() for t in excluded),
+        exclude_title_terms=excluded,
+        include_title_terms=included,
     )
+
+
+def _title_terms(merged: dict, key: str, where: str) -> tuple[str, ...]:
+    terms = merged.get(key) or []
+    if isinstance(terms, str):
+        terms = [terms]
+    if not isinstance(terms, list) or not all(isinstance(t, str) and _words(t) for t in terms):
+        raise SearchConfigError(f"{where}: {key} must be a list of words, "
+                                'e.g. ["Internship", "Graduate"]')
+    return tuple(t.strip() for t in terms)
 
 
 def parse_config(text: str) -> list[Search]:
@@ -332,11 +342,19 @@ def _words(text: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (text or "").casefold()).strip()
 
 
-def excluded_title_term(title: str | None, terms: tuple[str, ...]) -> str | None:
-    """The first term found in the title as whole words (ignoring case and punctuation),
-    so "Graduate" excludes "Graduate Analyst" but not "Postgraduate Researcher"."""
+def excluded_title_term(title: str | None, terms: tuple[str, ...],
+                        keep: tuple[str, ...] = ()) -> str | None:
+    """The first excluded term found in the title as whole words (ignoring case and
+    punctuation), so "Graduate" excludes "Graduate Analyst" but not "Postgraduate
+    Researcher". None when the title also contains a term from `keep`
+    (include_title_terms): "Quant Analyst" kept overrides "Analyst" excluded."""
     padded = f" {_words(title)} "
-    return next((term for term in terms if f" {_words(term)} " in padded), None)
+
+    def found(term: str) -> bool:
+        return f" {_words(term)} " in padded
+    if any(found(term) for term in keep):
+        return None
+    return next((term for term in terms if found(term)), None)
 
 
 def local_filters(site: str, search: Search) -> list[str]:
@@ -362,7 +380,8 @@ def filter_reason(posting: Posting, search: Search, site: str,
     posted date listed means the job is kept.
     """
     active = local_filters(site, search)
-    term = excluded_title_term(posting.title, search.exclude_title_terms)
+    term = excluded_title_term(posting.title, search.exclude_title_terms,
+                               search.include_title_terms)
     if term:
         return f"title contains {term!r}"
     if "posted_date" in active and posting.posted_at is not None:
