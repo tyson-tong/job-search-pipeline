@@ -55,7 +55,8 @@ def _number(params: dict[str, list[str]], key: str) -> float | None:
         return None
 
 
-# The Posted column filter: at most this many days ago, or "older" than a month.
+# The Posted column filter: posted in the last this many days (today counts as day 0),
+# or "older": more than a month ago. The two month choices together cover every job.
 POSTED_WITHIN = {"1": 1, "7": 7, "14": 14, "30": 30}
 POSTED_OLDER_THAN = 30
 
@@ -115,13 +116,16 @@ def list_jobs(filters: dict) -> list[dict]:
                   AND (%(score_min)s::numeric IS NULL OR best.score >= %(score_min)s::numeric)
                   -- The Posted column shows the posted date, else the date first seen.
                   AND (%(within_days)s::int IS NULL OR coalesce(j.posted_at, j.first_seen_at::date)
-                       >= current_date - %(within_days)s::int)
+                       >= %(today)s::date - %(within_days)s::int)
                   AND (%(older_than_days)s::int IS NULL OR coalesce(j.posted_at, j.first_seen_at::date)
-                       < current_date - %(older_than_days)s::int)
+                       < %(today)s::date - %(older_than_days)s::int)
                 ORDER BY {SORTS[filters['sort']]}
                 LIMIT %(limit)s""",
             {**filters, "pattern": f"%{filters['q']}%",
              "fx_codes": FX_CODES, "fx_rates": FX_RATES,
+             # This machine's date, as the rows' overdue flags use: the database's date is
+             # UTC, a day behind Sydney every morning.
+             "today": date.today(),
              "within_days": POSTED_WITHIN.get(filters["posted"]),
              "older_than_days": POSTED_OLDER_THAN if filters["posted"] == "older" else None}
         ).fetchall()
@@ -205,8 +209,8 @@ def summary() -> dict:
         counts = dict(conn.execute("SELECT status, count(*) FROM jobs GROUP BY status").fetchall())
         overdue = conn.execute(
             """SELECT count(*) FROM applications a JOIN jobs j ON j.id = a.job_id
-               WHERE a.follow_up_on < current_date AND NOT (j.status = ANY(%s))""",
-            (CLOSED_STATUSES,)).fetchone()[0]
+               WHERE a.follow_up_on < %s AND NOT (j.status = ANY(%s))""",
+            (date.today(), CLOSED_STATUSES)).fetchone()[0]
     # Scoring reads your CV files; a missing CV folder shouldn't break the rest of the page.
     from ..candidate.cvs import cv_sources
     from ..candidate.matching import count_needing_match

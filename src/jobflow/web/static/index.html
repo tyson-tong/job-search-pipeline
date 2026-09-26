@@ -187,9 +187,9 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
       <th><input type="search" id="q" placeholder="Title, company, location" aria-label="Search title, company, location"></th>
       <th class="hide-sm"><select id="site" aria-label="Site"><option value="">All</option><option value="linkedin">LinkedIn</option>
         <option value="indeed">Indeed</option><option value="seek">Seek</option></select></th>
-      <th class="hide-sm"><select id="f-posted" aria-label="Posted" title="Posted at most this long ago (or more than a month ago)">
-        <option value="">Any</option><option value="1">1 day ago</option><option value="7">1 week ago</option>
-        <option value="14">2 weeks ago</option><option value="30">1 month ago</option><option value="older">&gt; 1 month ago</option></select></th>
+      <th class="hide-sm"><select id="f-posted" aria-label="Posted" title="When the job was posted (or first seen, if the site gives no date)">
+        <option value="">Any time</option><option value="1">Past day</option><option value="7">Past week</option>
+        <option value="14">Past 2 weeks</option><option value="30">Past month</option><option value="older">Over a month ago</option></select></th>
       <th class="hide-sm"><input type="number" id="salary" min="0" step="5000" placeholder="Min USD / yr"
         aria-label="Minimum salary in US dollars per year"
         title="Each job's salary is converted to US dollars. Jobs without a listed salary are always kept"></th>
