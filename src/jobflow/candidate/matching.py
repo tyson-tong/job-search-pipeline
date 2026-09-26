@@ -153,22 +153,25 @@ def match_job(job_id: int) -> list[dict]:
             json.dumps(prompt, ensure_ascii=False), json_mode=True)
         result = parse_json(content)
         items = normalise_requirements(result.get("requirements"), source[:CV_CHAR_LIMIT])
-        record = _record(variant, digest, items, str(result.get("rationale") or ""), model,
-                         weights)
-        with connect() as conn:
+        results.append(_record(variant, digest, items, str(result.get("rationale") or ""),
+                               model, weights))
+    # Saved together, only once every CV is assessed: a job counts as scored as soon as it
+    # has any assessment and is never scored again, so a failure part-way must save none.
+    with connect() as conn:
+        for record in results:
             conn.execute(
                 """INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score,
                        matched, partial, gaps, evidence, model_name)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (job_id, variant, digest, record["score"], json.dumps(record["matched"]),
-                 json.dumps(record["partial"]), json.dumps(record["not_evidenced"]),
+                (job_id, record["variant"], record["cv_sha256"], record["score"],
+                 json.dumps(record["matched"]), json.dumps(record["partial"]),
+                 json.dumps(record["not_evidenced"]),
                  json.dumps({"format": ASSESSMENT_FORMAT, "rationale": record["rationale"],
                              "weights": dict(zip(("required", "preferred"), weights)),
                              "breakdown": record["breakdown"]}),
-                 model))
+                 record["model"]))
             conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "
-                         "VALUES (%s,'match','SUCCEEDED',%s,now())", (job_id, model))
-        results.append(record)
+                         "VALUES (%s,'match','SUCCEEDED',%s,now())", (job_id, record["model"]))
     return results
 
 
