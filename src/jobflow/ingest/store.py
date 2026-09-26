@@ -23,7 +23,7 @@ COMPANY_NOISE = {"pty", "ltd", "limited", "inc", "llc", "co", "corp", "corporati
 # description word sets overlap at least this much (Jaccard similarity).
 SIMILAR_DESCRIPTION = 0.5
 FUZZY_WINDOW_DAYS = 90
-# Similar jobs (possible duplicates the merge didn't catch), e.g. a recruiter re-posting an employer's
+# Similar jobs: copies the merge didn't catch, e.g. a recruiter re-posting an employer's
 # ad under its own name. Only reported, never merged, so the bar is lower and employer
 # and city are ignored.
 POSSIBLE_TITLE = 0.6
@@ -206,7 +206,7 @@ def possible_duplicate_map(conn, job_ids: list[int]) -> dict[int, list[dict]]:
     """Similar ads for many jobs at once: {job id: [{id, status, country, same_country,
     level}]},
     using two queries in total (titles first, then descriptions only for close titles).
-    Only same_country matches are possible duplicates; the others are one role advertised
+    Only same_country matches are similar jobs; the others are one role advertised
     in several countries."""
     if not job_ids:
         return {}

@@ -127,8 +127,8 @@ def _sets(jobs: list[dict], fields: tuple[str, ...]) -> dict[int, int]:
 
 def group_duplicates(jobs: list[dict]) -> list[dict]:
     """Place similar jobs next to each other, at the place of the best-ranked one,
-    keeping the sort order otherwise: possible duplicates, and the same ad in other
-    countries. Each set of possible duplicates stays together and its members get the
+    keeping the sort order otherwise: similar jobs, and the same ad in other
+    countries. Each set of similar jobs stays together and its members get the
     same "group" number (the first member's id), else None. Jobs joined by the same ad in
     another country get the same "area" number (the first job's id), else None, so the
     page can mark the two relations differently."""
@@ -137,7 +137,7 @@ def group_duplicates(jobs: list[dict]) -> list[dict]:
     members: dict[int, list[dict]] = {}
     for job in jobs:
         members.setdefault(duplicate_set[job["id"]], []).append(job)
-    # A set of possible duplicates always lies within one set of similar jobs.
+    # A set of similar jobs always lies within one set of related jobs (any country).
     by_area: dict[int, list[dict]] = {}
     for job in jobs:
         by_area.setdefault(near[job["id"]], []).append(job)

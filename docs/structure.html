@@ -115,7 +115,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="lane-title">Daily, in GitHub Actions</div>
     <div class="lane-sub">06:30 Sydney time · <code>jobflow ingest</code></div>
     <div class="step"><b>Your searches</b><span class="mod">JOBFLOW_SEARCHES variable (= config/searches.toml)</span>
-      <div class="what">Terms, countries and cities, sites, salary, job type, work arrangement, classification, posted window.</div></div>
+      <div class="what">Terms, countries and cities, sites, salary, job type, work arrangement, classification, posted window, excluded title terms.</div></div>
     <div class="step"><b>Plan runs per site</b><span class="mod">ingest/searches.py · ingest/options.py</span>
       <div class="what">Validates values and translates each search into each actor's input. LinkedIn: one run per search; Indeed and Seek: one per term and location.</div></div>
     <div class="step"><b>Run Apify actors</b><span class="mod">ingest/apify.py</span>
@@ -136,10 +136,10 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <div class="lane local">
     <div class="lane-title">On your machine, when you choose</div>
     <div class="lane-sub">CVs never leave it, except the text sent to your LLM</div>
+    <div class="step"><b>Pick and track</b><span class="mod">web/ · jobflow web</span>
+      <div class="what">Browser tracker on 127.0.0.1: Inbox of new jobs (Interested or Not interested), My jobs, a Filtered tab to bring filtered jobs back, filters, statuses, notes, follow-ups, similar-job warnings. Edits are saved only when you click Save, in one transaction, with a check for changes made elsewhere since loading; the view auto-refreshes when there are no drafts.</div></div>
     <div class="step"><b>Score jobs against each CV</b><span class="mod">candidate/matching.py · Score button in jobflow web</span>
       <div class="what">Interested jobs only, each scored once. Runs in the background from the tracker. Requirements with verified CV quotes; score computed from required and preferred coverage.</div></div>
-    <div class="step"><b>Pick and track</b><span class="mod">web/ · jobflow web</span>
-      <div class="what">Browser tracker on 127.0.0.1: Inbox of new jobs, filters, statuses, notes, follow-ups, duplicate warnings. Edits are saved only when you click Save, in one transaction, with a check for changes made elsewhere since loading; the view auto-refreshes when there are no drafts.</div></div>
     <div class="step"><b>Tailor a CV</b><span class="mod">candidate/tailoring.py · jobflow tailor-cv</span>
       <div class="what">Draft from the best-matching CV, fact-checked against the original before rendering.</div></div>
     <div class="step"><b>Prepare for the interview</b><span class="mod">candidate/interview.py · jobflow interview-prep</span>
@@ -158,16 +158,16 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>ingest/searches.py</code></td><td>Loads and validates searches, builds actor inputs, and applies filters after import.</td></tr>
   <tr><td><code>ingest/apify.py</code></td><td>Runs each planned search on Apify and hands the results to the store.</td></tr>
   <tr><td><code>ingest/sources.py</code></td><td>Converts LinkedIn, Indeed, and Seek records to one <code>Posting</code> shape.</td></tr>
-  <tr><td><code>ingest/store.py</code></td><td>Duplicate detection, saving jobs and sightings, run records, possible-duplicate search.</td></tr>
+  <tr><td><code>ingest/store.py</code></td><td>Duplicate detection, saving jobs and sightings, run records, similar-job search, excluding titles already in the Inbox.</td></tr>
   <tr><td><code>ingest/report.py</code></td><td>The tracker's Searches tab: your searches, their planned runs, and allowed values.</td></tr>
   <tr><td><code>candidate/cvs.py</code></td><td>Loads <code>CV_*.yaml</code> files; shared text helpers.</td></tr>
-  <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring, cached per CV version.</td></tr>
+  <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring: Interested jobs only, each scored once.</td></tr>
   <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft and its fact check.</td></tr>
   <tr><td><code>candidate/interview.py</code></td><td>Company research, specialist agents, HTML briefing.</td></tr>
   <tr><td><code>web/server.py</code></td><td>Local-only HTTP server for <code>jobflow web</code>; a per-start token and host check keep other websites out.</td></tr>
   <tr><td><code>web/scoring.py</code></td><td>Runs match scoring in a background thread, one run at a time, with progress for the page.</td></tr>
   <tr><td><code>web/queries.py</code></td><td>Job list, pipeline counts, job details, validated all-or-nothing saves, CSV export.</td></tr>
-  <tr><td><code>web/static/index.html</code></td><td>The page: Inbox and My jobs views, job panel, unsaved-changes tracking.</td></tr>
+  <tr><td><code>web/static/index.html</code></td><td>The page: Inbox, My jobs, Filtered, and Searches tabs, job panel, unsaved-changes tracking.</td></tr>
 </table></div>
 
 <h2 id="searches">From searches to site inputs</h2>
@@ -178,6 +178,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td>Salary</td><td>after import</td><td>after import</td><td>after import</td></tr>
   <tr><td>Job type, work arrangement</td><td>after import</td><td>after import</td><td class="yes">on site</td></tr>
   <tr><td>Classification</td><td class="no">not available</td><td class="no">not available</td><td class="yes">on site</td></tr>
+  <tr><td>Excluded title terms</td><td>after import</td><td>after import</td><td>after import</td></tr>
   <tr><td>Posted: 24 hours, 1 week</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
   <tr><td>Posted: 2 weeks</td><td class="no">uses 1 month, then filters</td><td class="yes">✓</td><td class="yes">✓</td></tr>
   <tr><td>Posted: 1 month</td><td class="yes">✓</td><td class="no">uses any time, then filters</td><td class="yes">✓</td></tr>
@@ -226,7 +227,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, interview-prep.</p><ul>
     <li>job_id → jobs, kind, status</li><li>model_name, error, started_at, finished_at</li></ul></div>
 </div>
-<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered. Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the tracker's default view. Only interested jobs are scored. Filtered is only set by imports.</p>
+<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered. Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the tracker's default view. Only interested jobs are scored. Filtered is set by imports and <code>jobflow exclude-titles</code>; the tracker's Filtered tab moves a job back to the Inbox.</p>
 
 <h2 id="cv">CV work</h2>
 <div class="grid">
@@ -236,7 +237,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
     <li>Score = matched 1, partial 0.5, averaged per group, weighted by <code>required_weight</code> / <code>preferred_weight</code>.</li>
     <li>Only Interested jobs; each is scored once and never again, even if a CV changes.</li></ul></div>
   <div class="card"><h3>Tailoring</h3>
-    <ul><li>Uses the best-matching CV unless <code>--cv</code> is given (a job that isn't Interested and unscored needs <code>--cv</code>).</li>
+    <ul><li>Uses the best-matching CV unless <code>--cv</code> is given (a job that is neither scored nor Interested needs <code>--cv</code>).</li>
     <li>Only the <code>cv</code> section goes to the LLM; design and settings are kept.</li>
     <li>Errors (render skipped): changed contact details, new or altered employers, positions, dates, education; removed entries; new numbers.</li>
     <li>Warnings: new tool or skill names. Written to <code>REVIEW_REQUIRED.md</code>.</li></ul></div>

@@ -1,6 +1,6 @@
 # Job Search Workflow
 
-A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and/or Seek (through Apify scrapers; use any combination) into your own PostgreSQL database, merging the same job found on several sites. On your machine, it then scores each job against your CVs, drafts tailored CVs, and builds interview briefings.
+A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and/or Seek (through Apify scrapers; use any combination) into your own PostgreSQL database, merging the same job found on several sites. On your machine, you triage the new jobs, score the ones you're interested in against your CVs, draft tailored CVs, and build interview briefings.
 
 It is a template: each person makes their own private copy with their own database, credentials, and CVs. This repository contains no CVs or credentials.
 
@@ -41,9 +41,9 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
 
 4. **Track each application** in the tracker: status, follow-up date, and dated notes. Changes are drafts, highlighted until you click **Save** (or press Ctrl+S); nothing is written before that, and leaving with unsaved changes asks first. Save writes all drafts in one transaction, then reloads the view.
 
-   The page refreshes itself when you return to its tab and every 3 minutes, but never while you have unsaved drafts; the header shows when it last updated. If a job you edited was changed elsewhere in the meantime (for example in another browser tab), Save writes nothing and shows what changed: save yours anyway, or keep your drafts and review the latest data. Rows tag **similar jobs** (similar title and ad text, such as a recruiter re-posting the employer's ad under its own name): "highly similar" when titles are at least 60% alike and ads at least 80%, otherwise "similar" (titles at least 60%, ads at least 40%). They warn when a job may be the same role as one you've already applied for. Similar jobs in the same list are shown together, marked by an orange bar down the left; the same ad in another country sits alongside, marked by a blue bar, and flag overdue follow-ups and applications with no progress after three weeks.
+   The page refreshes itself when you return to its tab and every 3 minutes, but never while you have unsaved drafts; the header shows when it last updated. If a job you edited was changed elsewhere in the meantime (for example in another browser tab), Save writes nothing and shows what changed: save yours anyway, or keep your drafts and review the latest data. Rows tag **similar jobs** (similar title and ad text, such as a recruiter re-posting the employer's ad under its own name): "highly similar" when titles are at least 60% alike and ads at least 80%, otherwise "similar" (titles at least 60%, ads at least 40%). Rows also warn when a job may be the same role as one you've already applied for, and flag overdue follow-ups and applications with no progress after three weeks. Similar jobs in the same list are shown together, marked by an orange bar down the left; the same ad in another country sits alongside, marked by a blue bar.
 
-   Statuses: `new` (the Inbox), `interested`, `not_interested`, `applied`, `interviewing`, `offered`, `accepted`, `declined`, `rejected`, `withdrawn`, and `filtered` (set on import when a job fails your search filters; the job panel shows why). Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the default view. Not interested jobs leave the tracker altogether (they stay in the database), so undo a misclick before you click Save. Filtered jobs are listed in the Filtered tab, from where they can go back to the Inbox. The date you first applied is kept, and every status change is recorded with its date.
+   Statuses: `new` (the Inbox), `interested`, `not_interested`, `applied`, `interviewing`, `offered`, `accepted`, `declined`, `rejected`, `withdrawn`, and `filtered` (set on import, or by `jobflow exclude-titles`, when a job fails your search filters; the Filtered tab shows why). Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the default view. Not interested jobs leave the tracker altogether (they stay in the database), so undo a misclick before you click Save. Filtered jobs are listed in the Filtered tab, from where they can go back to the Inbox. The date you first applied is kept, and every status change is recorded with its date.
 
 5. **Draft a CV for a job you want to apply for.**
 
@@ -151,7 +151,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `sites` | `["seek", "linkedin"]` | Which job sites to search; see below |
    | `posted_within_days` | `1` | 1 (24 hours), 7 (1 week), 14 (2 weeks), or 30 (1 month); see below |
    | `max_results`, `max_cost_usd`, `radius_km` | `30`, `0.50`, `25` | Usually set once under `[defaults]` |
-   | `exclude_title_terms` | `["Internship", "Fresh Grad", "Graduate"]` | Jobs whose title contains any of these words are stored as `filtered` and never reach the Inbox. Whole words, any capitalisation and punctuation ("Graduate" excludes "Graduate Analyst", not "Postgraduate"). Usually set under `[defaults]`; applies to jobs imported from then on |
+   | `exclude_title_terms` | `["Internship", "Fresh Grad", "Graduate"]` | Jobs whose title contains any of these words are stored as `filtered` and never reach the Inbox. Whole words, any capitalisation and punctuation ("Graduate" excludes "Graduate Analyst", not "Postgraduate"). Usually set under `[defaults]`; imports apply it to new jobs, and `jobflow exclude-titles` to jobs already in the Inbox |
 
    **Countries and cities for `locations`.** Cities must come from this list (any capitalisation); a misspelt or unlisted city is rejected rather than searched. Use `[]` to search the whole country.
 
@@ -200,8 +200,9 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | Salary | after import | after import | after import |
    | Job type, work arrangement | after import | after import | on site |
    | Classification | no | no | on site |
+   | Excluded title terms | after import | after import | after import |
 
-   "On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match; the job is stored with status `filtered` and the reason. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. LinkedIn results rarely list a salary and never say whether a job is remote, so in practice those filters seldom remove LinkedIn jobs. Salary bounds are applied after import for all three sites. Missing salary data is kept; Seek is deliberately scraped without salary bounds so it cannot hide salaryless postings upstream. This can increase the number of Seek results and Apify usage.
+   "On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match, or whose title contains an excluded term; the job is stored with status `filtered` and the reason, and appears in the tracker's Filtered tab. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. LinkedIn results rarely list a salary and never say whether a job is remote, so in practice those filters seldom remove LinkedIn jobs. Salary bounds are applied after import for all three sites. Missing salary data is kept; Seek is deliberately scraped without salary bounds so it cannot hide salaryless postings upstream. This can increase the number of Seek results and Apify usage.
 
    Check the result in the tracker: open `jobflow web` and the **Searches** tab. It validates every value (listing the allowed ones if something is wrong), shows each Apify run with the exact input each actor receives, and lists all allowed values; click **Reload** after editing. Nothing runs from that page. All option values are constants in `src/jobflow/ingest/options.py`.
 
@@ -210,7 +211,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 6. **Schedule the daily import.** In your GitHub repository, open Settings → Secrets and variables → Actions and add:
    - Secret `DATABASE_URL`
    - Secret `APIFY_TOKEN`
-   - Variable `JOBFLOW_SEARCHES`: the contents of your `config/searches.toml`. Set it, and update it after each edit, with `gh variable set JOBFLOW_SEARCHES < config/searches.toml`
+   - Variable `JOBFLOW_SEARCHES`: the contents of your `config/searches.toml`. Set it, and update it after each edit, with `gh variable set JOBFLOW_SEARCHES < config/searches.toml` (see [Changing your searches](#changing-your-searches))
 
    Then open Actions → "Daily job ingestion" → **Run workflow** to test it once. After that it runs every day at 06:30 Sydney time (07:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. The LLM and Tavily keys are not needed in GitHub.
 
