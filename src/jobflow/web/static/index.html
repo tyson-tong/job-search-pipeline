@@ -165,7 +165,7 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
       <option value="score">Best match first</option><option value="posted">Newest posted</option>
       <option value="added">Recently added</option><option value="follow_up">Follow-up date</option>
     </select>
-    <button class="btn" id="score-btn" disabled>Score unscored jobs</button>
+    <button class="btn" id="score-btn" disabled>Score interested jobs</button>
     <a class="btn" id="export" href="#">Export CSV</a>
     <span class="meta" id="shown"></span>
   </div>
@@ -197,7 +197,6 @@ const state = { view: "jobs", statuses: new Set(["interested", "applied"]), jobs
 const TRIAGE_STATUSES = ["new", "interested", "not_interested"];
 // My jobs holds only jobs you picked as Interested and what followed; these never show there.
 const NOT_MY_JOBS = ["new", "not_interested", "filtered"];
-const SCORE_BATCH = 50;
 
 // ---- Helpers -------------------------------------------------------------------------
 function el(tag, attrs = {}, ...children) {
@@ -465,7 +464,7 @@ function renderRows() {
       inbox ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
         el("input", { type: "checkbox", checked: state.selected.has(job.id), "aria-label": `Select ${job.title}` })) : null,
       el("td", {}, el("span", { className: "score" + scoreClass,
-        title: job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored yet: use Score unscored jobs" },
+        title: job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored: only interested jobs are scored" },
         score == null ? "–" : score)),
       el("td", {},
         el("button", { className: "title-btn", onclick: () => openDetail(job.id) }, job.title),
@@ -535,9 +534,9 @@ function renderScoring() {
   const running = state.scoring && state.scoring.running;
   const { unscored, cv_count: cvs, scoring_problem: problem } = state.summary || {};
   button.disabled = running || !unscored;
-  button.textContent = unscored ? `Score ${Math.min(unscored, SCORE_BATCH)} unscored job${unscored === 1 ? "" : "s"}` : "All jobs scored";
+  button.textContent = unscored ? `Score ${unscored} interested job${unscored === 1 ? "" : "s"}` : "All interested jobs scored";
   button.title = problem ? `Scoring unavailable: ${problem}`
-    : unscored > SCORE_BATCH ? `${unscored} unscored; ${SCORE_BATCH} are scored per run, newest first` : "";
+    : "Scores interested jobs that haven't been scored. A job is scored once and never again.";
   chip.hidden = !running;
   if (running) chip.textContent = `Scoring ${state.scoring.done} / ${state.scoring.total}…`;
 }
@@ -562,8 +561,8 @@ async function pollScoring() {
   if (state.detail && !state.pending.size) await openDetail(state.detail.id);
 }
 document.getElementById("score-btn").addEventListener("click", () => {
-  const jobs = Math.min(state.summary.unscored, SCORE_BATCH), cvs = state.summary.cv_count;
-  startScoring({ limit: SCORE_BATCH }, `Score ${jobs} job${jobs === 1 ? "" : "s"} against your ${cvs} CV${cvs === 1 ? "" : "s"}?`
+  const jobs = state.summary.unscored, cvs = state.summary.cv_count;
+  startScoring({}, `Score ${jobs} interested job${jobs === 1 ? "" : "s"} against your ${cvs} CV${cvs === 1 ? "" : "s"}?`
     + `\n\nThis makes about ${jobs * cvs} LLM call${jobs * cvs === 1 ? "" : "s"}, newest jobs first. You can keep working while it runs.`);
 });
 async function copyCommand(text) {
@@ -704,13 +703,16 @@ function renderDetail() {
         maxlength: 2000, oninput: (event) => setPending(target, "note", event.target.value) },
         current(target, "note") || "")),
     job.notes ? [el("h3", {}, "Notes"), el("div", { className: "notes" }, job.notes)] : null,
+    // Only a saved Interested job is scored, and only once.
     el("div", { className: "h3-row" }, el("h3", {}, "Match with your CVs"),
-      el("button", { className: "btn small", disabled: Boolean(state.scoring && state.scoring.running),
-        title: "Ask the LLM to compare this job with each CV", onclick: () =>
-          startScoring({ job_ids: [job.id], force: job.matches.length > 0 }) },
-        job.matches.length ? "Re-score" : "Score")),
+      job.status === "interested" && !job.matches.length
+        ? el("button", { className: "btn small", disabled: Boolean(state.scoring && state.scoring.running),
+            title: "Ask the LLM to compare this job with each CV", onclick: () =>
+              startScoring({ job_ids: [job.id] }) }, "Score")
+        : null),
     job.matches.length ? job.matches.map(renderMatch)
-      : el("p", { className: "meta" }, "Not scored yet."),
+      : el("p", { className: "meta" }, job.status === "interested" ? "Not scored yet."
+          : "Not scored: only interested jobs are scored. Mark it interested and save to score it."),
     el("div", { className: "next" }, el("strong", {}, "Next steps (in a terminal)"),
       [[`uv run jobflow tailor-cv ${job.id}`, "Tailored CV draft"],
        [`uv run jobflow interview-prep ${job.id} --email-file invite.txt`, "Interview briefing"]].map(([command, what]) =>

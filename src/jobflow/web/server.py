@@ -149,9 +149,8 @@ def make_handler(token: str, port: int):
 
         def _start_scoring(self, length: int) -> None:
             try:
-                job_ids, force, limit = scoring.parse_request(
-                    json.loads(self.rfile.read(length) or b"null"))
-                return self._json(scoring.start(job_ids, force, limit))
+                job_ids = scoring.parse_request(json.loads(self.rfile.read(length) or b"null"))
+                return self._json(scoring.start(job_ids))
             except (json.JSONDecodeError, ValueError) as exc:
                 return self._error(HTTPStatus.BAD_REQUEST, str(exc))
             except scoring.Busy as exc:

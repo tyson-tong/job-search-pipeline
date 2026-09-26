@@ -111,18 +111,19 @@ def test_missing_llm_settings_fail_before_anything_runs(scoring, monkeypatch):
         raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in config/.env")
     monkeypatch.setattr(scoring, "credentials", missing)
     monkeypatch.setattr(scoring, "match_job", lambda *a, **k: pytest.fail("scored anyway"))
+    monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: list(only or []))
     with pytest.raises(RuntimeError, match="LLM_API_KEY"):
         scoring.start([1, 2])
     assert not scoring.status()["running"]
 
 
 def test_one_failed_job_does_not_stop_the_batch(scoring, monkeypatch):
-    def match_job(job_id, force=False):
+    def match_job(job_id):
         if job_id == 2:
             raise RuntimeError("LLM timed out")
     monkeypatch.setattr(scoring, "match_job", match_job)
-    monkeypatch.setattr(scoring, "jobs_needing_match", lambda limit: [1, 2, 3])
-    scoring.start(limit=50)
+    monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: [1, 2, 3])
+    scoring.start()
     result = _wait_until_finished(scoring)
     assert result["scored"] == [1, 3] and result["done"] == 3
     assert result["errors"] == [{"id": 2, "error": "LLM timed out"}]
@@ -131,7 +132,8 @@ def test_one_failed_job_does_not_stop_the_batch(scoring, monkeypatch):
 def test_only_one_run_at_a_time(scoring, monkeypatch):
     import threading
     release = threading.Event()
-    monkeypatch.setattr(scoring, "match_job", lambda job_id, force=False: release.wait(2))
+    monkeypatch.setattr(scoring, "match_job", lambda job_id: release.wait(2))
+    monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: list(only or []))
     scoring.start([1])
     with pytest.raises(scoring.Busy):
         scoring.start([2])
@@ -139,9 +141,17 @@ def test_only_one_run_at_a_time(scoring, monkeypatch):
     assert _wait_until_finished(scoring)["scored"] == [1]
 
 
-@pytest.mark.parametrize("payload", [None, {"job_ids": []}, {"job_ids": ["1"]}, {"job_ids": [True]},
-                                     {"limit": 0}, {"limit": 10_000}])
+@pytest.mark.parametrize("payload", [None, {"job_ids": []}, {"job_ids": ["1"]}, {"job_ids": [True]}])
 def test_scoring_requests_are_validated(payload):
     from jobflow.web.scoring import parse_request
     with pytest.raises(ValueError):
         parse_request(payload)
+
+
+def test_asking_to_score_an_ineligible_job_runs_nothing(scoring, monkeypatch):
+    # A job that isn't Interested, or is already scored, is never scored.
+    monkeypatch.setattr(scoring, "match_job", lambda *a, **k: pytest.fail("scored anyway"))
+    monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: [])
+    with pytest.raises(ValueError, match="Only interested jobs"):
+        scoring.start([7])
+    assert not scoring.status()["running"]

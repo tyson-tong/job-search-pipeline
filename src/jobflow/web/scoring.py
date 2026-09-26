@@ -27,32 +27,35 @@ def status() -> dict:
         return {**_state, "errors": list(_state["errors"]), "scored": list(_state["scored"])}
 
 
-def start(job_ids: list[int] | None = None, force: bool = False, limit: int = 50) -> dict:
-    """Score the given jobs, or up to `limit` unscored open jobs. Checks the LLM settings
-    and CV files first, so a configuration problem fails now rather than on every job."""
+def start(job_ids: list[int] | None = None) -> dict:
+    """Score the given jobs, or every Interested job not yet scored. Only Interested jobs
+    that have never been scored are ever scored. Checks the LLM settings and CV files
+    first, so a configuration problem fails now rather than on every job."""
     credentials()
     if not cv_sources():
         raise RuntimeError("No CV_*.yaml files found; check cv_directory in config/profile.toml")
     with _lock:
         if _state["running"]:
             raise Busy("Scoring is already running")
-        ids = list(job_ids) if job_ids else jobs_needing_match(limit)
+        ids = jobs_needing_match(job_ids)
+        if job_ids and not ids:
+            raise ValueError("Only interested jobs that haven't been scored can be scored")
         _state.update(running=bool(ids), total=len(ids), done=0, current=None, errors=[],
                       scored=[], started_at=datetime.now(timezone.utc), finished_at=None)
     if ids:
-        threading.Thread(target=_run, args=(ids, force), daemon=True).start()
+        threading.Thread(target=_run, args=(ids,), daemon=True).start()
     else:
         with _lock:
             _state["finished_at"] = datetime.now(timezone.utc)
     return status()
 
 
-def _run(ids: list[int], force: bool) -> None:
+def _run(ids: list[int]) -> None:
     for job_id in ids:
         with _lock:
             _state["current"] = job_id
         try:
-            match_job(job_id, force=force)
+            match_job(job_id)
             with _lock:
                 _state["scored"].append(job_id)
         except Exception as exc:  # one failure shouldn't stop the batch
@@ -64,7 +67,7 @@ def _run(ids: list[int], force: bool) -> None:
         _state.update(running=False, current=None, finished_at=datetime.now(timezone.utc))
 
 
-def parse_request(payload: object) -> tuple[list[int] | None, bool, int]:
+def parse_request(payload: object) -> list[int] | None:
     if not isinstance(payload, dict):
         raise ValueError("Send an object")
     job_ids = payload.get("job_ids")
@@ -72,7 +75,4 @@ def parse_request(payload: object) -> tuple[list[int] | None, bool, int]:
             not isinstance(job_ids, list) or not job_ids or len(job_ids) > MAX_JOBS
             or not all(isinstance(i, int) and not isinstance(i, bool) for i in job_ids)):
         raise ValueError(f"job_ids must be a list of 1 to {MAX_JOBS} job ids")
-    limit = payload.get("limit", 50)
-    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= MAX_JOBS:
-        raise ValueError(f"limit must be between 1 and {MAX_JOBS}")
-    return job_ids, payload.get("force") is True, limit
+    return job_ids

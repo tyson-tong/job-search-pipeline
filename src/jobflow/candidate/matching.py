@@ -4,12 +4,12 @@ from __future__ import annotations
 import json
 import sys
 
-from ..db import CLOSED_STATUSES, connect, fetch_job
+from ..db import connect, fetch_job
 from ..llm import complete, parse_json
 from ..settings import cv_directory, matching_weights
 from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, cv_digest, cv_sources, normalise_text
 
-# Bump when the stored assessment shape changes; older rows are re-assessed.
+# Bump when the stored assessment shape changes.
 ASSESSMENT_FORMAT = 2
 CREDIT = {"matched": 1.0, "partial": 0.5, "not_evidenced": 0.0}
 
@@ -114,27 +114,32 @@ def _cached_assessments(conn, job_id: int) -> dict[str, dict]:
     return cached
 
 
-def match_job(job_id: int, force: bool = False) -> list[dict]:
+def match_job(job_id: int) -> list[dict]:
     """Assess one job against every CV variant.
 
-    Reuses a stored assessment when the CV file is unchanged (unless force); scores
-    are always recomputed with the current profile weights.
+    A job is scored once and never again, even after a CV changes: a scored job returns
+    its stored assessments (recomputed with the current profile weights). Only an
+    Interested job is ever scored.
     """
+    weights = matching_weights()
+    with connect() as conn:
+        cached = _cached_assessments(conn, job_id)
+        status = conn.execute("SELECT status FROM jobs WHERE id=%s", (job_id,)).fetchone()
+    if cached:
+        return [_record(variant, hit["cv_sha256"], hit["items"], hit["rationale"],
+                        hit["model"], weights) for variant, hit in cached.items()]
+    if not status:
+        raise RuntimeError(f"No job with database id {job_id}")
+    if status[0] != "interested":
+        raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only interested jobs "
+                           "are scored")
     job = fetch_job(job_id)
     sources = cv_sources()
     if not sources:
         raise RuntimeError(f"No CV_*.yaml files found under {cv_directory()}")
-    weights = matching_weights()
-    with connect() as conn:
-        cached = {} if force else _cached_assessments(conn, job_id)
     results = []
     for variant, source in sources.items():
         digest = cv_digest(source)
-        hit = cached.get(variant)
-        if hit and hit["cv_sha256"] == digest:
-            results.append(_record(variant, digest, hit["items"], hit["rationale"],
-                                   hit["model"], weights))
-            continue
         if len(source) > CV_CHAR_LIMIT:
             print(f"warning: CV_{variant}.yaml exceeds {CV_CHAR_LIMIT} characters; only the "
                   "start is assessed, so later evidence will show as not evidenced",
@@ -167,35 +172,24 @@ def match_job(job_id: int, force: bool = False) -> list[dict]:
     return results
 
 
+# Only Interested jobs are scored, and each only once.
 UNSCORED_SQL = """FROM jobs j
-    WHERE j.status <> ALL(%s)
-      AND (SELECT count(DISTINCT m.cv_variant) FROM match_assessments m
-           WHERE m.job_id = j.id
-             AND (m.cv_variant, m.cv_sha256) IN (SELECT * FROM unnest(%s::text[], %s::text[]))
-             AND (m.evidence->>'format')::int = %s) < %s"""
+    WHERE j.status = 'interested'
+      AND NOT EXISTS (SELECT 1 FROM match_assessments m WHERE m.job_id = j.id)"""
 
 
-def _unscored_params() -> tuple:
-    sources = cv_sources()
-    if not sources:
-        raise RuntimeError(f"No CV_*.yaml files found under {cv_directory()}")
-    variants = list(sources)
-    return (CLOSED_STATUSES, variants, [cv_digest(sources[v]) for v in variants],
-            ASSESSMENT_FORMAT, len(variants))
-
-
-def jobs_needing_match(limit: int) -> list[int]:
-    """Open jobs lacking a current-format assessment for some current CV variant,
-    newest first."""
+def jobs_needing_match(only: list[int] | None = None) -> list[int]:
+    """Interested jobs never scored, newest first; limited to `only` when given."""
     with connect() as conn:
-        rows = conn.execute(f"SELECT j.id {UNSCORED_SQL} ORDER BY j.first_seen_at DESC LIMIT %s",
-                            (*_unscored_params(), limit)).fetchall()
+        rows = conn.execute(
+            f"""SELECT j.id {UNSCORED_SQL} AND (%(only)s::bigint[] IS NULL OR j.id = ANY(%(only)s))
+                ORDER BY j.first_seen_at DESC""", {"only": only}).fetchall()
     return [row[0] for row in rows]
 
 
 def count_needing_match() -> int:
     with connect() as conn:
-        return conn.execute(f"SELECT count(*) {UNSCORED_SQL}", _unscored_params()).fetchone()[0]
+        return conn.execute(f"SELECT count(*) {UNSCORED_SQL}").fetchone()[0]
 
 
 def best_variant(results: list[dict]) -> dict:
