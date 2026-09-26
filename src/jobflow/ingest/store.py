@@ -441,15 +441,15 @@ def backfill_sources(conn) -> int:
     return conn.execute("SELECT count(*) FROM job_sources").fetchone()[0] - before
 
 
-def exclude_inbox_titles(dry_run: bool = False) -> tuple[list[dict], int]:
+def exclude_inbox_titles(searches: list, dry_run: bool = False) -> tuple[list[dict], int]:
     """Apply exclude_title_terms to jobs already in the Inbox: each New job whose title
     contains a term of the search that found it becomes 'filtered', with the reason an
     import would record. Only New jobs are touched. Returns (the jobs matched, the number
     of Inbox jobs checked); with dry_run, nothing is changed."""
     from ..db import connect
-    from .searches import excluded_title_term, load_searches
+    from .searches import excluded_title_term
 
-    terms_by_search = {search.name: search.exclude_title_terms for search in load_searches()}
+    terms_by_search = {search.name: search.exclude_title_terms for search in searches}
     with connect() as conn:
         # A job's search is the one whose run first found it.
         rows = conn.execute(

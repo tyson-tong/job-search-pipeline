@@ -227,7 +227,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, interview-prep.</p><ul>
     <li>job_id → jobs, kind, status</li><li>model_name, error, started_at, finished_at</li></ul></div>
 </div>
-<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered. Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the tracker's default view. Only interested jobs are scored. Filtered is set by imports and <code>jobflow exclude-titles</code>; the tracker's Filtered tab moves a job back to the Inbox.</p>
+<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered. Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the tracker's default view. Only interested jobs are scored. Filtered is set by imports and <code>jobflow update-searches</code>; the tracker's Filtered tab moves a job back to the Inbox.</p>
 
 <h2 id="cv">CV work</h2>
 <div class="grid">
@@ -253,7 +253,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><th>What</th><th>On your machine</th><th>In GitHub</th></tr>
   <tr><td>Database connection</td><td><code>config/.env</code> DATABASE_URL</td><td>secret DATABASE_URL</td></tr>
   <tr><td>Apify token</td><td><code>config/.env</code> APIFY_TOKEN</td><td>secret APIFY_TOKEN</td></tr>
-  <tr><td>Searches</td><td><code>config/searches.toml</code></td><td>variable JOBFLOW_SEARCHES (same text)</td></tr>
+  <tr><td>Searches</td><td><code>config/searches.toml</code></td><td>variable JOBFLOW_SEARCHES (same text; <code>jobflow update-searches</code> updates it)</td></tr>
   <tr><td>LLM and Tavily keys</td><td><code>config/.env</code></td><td>not needed</td></tr>
   <tr><td>CV folder, output root, weights, timezone</td><td><code>config/profile.toml</code></td><td>not needed</td></tr>
 </table></div>
@@ -272,7 +272,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
 <div class="table-wrap"><table>
   <tr><th>Command</th><th>Does</th><th>Module</th></tr>
   <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
-  <tr><td><code>jobflow exclude-titles</code></td><td>Apply excluded title terms to jobs already in the Inbox</td><td>ingest/store.py</td></tr>
+  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES GitHub variable, filter Inbox jobs matching excluded title terms</td><td>cli.py → ingest/store.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv ID</code></td><td>Tailored, fact-checked CV draft</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow interview-prep ID</code></td><td>Interview briefing HTML</td><td>candidate/interview.py</td></tr>

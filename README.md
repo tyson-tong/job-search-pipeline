@@ -43,7 +43,7 @@ Open a terminal in this folder. Run commands with `uv run` (or activate `.venv` 
 
    The page refreshes itself when you return to its tab and every 3 minutes, but never while you have unsaved drafts; the header shows when it last updated. If a job you edited was changed elsewhere in the meantime (for example in another browser tab), Save writes nothing and shows what changed: save yours anyway, or keep your drafts and review the latest data. Rows tag **similar jobs** (similar title and ad text, such as a recruiter re-posting the employer's ad under its own name): "highly similar" when titles are at least 60% alike and ads at least 80%, otherwise "similar" (titles at least 60%, ads at least 40%). Rows also warn when a job may be the same role as one you've already applied for, and flag overdue follow-ups and applications with no progress after three weeks. Similar jobs in the same list are shown together, marked by an orange bar down the left; the same ad in another country sits alongside, marked by a blue bar.
 
-   Statuses: `new` (the Inbox), `interested`, `not_interested`, `applied`, `interviewing`, `offered`, `accepted`, `declined`, `rejected`, `withdrawn`, and `filtered` (set on import, or by `jobflow exclude-titles`, when a job fails your search filters; the Filtered tab shows why). Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the default view. Not interested jobs leave the tracker altogether (they stay in the database), so undo a misclick before you click Save. Filtered jobs are listed in the Filtered tab, from where they can go back to the Inbox. The date you first applied is kept, and every status change is recorded with its date.
+   Statuses: `new` (the Inbox), `interested`, `not_interested`, `applied`, `interviewing`, `offered`, `accepted`, `declined`, `rejected`, `withdrawn`, and `filtered` (set on import, or by `jobflow update-searches`, when a job fails your search filters; the Filtered tab shows why). Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the default view. Not interested jobs leave the tracker altogether (they stay in the database), so undo a misclick before you click Save. Filtered jobs are listed in the Filtered tab, from where they can go back to the Inbox. The date you first applied is kept, and every status change is recorded with its date.
 
 5. **Draft a CV for a job you want to apply for.**
 
@@ -84,7 +84,7 @@ Everyday:
 | `jobflow web [--port N]` | Job tracker in your browser: score jobs against your CVs, browse and filter, track applications (saves on Save), and check your searches. | Database (LLM and CVs to score) |
 | `jobflow tailor-cv ID [--cv VARIANT]` | Writes a tailored CV draft and fact check. | Database, LLM, CVs |
 | `jobflow interview-prep ID [--email-file FILE]` | Writes an interview briefing HTML. | Database, LLM, CVs, Tavily |
-| `jobflow exclude-titles [--dry-run]` | Applies your `exclude_title_terms` to jobs already in the Inbox (imports apply them to new jobs); `--dry-run` only lists them. See [Changing your searches](#changing-your-searches). | Database, `config/searches.toml` |
+| `jobflow update-searches [--dry-run]` | After editing `config/searches.toml`: checks it, updates the GitHub copy the daily import reads, and filters Inbox jobs matching your `exclude_title_terms`. See [Changing your searches](#changing-your-searches). | Database, `config/searches.toml`, [GitHub CLI](https://cli.github.com) |
 
 Every command except `init` brings the database tables up to date itself when it starts.
 
@@ -99,11 +99,15 @@ Run by the daily GitHub Action (you rarely need it):
 After editing `config/searches.toml` (for example switching an `exclude_title_terms` entry on or off), run:
 
 ```
-gh variable set JOBFLOW_SEARCHES < config/searches.toml   # the daily GitHub import reads this copy
-uv run jobflow exclude-titles                            # filter matching jobs already in your Inbox
+uv run jobflow update-searches
 ```
 
-The first command updates the copy the daily import uses; without it, tomorrow's import still runs your old searches. The second applies excluded title terms to jobs already in your Inbox, since imports only apply them to jobs they bring in. Add `--dry-run` to see which jobs it would filter first. Filtered jobs go to the tracker's Filtered tab, where **Move to Inbox** brings one back; switching a term off doesn't bring back jobs it already filtered. Click **Reload** on the Searches tab to check the file.
+It does three things, in order:
+1. Checks the file. If anything is invalid it stops with the reason and changes nothing, so a typo never reaches the daily import.
+2. Updates the `JOBFLOW_SEARCHES` GitHub variable, the copy the daily import reads (through the [GitHub CLI](https://cli.github.com), `gh`, logged in with `gh auth login`). Without this, tomorrow's import still runs your old searches.
+3. Filters jobs already in your Inbox whose titles match your excluded terms, since imports only apply them to the jobs they bring in.
+
+Add `--dry-run` to check the file and see which jobs it would filter, without updating GitHub or your Inbox. Filtered jobs go to the tracker's Filtered tab, where **Move to Inbox** brings one back; switching a term off doesn't bring back jobs it already filtered. Click **Reload** on the Searches tab to check the file.
 
 ## One-time setup
 
@@ -151,7 +155,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `sites` | `["seek", "linkedin"]` | Which job sites to search; see below |
    | `posted_within_days` | `1` | 1 (24 hours), 7 (1 week), 14 (2 weeks), or 30 (1 month); see below |
    | `max_results`, `max_cost_usd`, `radius_km` | `30`, `0.50`, `25` | Usually set once under `[defaults]` |
-   | `exclude_title_terms` | `["Internship", "Fresh Grad", "Graduate"]` | Jobs whose title contains any of these words are stored as `filtered` and never reach the Inbox. Whole words, any capitalisation and punctuation ("Graduate" excludes "Graduate Analyst", not "Postgraduate"). Usually set under `[defaults]`; imports apply it to new jobs, and `jobflow exclude-titles` to jobs already in the Inbox |
+   | `exclude_title_terms` | `["Internship", "Fresh Grad", "Graduate"]` | Jobs whose title contains any of these words are stored as `filtered` and never reach the Inbox. Whole words, any capitalisation and punctuation ("Graduate" excludes "Graduate Analyst", not "Postgraduate"). Usually set under `[defaults]`; imports apply it to new jobs, and `jobflow update-searches` to jobs already in the Inbox |
 
    **Countries and cities for `locations`.** Cities must come from this list (any capitalisation); a misspelt or unlisted city is rejected rather than searched. Use `[]` to search the whole country.
 
@@ -211,7 +215,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
 6. **Schedule the daily import.** In your GitHub repository, open Settings → Secrets and variables → Actions and add:
    - Secret `DATABASE_URL`
    - Secret `APIFY_TOKEN`
-   - Variable `JOBFLOW_SEARCHES`: the contents of your `config/searches.toml`. Set it, and update it after each edit, with `gh variable set JOBFLOW_SEARCHES < config/searches.toml` (see [Changing your searches](#changing-your-searches))
+   - Variable `JOBFLOW_SEARCHES`: the contents of your `config/searches.toml`. Set it with `gh variable set JOBFLOW_SEARCHES < config/searches.toml`; after each later edit, `jobflow update-searches` updates it (see [Changing your searches](#changing-your-searches))
 
    Then open Actions → "Daily job ingestion" → **Run workflow** to test it once. After that it runs every day at 06:30 Sydney time (07:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. The LLM and Tavily keys are not needed in GitHub.
 

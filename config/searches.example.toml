@@ -1,8 +1,9 @@
 # Copy to config/searches.toml (ignored by Git) and edit. Check it with:
 #   jobflow web, then the Searches tab: checks this file, shows the Apify runs it would
 #   make (costs nothing), and lists allowed values and which site applies which filter.
-# GitHub Actions reads the same text from the JOBFLOW_SEARCHES repository variable:
-#   gh variable set JOBFLOW_SEARCHES < config/searches.toml
+# GitHub Actions reads the same text from the JOBFLOW_SEARCHES repository variable. After
+# each edit, update it (and apply excluded titles to your Inbox) with:
+#   uv run jobflow update-searches
 
 # Settings every search inherits unless it sets its own.
 [defaults]

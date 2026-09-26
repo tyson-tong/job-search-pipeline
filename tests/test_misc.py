@@ -71,3 +71,18 @@ def test_job_artifacts_share_company_role_directory(tmp_path):
     job = {"company": "Acme Research", "title": "Quant Analyst"}
     assert job_directory(321, job, tmp_path) == (
         tmp_path / "acme-research" / "quant-analyst-321")
+
+
+def test_update_searches_never_publishes_an_invalid_file(tmp_path, monkeypatch):
+    # The daily import reads the published copy, so a typo must stop before gh runs.
+    import pytest
+
+    from jobflow import cli, settings
+    from jobflow.ingest.searches import SearchConfigError
+
+    broken = tmp_path / "searches.toml"
+    broken.write_text('[[search]]\nname = "x"\nterms = ["quant"]\nlocations = { AU = ["Syndey"] }\n')
+    monkeypatch.setattr(settings, "searches_file", lambda: broken)
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: pytest.fail("published anyway"))
+    with pytest.raises(SearchConfigError, match="unknown AU city"):
+        cli.update_searches()

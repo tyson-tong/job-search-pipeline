@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,7 +15,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="jobflow",
         description="First time: init. Everyday: web (job tracker, including your searches), "
-        "tailor-cv, and interview-prep. After editing exclude_title_terms: exclude-titles. "
+        "tailor-cv, and interview-prep. After editing config/searches.toml: update-searches. "
         "The daily GitHub Action runs ingest.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Create config/.env, config/profile.toml, and config/searches.toml from the "
@@ -22,11 +24,11 @@ def main() -> None:
                             "import the results (the daily Action runs this; costs Apify credits)")
     ingest.add_argument("--search", help="Only this search name")
     ingest.add_argument("--site", choices=SITES, help="Only this job site")
-    exclude = sub.add_parser("exclude-titles", help="Apply exclude_title_terms in "
-                             "config/searches.toml to jobs already in the Inbox (imports apply "
-                             "them to new jobs)")
-    exclude.add_argument("--dry-run", action="store_true",
-                         help="Only list the jobs that would be filtered")
+    update = sub.add_parser("update-searches", help="After editing config/searches.toml: check "
+                            "it, update the GitHub copy the daily import reads, and filter Inbox "
+                            "jobs matching its exclude_title_terms")
+    update.add_argument("--dry-run", action="store_true",
+                        help="Check the file and list the jobs that would be filtered; change nothing")
     web = sub.add_parser("web", help="Open the job tracker in your browser (local only)")
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--no-browser", action="store_true", help="Don't open a browser tab")
@@ -66,6 +68,46 @@ def warn_possible_duplicates(job_id: int, about_to_apply: bool) -> None:
               + (f"\n\t{m['url']}" if m["url"] else ""))
 
 
+def update_searches(dry_run: bool = False) -> None:
+    """Check config/searches.toml, publish it as the JOBFLOW_SEARCHES GitHub variable that
+    the daily import reads, then filter Inbox jobs matching its excluded title terms
+    (imports only apply them to the jobs they bring in). An invalid file stops before
+    anything is published, so a typo never reaches the daily import."""
+    from .db import migrate
+    from .ingest.searches import parse_config
+    from .ingest.store import exclude_inbox_titles
+    from .settings import ROOT, searches_file
+
+    path = searches_file()
+    if not path.exists():
+        raise RuntimeError(f"No searches file at {path}. Run `uv run jobflow init` first")
+    text = path.read_text()
+    searches = parse_config(text)
+    print(f"{path}: valid ({len(searches)} search{'es' if len(searches) != 1 else ''})")
+    if dry_run:
+        print("Would update the JOBFLOW_SEARCHES GitHub variable (dry run: not updated)")
+    else:
+        gh = shutil.which("gh")
+        if not gh:
+            raise RuntimeError("GitHub CLI (gh) not found. Install it and run `gh auth login`, "
+                               "or set the variable by hand: "
+                               "gh variable set JOBFLOW_SEARCHES < config/searches.toml")
+        # gh finds the repository from this checkout's Git remote.
+        result = subprocess.run([gh, "variable", "set", "JOBFLOW_SEARCHES"], input=text,
+                                text=True, capture_output=True, cwd=ROOT)
+        if result.returncode:
+            raise RuntimeError(f"Updating the JOBFLOW_SEARCHES GitHub variable failed: "
+                               f"{(result.stderr or result.stdout).strip()}. Nothing else was changed")
+        print("Updated the JOBFLOW_SEARCHES GitHub variable: the daily import uses this file now")
+    migrate()
+    matched, checked = exclude_inbox_titles(searches, dry_run=dry_run)
+    for job in matched:
+        print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
+              f"{job['reason']}")
+    print(f"{'Would filter' if dry_run else 'Filtered'} {len(matched)} of {checked} Inbox jobs"
+          f"{' (dry run: nothing changed)' if dry_run else ''}")
+
+
 def init() -> None:
     from .settings import CONFIG_DIR, init_files
 
@@ -92,16 +134,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         from .ingest.apify import ingest_searches
         migrate()
         ingest_searches(args.search, args.site)
-    elif args.command == "exclude-titles":
-        from .db import migrate
-        from .ingest.store import exclude_inbox_titles
-        migrate()
-        matched, checked = exclude_inbox_titles(dry_run=args.dry_run)
-        for job in matched:
-            print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
-                  f"{job['reason']}")
-        print(f"{'Would filter' if args.dry_run else 'Filtered'} {len(matched)} of {checked} "
-              f"Inbox jobs{' (dry run: nothing changed)' if args.dry_run else ''}.")
+    elif args.command == "update-searches":
+        update_searches(dry_run=args.dry_run)
     elif args.command == "web":
         from .db import migrate
         from .web.server import serve
