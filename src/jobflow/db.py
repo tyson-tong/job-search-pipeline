@@ -9,8 +9,8 @@ import psycopg
 
 STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "offered",
             "accepted", "declined", "rejected", "withdrawn", "filtered")
-# Hidden from the tracker's default view. "filtered" is set on import
-# when a job fails a search's local filters (see jobs.filter_reason).
+# Finished with, so no follow-up is due. "filtered" is set on import, or by
+# update-searches, when a job fails a search's local filters (see jobs.filter_reason).
 CLOSED_STATUSES = ["not_interested", "accepted", "declined", "rejected", "withdrawn", "filtered"]
 # Statuses meaning you've applied; the first time a job reaches one sets applied_at.
 APPLIED_STATUSES = ["applied", "interviewing", "offered", "accepted", "declined"]

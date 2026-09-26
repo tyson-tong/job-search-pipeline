@@ -146,10 +146,11 @@ def parse_search(raw: dict, defaults: dict) -> Search:
         raise SearchConfigError(f"{where}: posted_within_days must be one of "
                                 f"{list(opt.POSTED_WITHIN_DAYS)} (24 hours, 1 week, 2 weeks, "
                                 f"1 month), not {days!r}")
-    max_results = int(merged.get("max_results") or 0)
+    max_results = int(_number(merged, "max_results", where) or 0)
     if max_results < 1:
         raise SearchConfigError(f"{where}: max_results must be at least 1")
-    salary_min, salary_max = merged.get("salary_min"), merged.get("salary_max")
+    salary_min, salary_max = _number(merged, "salary_min", where), _number(merged, "salary_max", where)
+    max_cost_usd, radius_km = _number(merged, "max_cost_usd", where), _number(merged, "radius_km", where)
     if salary_min is not None and salary_max is not None and salary_min > salary_max:
         raise SearchConfigError(f"{where}: salary_min is greater than salary_max")
     excluded = _title_terms(merged, "exclude_title_terms", where)
@@ -159,10 +160,9 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     return Search(
         name=name, terms=tuple(t.strip() for t in terms), locations=locations, sites=sites,
         posted_within_days=days, max_results=max_results,
-        max_cost_usd=float(merged["max_cost_usd"]) if merged.get("max_cost_usd") else None,
-        radius_km=int(merged["radius_km"]) if merged.get("radius_km") else None,
-        salary_min=float(salary_min) if salary_min is not None else None,
-        salary_max=float(salary_max) if salary_max is not None else None,
+        max_cost_usd=max_cost_usd or None,
+        radius_km=int(radius_km) if radius_km else None,
+        salary_min=salary_min, salary_max=salary_max,
         salary_period=period,
         job_types=_choices(f"{where} job_types", merged.get("job_types"), opt.JOB_TYPES),
         work_arrangements=_choices(f"{where} work_arrangements",
@@ -172,6 +172,16 @@ def parse_search(raw: dict, defaults: dict) -> Search:
         exclude_title_terms=excluded,
         include_title_terms=included,
     )
+
+
+def _number(merged: dict, key: str, where: str) -> float | None:
+    """A non-negative number setting, or None when it isn't set."""
+    value = merged.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise SearchConfigError(f"{where}: {key} must be a number of 0 or more, not {value!r}")
+    return float(value)
 
 
 def _title_terms(merged: dict, key: str, where: str) -> tuple[str, ...]:

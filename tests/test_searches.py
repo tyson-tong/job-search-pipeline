@@ -57,6 +57,8 @@ def test_defaults_are_inherited_and_overridden():
     ('locations = { FR = [] }', "unknown country 'FR'; choose from AU, NZ, SG, HK, GB, US"),
     ("sites = []", "at least one"),  # an empty list would silently run nothing
     ("posted_within_days = 3", "must be one of \\[1, 7, 14, 30\\]"),
+    # A quoted number crashed instead of stopping update-searches with a reason.
+    ('salary_min = "100k"', "salary_min must be a number"),
 ])
 def test_invalid_config_is_rejected(bad, message):
     base = '[[search]]\nname = "x"\nterms = ["a"]\n'

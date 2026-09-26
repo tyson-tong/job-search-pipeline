@@ -138,7 +138,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="lane-sub">CVs never leave it, except the text sent to your LLM</div>
     <div class="step"><b>Pick and track</b><span class="mod">web/ · jobflow web</span>
       <div class="what">Browser tracker on 127.0.0.1: Inbox of new jobs (Interested or Not interested), My jobs, a Filtered tab to bring filtered jobs back, filters, statuses, notes, follow-ups, similar-job warnings. Edits are saved only when you click Save, in one transaction, with a check for changes made elsewhere since loading; the view auto-refreshes when there are no drafts.</div></div>
-    <div class="step"><b>Score jobs against each CV</b><span class="mod">candidate/matching.py · Score button in jobflow web</span>
+    <div class="step"><b>Score jobs against each CV</b><span class="mod">candidate/matching.py · Score all jobs in jobflow web</span>
       <div class="what">Interested jobs only, each scored once. Runs in the background from the tracker. Requirements with verified CV quotes; score computed from required and preferred coverage.</div></div>
     <div class="step"><b>Tailor a CV</b><span class="mod">candidate/tailoring.py · jobflow tailor-cv</span>
       <div class="what">Draft from the best-matching CV, fact-checked against the original before rendering.</div></div>
@@ -227,7 +227,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, interview-prep.</p><ul>
     <li>job_id → jobs, kind, status</li><li>model_name, error, started_at, finished_at</li></ul></div>
 </div>
-<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered. Not interested, accepted, declined, rejected, withdrawn, and filtered are closed: hidden from the tracker's default view. Only interested jobs are scored. Filtered is set by imports and <code>jobflow update-searches</code>; the tracker's Filtered tab moves a job back to the Inbox.</p>
+<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered. My jobs shows interested, applied, interviewing, offered, and accepted by default; not interested and filtered jobs never appear there. Only interested jobs are scored. Filtered is set by imports and <code>jobflow update-searches</code>; the tracker's Filtered tab moves a job back to the Inbox.</p>
 
 <h2 id="cv">CV work</h2>
 <div class="grid">

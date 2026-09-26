@@ -204,8 +204,8 @@ def possible_duplicates(job_id: int, limit: int = 5,
 
 def possible_duplicate_map(conn, job_ids: list[int]) -> dict[int, list[dict]]:
     """Similar ads for many jobs at once: {job id: [{id, status, country, same_country,
-    level}]},
-    using two queries in total (titles first, then descriptions only for close titles).
+    level}]}, using two queries in total (titles first, then descriptions only for close
+    titles).
     Only same_country matches are similar jobs; the others are one role advertised
     in several countries."""
     if not job_ids:
@@ -325,7 +325,7 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
     the job's location where that names one.
 
     A new job failing job_filter is still stored, with status 'filtered' and the reason,
-    so it stays out of the default view and scoring but remains a known duplicate.
+    so it stays out of the Inbox and scoring but remains a known duplicate.
     """
     posting = normalise(item)
     key, url = identity(posting)
@@ -444,9 +444,9 @@ def backfill_sources(conn) -> int:
 def exclude_inbox_titles(searches: list, dry_run: bool = False) -> tuple[list[dict], int]:
     """Apply exclude_title_terms to jobs already in the Inbox: each New job whose title
     contains a term of the search that found it, and none of its include_title_terms,
-    becomes 'filtered', with the reason an
-    import would record. Only New jobs are touched. Returns (the jobs matched, the number
-    of Inbox jobs checked); with dry_run, nothing is changed."""
+    becomes 'filtered', with the reason an import would record, and the change is
+    recorded in status_history. Only New jobs are touched. Returns (the jobs matched, the
+    number of Inbox jobs checked); with dry_run, nothing is changed."""
     from ..db import connect
     from .searches import excluded_title_term
 
@@ -468,9 +468,14 @@ def exclude_inbox_titles(searches: list, dry_run: bool = False) -> tuple[list[di
                                 "reason": f"title contains {term!r}"})
         if not dry_run:
             for job in matched:
-                conn.execute("""UPDATE jobs SET status='filtered', filter_reason=%s,
-                                    status_updated_at=now() WHERE id=%s AND status='new'""",
-                             (job["reason"], job["id"]))
+                changed = conn.execute(
+                    """UPDATE jobs SET status='filtered', filter_reason=%s,
+                           status_updated_at=now() WHERE id=%s AND status='new'""",
+                    (job["reason"], job["id"])).rowcount
+                if changed:
+                    conn.execute("""INSERT INTO status_history(job_id, from_status, to_status, via)
+                                    VALUES (%s, 'new', 'filtered', 'update-searches')""",
+                                 (job["id"],))
     return matched, len(rows)
 
 

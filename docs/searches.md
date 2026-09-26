@@ -9,7 +9,7 @@ Settings under `[defaults]` apply to every search unless a search sets its own. 
 | `name` | `"data-analyst"` | Required and unique; used by `--search` and in run history |
 | `terms` | `["data analyst", "bi analyst"]` | Each term is searched separately |
 | `locations` | `{ AU = ["Sydney"], SG = ["Singapore"], HK = ["Hong Kong"] }` | Country code → cities from the list below; `[]` = whole country |
-| `salary_min`, `salary_max`, `salary_period` | `100000`, `160000`, `"annual"` | Local currency. Jobs without a listed salary are kept |
+| `salary_min`, `salary_max`, `salary_period` | `100000`, `160000`, `"annual"` | Local currency; the period is annual, monthly, or hourly. Jobs without a listed salary are kept |
 | `job_types` | `["full-time", "contract"]` | full-time, part-time, contract, casual |
 | `work_arrangements` | `["hybrid", "remote"]` | on-site, hybrid, remote |
 | `seek_classifications` | `["information-communication-technology"]` | Seek only; the tracker's Searches tab lists them all. Earlier files may call it `classifications`, which still works |
