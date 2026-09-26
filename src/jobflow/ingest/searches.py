@@ -167,8 +167,8 @@ def parse_search(raw: dict, defaults: dict) -> Search:
         job_types=_choices(f"{where} job_types", merged.get("job_types"), opt.JOB_TYPES),
         work_arrangements=_choices(f"{where} work_arrangements",
                                    merged.get("work_arrangements"), opt.WORK_ARRANGEMENTS),
-        seek_classifications=_choices(f"{where} seek_classifications", merged.get("seek_classifications"),
-                                 _all_classifications()),
+        seek_classifications=_choices(f"{where} seek_classifications",
+                                      merged.get("seek_classifications"), _all_classifications()),
         exclude_title_terms=excluded,
         include_title_terms=included,
     )
