@@ -170,3 +170,5 @@ def test_similar_jobs_sit_together_but_only_same_country_ones_are_marked_duplica
     ordered = group_duplicates(jobs)
     assert [j["id"] for j in ordered] == [1, 3, 2, 4]
     assert {j["id"]: j["group"] for j in ordered} == {1: 1, 3: 1, 2: None, 4: None}
+    # Jobs 1, 3, and 2 are also marked as one set spanning countries, in a second colour.
+    assert {j["id"]: j["area"] for j in ordered} == {1: 1, 3: 1, 2: 1, 4: None}

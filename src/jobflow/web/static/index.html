@@ -65,9 +65,12 @@ th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; colo
 tr:last-child td { border-bottom: 0; }
 tr.dirty td { background: var(--dirty); }
 tr.dirty td:first-child { box-shadow: inset 3px 0 0 var(--dirty-line); }
-/* Possible duplicates sit together; a bar down the left marks each set. */
+/* Similar jobs sit together: an orange bar marks possible duplicates, a blue one the
+   same ad in another country, with a line above each set. */
+tr.abroad td:first-child { border-left: 4px solid var(--accent); }
 tr.grouped td:first-child { border-left: 4px solid var(--warn); }
 tr.grouped.group-start td { border-top: 2px solid var(--warn); }
+tr.abroad.area-start td { border-top: 2px solid var(--accent); }
 .score { display: inline-block; min-width: 36px; text-align: center; border-radius: 6px; padding: 1px 6px; font-weight: 700; font-variant-numeric: tabular-nums; background: var(--chip); }
 .score.hi { background: #d9f2df; color: #1d5e30; } .score.mid { background: #fdf1d4; color: #7a5300; } .score.lo { background: #f6dede; color: #8a1f1a; }
 @media (prefers-color-scheme: dark) { .score.hi { background: #1f3b27; color: #9ee0ad; } .score.mid { background: #3b3119; color: #f3cf7a; } .score.lo { background: #3c2222; color: #ffb4ad; } }
@@ -456,11 +459,13 @@ function renderRows() {
             onclick: () => setPending(job, "status", on ? "new" : s) }, text);
         }))
       : statusSelect(job);
-    const grouped = job.group != null;
+    const grouped = job.group != null, abroad = job.area != null;
     const groupStart = grouped && (index === 0 || state.jobs[index - 1].group !== job.group);
+    const areaStart = abroad && (index === 0 || state.jobs[index - 1].area !== job.area);
     return el("tr", { className: [state.pending.has(job.id) ? "dirty" : "", grouped ? "grouped" : "",
-      groupStart ? "group-start" : ""].filter(Boolean).join(" "),
-      title: grouped ? "Possible duplicates of each other, shown together" : null },
+      groupStart ? "group-start" : "", abroad ? "abroad" : "", areaStart ? "area-start" : ""].filter(Boolean).join(" "),
+      title: grouped ? "Possible duplicates of each other, shown together"
+        : abroad ? "The same ad in another country, shown together" : null },
       inbox ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
         el("input", { type: "checkbox", checked: state.selected.has(job.id), "aria-label": `Select ${job.title}` })) : null,
       el("td", {}, el("span", { className: "score" + scoreClass,
