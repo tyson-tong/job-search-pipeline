@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import psycopg.types.json
 
 from .options import LINKEDIN_COUNTRIES
-from .searches import country_from_location, run_country
+from .searches import country_from_location, run_country, search_url_country
 from .sources import Posting, normalise
 
 JobFilter = Callable[[Posting], "str | None"]
@@ -321,8 +321,8 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
              country: str | None = None) -> bool:
     """Upsert one scraped job and record the observation. Returns True if new.
 
-    country is the one country the run searched, if known; otherwise it is read from
-    the job's location where that names one.
+    country is the one country the run searched, if known; otherwise it comes from the
+    job's own LinkedIn search URL, else from its location where that names one.
 
     A new job failing job_filter is still stored, with status 'filtered' and the reason,
     so it stays out of the Inbox and scoring but remains a known duplicate.
@@ -332,7 +332,7 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
     fp, mkey = fingerprint(posting), match_key(posting)
     description = posting.description or None
     raw = psycopg.types.json.Jsonb(item)
-    country = country or country_from_location(posting.location)
+    country = country or search_url_country(item) or country_from_location(posting.location)
     found = find_duplicate(conn, key, fp, mkey, posting.title, description, posting.location,
                            country)
     if found is None:
@@ -481,17 +481,18 @@ def exclude_inbox_titles(searches: list, dry_run: bool = False) -> tuple[list[di
 
 def backfill_countries(conn) -> int:
     """Fill jobs.country from the run that first found each job (run once, when the
-    column is added), falling back to the job's location."""
+    column is added), falling back to the job's own search URL, then its location."""
     rows = conn.execute(
-        """SELECT j.id, j.location, r.actor_id, r.input FROM jobs j
-           LEFT JOIN LATERAL (SELECT scraper_run_id FROM job_observations o
+        """SELECT j.id, j.location, r.actor_id, r.input, first.observed_json FROM jobs j
+           LEFT JOIN LATERAL (SELECT scraper_run_id, observed_json FROM job_observations o
                               WHERE o.job_id = j.id ORDER BY observed_at LIMIT 1) first ON true
            LEFT JOIN scraper_runs r ON r.id = first.scraper_run_id
            WHERE j.country IS NULL""").fetchall()
     filled = 0
-    for job_pk, location, actor_id, run_input in rows:
+    for job_pk, location, actor_id, run_input, item in rows:
         site = (actor_id or "").split(":", 1)[0]
-        country = run_country(site, run_input) or country_from_location(location)
+        country = (run_country(site, run_input) or search_url_country(item)
+                   or country_from_location(location))
         if country:
             conn.execute("UPDATE jobs SET country=%s WHERE id=%s", (country, job_pk))
             filled += 1

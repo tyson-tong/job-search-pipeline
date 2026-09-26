@@ -338,9 +338,19 @@ def run_country(site: str, run_input: dict | None) -> str | None:
     if site in ("indeed", "seek"):
         table = opt.INDEED_COUNTRIES if site == "indeed" else opt.SEEK_COUNTRIES
         return next((code for code, value in table.items() if value == run_input.get("country")), None)
-    countries = {country_from_location((parse_qs(urlsplit(url).query).get("location") or [""])[0])
-                 for url in run_input.get("urls") or []}
+    countries = {_url_country(url) for url in run_input.get("urls") or []}
     return countries.pop() if len(countries) == 1 else None
+
+
+def search_url_country(item: dict | None) -> str | None:
+    """ISO code of the country a LinkedIn job's own search URL (its inputUrl) asked for, so
+    a LinkedIn run covering several countries still knows each job's; None for other sites."""
+    return _url_country(str((item or {}).get("inputUrl") or ""))
+
+
+def _url_country(url: str) -> str | None:
+    """The country in a LinkedIn search URL's location, e.g. "Sydney, Australia"."""
+    return country_from_location((parse_qs(urlsplit(url).query).get("location") or [""])[0])
 
 
 BUILDERS = {"linkedin": linkedin_runs, "indeed": indeed_runs, "seek": seek_runs}

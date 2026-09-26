@@ -6,7 +6,7 @@ import pytest
 
 from jobflow.ingest import apify
 from jobflow.ingest.searches import (SearchConfigError, country_from_location, filter_reason,
-                                     parse_config, plan)
+                                     parse_config, plan, search_url_country)
 from jobflow.ingest.sources import normalise, parse_salary
 
 CONFIG = """
@@ -271,6 +271,13 @@ def test_each_run_knows_its_country_so_one_ad_in_two_countries_stays_two_jobs():
     assert country_from_location("Sydney, New South Wales, Australia") == "AU"
     assert country_from_location("Hong Kong SAR") == "HK"
     assert country_from_location("Admiralty, Central and Western District") is None
+    # A multi-country LinkedIn run: each job's own search URL still gives its country,
+    # even when its location names none.
+    singapore_url = next(url for url in next(r for r in runs if r.site == "linkedin"
+                                             and r.search.name == "analyst").run_input["urls"]
+                         if "Singapore" in url)
+    assert search_url_country({"inputUrl": singapore_url}) == "SG"
+    assert search_url_country({}) is None
 
 
 def test_excluded_title_terms_keep_jobs_out_of_the_inbox():
