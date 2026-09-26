@@ -616,16 +616,11 @@ function renderSearchCard(search) {
           el("pre", { className: "json" }, JSON.stringify(r.input, null, 2))])))));
 }
 function renderReference(ref) {
-  const yes = (v) => v ? "✓" : "–";
   const table = (head, rows) => el("div", { className: "table-wrap" }, el("table", {},
     el("thead", {}, el("tr", {}, head.map((h) => el("th", {}, h)))),
     el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c) => el("td", {}, c)))))));
   const filterNames = Object.keys(ref.filter_support[ref.sites[0]]);
-  const countryBody = el("tbody"), classList = el("div");
-  const drawCountries = (q) => fill(countryBody, ref.countries
-    .filter((c) => !q || `${c.code} ${c.name}`.toLowerCase().includes(q))
-    .map((c) => el("tr", {}, el("td", {}, el("code", {}, c.code)), el("td", {}, c.name),
-      ref.sites.map((s) => el("td", {}, yes(c.sites.includes(s)))))));
+  const classList = el("div");
   const drawClasses = (q) => fill(classList, ref.classifications.map((c) => {
     const subs = c.subclassifications.filter((sc) => !q || `${sc.key} ${sc.name}`.toLowerCase().includes(q));
     const own = !q || `${c.key} ${c.name}`.toLowerCase().includes(q);
@@ -634,7 +629,7 @@ function renderReference(ref) {
       el("div", { style: "padding-left:16px" }, (own && !q ? c.subclassifications : subs).map((sc) =>
         el("div", { className: "meta" }, el("code", {}, sc.key), ` ${sc.name}`))));
   }));
-  drawCountries(""); drawClasses("");
+  drawClasses("");
   return el("div", { className: "sv-card ref" },
     el("h2", {}, "Allowed values"),
     el("dl", { className: "kv" },
@@ -647,10 +642,10 @@ function renderReference(ref) {
     el("p", { className: "meta", style: "margin:0 0 4px" }, "search: the site filters before you pay · local: filtered after import, only when the job's value is known · unsupported: not available"),
     table(["Setting", ...ref.sites.map(siteName)], filterNames.map((f) =>
       [f.replace(/_/g, " "), ...ref.sites.map((s) => ref.filter_support[s][f])])),
-    el("details", {}, el("summary", {}, el("strong", {}, "Countries (locations keys)")),
-      el("input", { type: "search", placeholder: "Filter countries", oninput: (e) => drawCountries(e.target.value.toLowerCase()) }),
-      el("div", { className: "scroll" }, el("table", {}, el("thead", {}, el("tr", {},
-        ["Code", "Country", ...ref.sites.map(siteName)].map((h) => el("th", {}, h)))), countryBody))),
+    el("h3", {}, "locations: countries and cities"),
+    el("p", { className: "meta", style: "margin:0 0 4px" }, "Use [] for the whole country. UK also works for GB."),
+    table(["Code", "Country", "Cities", "Sites"], ref.countries.map((c) =>
+      [el("code", {}, c.code), c.name, c.cities.join(", "), c.sites.map(siteName).join(", ")])),
     el("details", {}, el("summary", {}, el("strong", {}, "Seek classifications")),
       el("input", { type: "search", placeholder: "Filter classifications", oninput: (e) => drawClasses(e.target.value.toLowerCase()) }),
       el("div", { className: "scroll", style: "padding:6px 10px" }, classList)));

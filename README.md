@@ -130,7 +130,7 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    |---|---|---|
    | `name` | `"data-analyst"` | Required and unique; used by `--search` and in run history |
    | `terms` | `["data analyst", "bi analyst"]` | Each term is searched separately |
-   | `locations` | `{ AU = ["Sydney"], SG = ["Singapore"], HK = ["Hong Kong"] }` | ISO country code → cities; `[]` = whole country |
+   | `locations` | `{ AU = ["Sydney"], SG = ["Singapore"], HK = ["Hong Kong"] }` | Country code → cities from the list below; `[]` = whole country |
    | `salary_min`, `salary_max`, `salary_period` | `100000`, `160000`, `"annual"` | Local currency. Jobs without a listed salary are kept |
    | `job_types` | `["full-time", "contract"]` | full-time, part-time, contract, casual |
    | `work_arrangements` | `["hybrid", "remote"]` | on-site, hybrid, remote |
@@ -139,7 +139,18 @@ You need [uv](https://docs.astral.sh/uv/), a PostgreSQL database reachable from 
    | `posted_within_days` | `1` | 1 (24 hours), 7 (1 week), 14 (2 weeks), or 30 (1 month); see below |
    | `max_results`, `max_cost_usd`, `radius_km` | `30`, `0.50`, `25` | Usually set once under `[defaults]` |
 
-   **Cities for `locations`** are free text, passed to each site as written, so use the name the sites use. Common ones: Australia: Sydney, Melbourne, Brisbane, Perth, Adelaide, Gold Coast, Canberra, Newcastle, Sunshine Coast, Central Coast (NSW), Wollongong, Geelong, Hobart, Townsville, Cairns, Darwin, Toowoomba, Ballarat, Bendigo, Launceston, Albury–Wodonga, Mackay, Rockhampton, Bundaberg, Hervey Bay, Wagga Wagga, Shepparton, Mildura, Bunbury, Port Macquarie, and Coffs Harbour. New Zealand: Auckland, Wellington, Lower Hutt, Upper Hutt, Porirua, Christchurch, Hamilton, Tauranga, Dunedin, Palmerston North, Napier–Hastings, Nelson, Rotorua, New Plymouth, Whangārei, Invercargill, Whanganui, Gisborne, and Timaru. Add the cities you want to the corresponding country arrays; use `[]` to search the whole country. The template's active search covers Sydney, with Singapore and Hong Kong searches commented out.
+   **Countries and cities for `locations`.** Cities must come from this list (any capitalisation); a misspelt or unlisted city is rejected rather than searched. Use `[]` to search the whole country.
+
+   | Code | Country | Cities | Sites |
+   |---|---|---|---|
+   | `AU` | Australia | Sydney, Melbourne, Brisbane, Perth, Adelaide, Canberra | all three |
+   | `NZ` | New Zealand | Auckland, Christchurch, Wellington | all three |
+   | `SG` | Singapore | Singapore | all three |
+   | `HK` | Hong Kong | Hong Kong | all three |
+   | `GB` (or `UK`) | United Kingdom | London, Manchester, Birmingham, Edinburgh, Glasgow, Leeds, Bristol | LinkedIn, Indeed |
+   | `US` | United States | New York, San Francisco, Los Angeles, Chicago, Boston, Seattle, Houston | LinkedIn, Indeed |
+
+   Seek has no UK or US site, so it skips those countries. The lists are `CITIES` in `src/jobflow/ingest/options.py`; to add a city or country, edit it there. The template's active search covers Sydney, with Singapore and Hong Kong searches commented out.
 
    For different salary cutoffs in AUD, SGD, and HKD, make one `[[search]]` entry per country and put `salary_min`, `salary_max`, and `salary_period` inside that country’s entry. The amounts are interpreted in the posting’s local currency; the workflow does not convert currencies. Leave salary fields out to disable salary filtering for that country. Separate searches may increase LinkedIn scraper runs because LinkedIn runs once per search.
 

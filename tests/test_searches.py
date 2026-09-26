@@ -17,7 +17,7 @@ max_results = 40
 [[search]]
 name = "analyst"
 terms = ["data analyst", "bi analyst"]
-locations = { AU = ["Sydney", "Melbourne"], NZ = [], US = ["Austin"] }
+locations = { AU = ["Sydney", "Melbourne"], NZ = [], SG = ["singapore"], UK = ["London"] }
 radius_km = 20
 salary_min = 100000
 salary_max = 150000
@@ -42,8 +42,9 @@ def test_defaults_are_inherited_and_overridden():
     analyst, counsel = searches()
     assert analyst.sites == ("linkedin", "indeed", "seek")
     assert analyst.max_results == 40 and counsel.posted_within_days == 30
+    # City names are matched case-insensitively and stored as listed.
     assert analyst.places() == [("AU", "Sydney"), ("AU", "Melbourne"), ("NZ", None),
-                                ("US", "Austin")]
+                                ("SG", "Singapore"), ("GB", "London")]
 
 
 @pytest.mark.parametrize("bad, message", [
@@ -51,6 +52,9 @@ def test_defaults_are_inherited_and_overridden():
     ("salary_min = 200\nsalary_max = 100", "salary_min is greater"),
     ("keywords = 'x'", "unknown setting"),  # a typo'd setting must not be silently ignored
     ('locations = ["Sydney"]', "locations must map"),
+    # A misspelt city or an unsupported country would otherwise search for nothing.
+    ('locations = { AU = ["Syndey"] }', "unknown AU city.*choose from Sydney"),
+    ('locations = { FR = [] }', "unknown country 'FR'; choose from AU, NZ, SG, HK, GB, US"),
     ("sites = []", "at least one"),  # an empty list would silently run nothing
     ("posted_within_days = 3", "must be one of \\[1, 7, 14, 30\\]"),
 ])
@@ -66,7 +70,7 @@ def test_invalid_config_is_rejected(bad, message):
 def test_linkedin_is_one_run_with_a_url_per_term_and_place():
     (run,) = plan(searches(), "analyst", "linkedin")
     urls = run.run_input["urls"]
-    assert len(urls) == 2 * 4 and run.run_input["limitPerSource"] == 40
+    assert len(urls) == 2 * 5 and run.run_input["limitPerSource"] == 40
     assert parse_qs(urlsplit(urls[0]).query) == {
         "keywords": ["data analyst"], "location": ["Sydney, Australia"],
         "f_TPR": ["r86400"], "distance": ["12"]}
@@ -76,7 +80,7 @@ def test_linkedin_is_one_run_with_a_url_per_term_and_place():
 
 def test_indeed_runs_per_term_and_place():
     runs = plan(searches(), "analyst", "indeed")
-    assert len(runs) == 8
+    assert len(runs) == 10
     assert runs[0].run_input == {"country": "au", "query": "data analyst", "location": "Sydney",
                                  "postedWithinDays": "1", "count": 40, "radiusKm": 20}
     assert runs[2].run_input["location"] == "" and runs[2].run_input["country"] == "nz"
@@ -98,10 +102,10 @@ def test_posted_windows_are_never_narrowed(days, linkedin, indeed, seek):
     assert widened == {1: set(), 7: set(), 14: {"linkedin"}, 30: {"indeed"}}[days]
 
 
-def test_seek_uses_native_filters_and_skips_unsupported_countries():
+def test_seek_uses_native_filters_and_skips_countries_it_lacks():
     runs = plan(searches(), "analyst", "seek")
-    assert len(runs) == 6  # US is not on Seek
-    assert any("country US" in note for note in runs[0].notes)
+    assert len(runs) == 8  # the UK is not on Seek
+    assert any("country GB" in note for note in runs[0].notes)
     sydney = runs[0].run_input
     assert (sydney["country"], sydney["location"]) == ("australia", "Sydney")
     assert sydney["workTypes"] == ["fulltime", "contract"]
@@ -244,9 +248,9 @@ def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
             raise RuntimeError("boom")
 
     monkeypatch.setattr(apify, "run_search", fake_run)
-    with pytest.raises(SystemExit, match="1 of 16 Apify runs failed"):
+    with pytest.raises(SystemExit, match="1 of 20 Apify runs failed"):
         apify.ingest_searches()
-    assert seen.count("indeed") == 8 and seen.count("seek") == 7
+    assert seen.count("indeed") == 10 and seen.count("seek") == 9
     assert "FAILED — boom" in capsys.readouterr().err
 
 
@@ -254,12 +258,12 @@ def test_each_run_knows_its_country_so_one_ad_in_two_countries_stays_two_jobs():
     runs = plan(searches())
     for run in runs:
         if run.site != "linkedin":
-            assert run.country == {"au": "AU", "nz": "NZ", "us": "US", "australia": "AU",
-                                   "new zealand": "NZ"}[run.run_input["country"]]
+            assert run.country == {"au": "AU", "nz": "NZ", "sg": "SG", "uk": "GB", "australia": "AU",
+                                   "new zealand": "NZ", "singapore": "SG"}[run.run_input["country"]]
     # One LinkedIn run covers every place in a search, so a multi-country search has no
     # single country; a one-country search does.
     assert next(r for r in runs if r.site == "linkedin" and r.search.name == "analyst").country is None
-    single = parse_config(CONFIG.replace(', NZ = [], US = ["Austin"]', ""))
+    single = parse_config(CONFIG.replace(', NZ = [], SG = ["singapore"], UK = ["London"]', ""))
     assert next(r for r in plan(single) if r.site == "linkedin").country == "AU"
     # Without a run country, LinkedIn-style locations still give one.
     assert country_from_location("Sydney, New South Wales, Australia") == "AU"

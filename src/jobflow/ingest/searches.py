@@ -102,15 +102,21 @@ def parse_search(raw: dict, defaults: dict) -> Search:
                                 'e.g. locations = { AU = ["Sydney"], NZ = [] }')
     locations = {}
     for country, cities in raw_locations.items():
-        code = country.upper()
-        if code not in opt.LINKEDIN_COUNTRIES and code not in opt.INDEED_COUNTRIES:
-            raise SearchConfigError(f"{where}: unknown country code {country!r}; use ISO codes "
-                                    "such as AU, NZ, GB, US (all listed in the tracker's Searches tab)")
+        code = opt.COUNTRY_ALIASES.get(country.upper(), country.upper())
+        if code not in opt.CITIES:
+            raise SearchConfigError(f"{where}: unknown country {country!r}; choose from "
+                                    f"{', '.join(opt.CITIES)} (UK also works for GB)")
         if isinstance(cities, str):
             cities = [cities]
         if not isinstance(cities, list) or not all(isinstance(c, str) and c.strip() for c in cities):
-            raise SearchConfigError(f"{where}: cities for {country} must be a list of names")
-        locations[code] = tuple(c.strip() for c in cities)
+            raise SearchConfigError(f"{where}: cities for {code} must be a list of names")
+        known = {city.casefold(): city for city in opt.CITIES[code]}
+        unknown_cities = [c for c in cities if c.strip().casefold() not in known]
+        if unknown_cities:
+            raise SearchConfigError(f"{where}: unknown {code} cit{'y' if len(unknown_cities) == 1 else 'ies'} "
+                                    f"{unknown_cities}; choose from {', '.join(opt.CITIES[code])}, "
+                                    "or [] for the whole country")
+        locations[code] = tuple(known[c.strip().casefold()] for c in cities)
     sites = _choices(f"{where} sites", merged.get("sites"), opt.SITES)
     if not sites:
         raise SearchConfigError(f"{where}: sites must list at least one of {list(opt.SITES)}")
@@ -203,7 +209,7 @@ def linkedin_runs(search: Search) -> list[PlannedRun]:
     window, window_note = site_window("linkedin", search.posted_within_days)
     urls = []
     for term, (country, city) in product(search.terms, search.places()):
-        country_name = opt.LINKEDIN_COUNTRIES.get(country, country)
+        country_name = opt.LINKEDIN_COUNTRIES[country]
         params = {"keywords": term,
                   "location": f"{city}, {country_name}" if city else country_name}
         if window:
@@ -222,9 +228,6 @@ def indeed_runs(search: Search) -> list[PlannedRun]:
     window, window_note = site_window("indeed", search.posted_within_days)
     runs, notes = [], _notes("indeed", search, window_note)
     for term, (country, city) in product(search.terms, search.places()):
-        if country not in opt.INDEED_COUNTRIES:
-            notes.append(f"country {country} skipped (not on Indeed)")
-            continue
         run_input = {"country": opt.INDEED_COUNTRIES[country], "query": term,
                      "location": city or "", "postedWithinDays": window,
                      "count": search.max_results}

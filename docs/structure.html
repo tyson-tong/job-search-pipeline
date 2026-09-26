@@ -154,7 +154,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>settings.py</code></td><td>Reads <code>config/.env</code> (never overriding real environment variables) and <code>config/profile.toml</code>: CV folder, output folders, searches file, scoring weights, timezone.</td></tr>
   <tr><td><code>db.py</code> · <code>migrations/</code></td><td>Connection, schema migrations (applied once each, in order), job lookup, and <code>set_job_state</code>: the one place status, notes, and follow-ups are changed and history recorded.</td></tr>
   <tr><td><code>llm.py</code></td><td>One call to any OpenAI-compatible chat-completions endpoint.</td></tr>
-  <tr><td><code>ingest/options.py</code></td><td>Constants: allowed search values and how each site's actor expresses them.</td></tr>
+  <tr><td><code>ingest/options.py</code></td><td>Constants: allowed search values (including the countries and their cities) and how each site's actor expresses them.</td></tr>
   <tr><td><code>ingest/searches.py</code></td><td>Loads and validates searches, builds actor inputs, and applies filters after import.</td></tr>
   <tr><td><code>ingest/apify.py</code></td><td>Runs each planned search on Apify and hands the results to the store.</td></tr>
   <tr><td><code>ingest/sources.py</code></td><td>Converts LinkedIn, Indeed, and Seek records to one <code>Posting</code> shape.</td></tr>
@@ -174,7 +174,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
 <p>Each site filters differently, so a search is translated to what each site can do. Filters applied <em>on the site</em> cost nothing for excluded jobs; filters applied <em>after import</em> only exclude a job whose value is known, and store it with status <code>filtered</code> and a reason.</p>
 <div class="table-wrap"><table>
   <tr><th>Setting</th><th>LinkedIn</th><th>Indeed</th><th>Seek</th></tr>
-  <tr><td>Terms, country, city, radius</td><td class="yes">on site</td><td class="yes">on site</td><td class="yes">on site (8 Asia-Pacific countries)</td></tr>
+  <tr><td>Terms, country, city, radius</td><td class="yes">on site</td><td class="yes">on site</td><td class="yes">on site (AU, NZ, SG, HK)</td></tr>
   <tr><td>Salary</td><td>after import</td><td>after import</td><td>after import</td></tr>
   <tr><td>Job type, work arrangement</td><td>after import</td><td>after import</td><td class="yes">on site</td></tr>
   <tr><td>Classification</td><td class="no">not available</td><td class="no">not available</td><td class="yes">on site</td></tr>

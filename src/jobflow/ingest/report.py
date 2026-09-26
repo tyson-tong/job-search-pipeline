@@ -53,7 +53,6 @@ def describe_searches() -> dict:
 
 def reference() -> dict:
     """Allowed values for config/searches.toml and how each site handles each setting."""
-    countries = sorted(set(opt.LINKEDIN_COUNTRIES) | set(opt.INDEED_COUNTRIES))
     return {
         "sites": list(opt.SITES),
         "job_types": list(opt.JOB_TYPES),
@@ -64,12 +63,11 @@ def reference() -> dict:
              "sites": {site: d in POSTED_WITHIN[site][0] for site in opt.SITES}}
             for d in opt.POSTED_WITHIN_DAYS],
         "filter_support": opt.FILTER_SUPPORT,
-        "countries": [{"code": code, "name": opt.LINKEDIN_COUNTRIES.get(code, code),
+        "countries": [{"code": code, "name": opt.LINKEDIN_COUNTRIES[code], "cities": list(cities),
                        "sites": [s for s, table in (("linkedin", opt.LINKEDIN_COUNTRIES),
                                                      ("indeed", opt.INDEED_COUNTRIES),
-                                                     ("seek", opt.SEEK_COUNTRIES))
-                                 if code in table]}
-                      for code in countries],
+                                                     ("seek", opt.SEEK_COUNTRIES)) if code in table]}
+                      for code, cities in opt.CITIES.items()],
         "classifications": [{"key": key, "name": name,
                              "subclassifications": [{"key": k, "name": n} for k, n in
                                                     opt.SEEK_SUBCLASSIFICATIONS.get(key, {}).items()]}
