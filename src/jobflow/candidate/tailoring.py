@@ -33,7 +33,9 @@ FORMATS = ("yaml", "latex", "docx", "pdf")
 # splits an entry, so one too long for the space left moves whole to the next page.
 GAP_WARNING = 0.3
 
-IDENTITY_FIELDS = ("name", "email", "phone", "location", "website", "photo", "social_networks")
+# Header fields other than these must stay exactly as in the source CV, and none may be
+# added. The headline may be reworded, so it is checked like section text instead.
+FREE_TEXT_FIELDS = ("sections", "headline")
 FACT_FIELDS = ("company", "position", "institution", "area", "degree", "start_date",
                "end_date", "date", "name", "title")
 
@@ -85,8 +87,10 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
     changes a human should confirm.
     """
     errors, warnings = [], []
-    for field in IDENTITY_FIELDS:
-        if field in source_cv and draft_cv.get(field) != source_cv.get(field):
+    for field in sorted((set(source_cv) | set(draft_cv)) - set(FREE_TEXT_FIELDS)):
+        if field not in source_cv:
+            errors.append(f"Header field '{field}' was added.")
+        elif draft_cv.get(field) != source_cv.get(field):
             errors.append(f"Header field '{field}' was changed or removed.")
     source_facts = {(f, normalise_text(e[f])) for e in _entries(source_cv) for f in FACT_FIELDS
                     if e.get(f) is not None}
@@ -104,8 +108,9 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
                           f"{entry.get('degree') or ''} {entry.get('area') or ''}".rstrip() + ".")
         if entry.get("company") and normalise_text(entry["company"]) not in draft_companies:
             errors.append(f"Employer removed: {entry['company']}.")
-    # Header fields are compared exactly above, so only section text is scanned here.
-    source_sections, draft_sections = source_cv.get("sections"), draft_cv.get("sections")
+    # The other header fields are compared exactly above, so only these are scanned here.
+    source_sections = [source_cv.get("headline"), source_cv.get("sections")]
+    draft_sections = [draft_cv.get("headline"), draft_cv.get("sections")]
     new_numbers = sorted(_numbers(draft_sections) - _numbers(source_sections))
     if new_numbers:
         errors.append("Numbers not in the source CV: " + ", ".join(new_numbers) + ".")
@@ -411,7 +416,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
             rendered = (f"Written as {target.with_suffix('.tex').name}; compile it with lualatex "
                         f"(or pdflatex for plain Western text). It was fitted to {fit} as RenderCV "
                         "lays it out, so check the page count of yours.")
-    report = [f"# CV review: {job['company']} — {job['title']} (job id {job_id})", "",
+    report = [f"# CV review: {job['company'] or 'Unknown employer'} — {job['title']} (job id {job_id})", "",
               reason, f"Draft: {target.name}. {rendered}", "",
               "Review every line against your private source CV before rendering or submitting. "
               "The automated check below catches common factual changes but is not "

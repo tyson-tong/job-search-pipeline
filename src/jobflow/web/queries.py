@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 from datetime import date, datetime, timedelta
 
 from ..db import CLOSED_STATUSES, STATUSES, connect, set_job_state
@@ -52,9 +53,10 @@ class Conflict(Exception):
 
 def _number(params: dict[str, list[str]], key: str) -> float | None:
     try:
-        return float((params.get(key) or [""])[0]) or None
+        value = float((params.get(key) or [""])[0])
     except ValueError:
         return None
+    return value if value and math.isfinite(value) else None
 
 
 # The Posted column filter: posted in the last this many days (today counts as day 0),

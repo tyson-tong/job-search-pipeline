@@ -498,18 +498,3 @@ def backfill_countries(conn) -> int:
             filled += 1
     return filled
 
-
-def backfill_keys(conn) -> int:
-    """Fill fingerprint, source, and match_key for jobs imported before they existed."""
-    rows = conn.execute("""SELECT id, raw_json FROM jobs
-                           WHERE fingerprint IS NULL OR source IS NULL OR match_key IS NULL
-                           """).fetchall()
-    filled = 0
-    for job_pk, raw in rows:
-        posting = normalise(raw or {})
-        values = (fingerprint(posting), posting.source, match_key(posting))
-        conn.execute("""UPDATE jobs SET fingerprint=coalesce(fingerprint, %s),
-                            source=coalesce(source, %s), match_key=coalesce(match_key, %s)
-                        WHERE id=%s""", (*values, job_pk))
-        filled += any(values)
-    return filled

@@ -77,8 +77,8 @@ def _entry(entry: object) -> dict:
             "bullets": [_text(h) for h in highlights if str(h).strip()]}
 
 
-def layout(cv: dict) -> tuple[str, list[str], list[tuple[str, list[dict]]]]:
-    """The name, contact details, and (section title, blocks) pairs."""
+def layout(cv: dict) -> tuple[str, str, list[str], list[tuple[str, list[dict]]]]:
+    """The name, headline, contact details, and (section title, blocks) pairs."""
     contact = [_text(cv.get(key)).removeprefix("tel:").removeprefix("mailto:")
                for key in ("location", "email", "phone", "website") if cv.get(key)]
     for network in cv.get("social_networks") or []:
@@ -90,7 +90,7 @@ def layout(cv: dict) -> tuple[str, list[str], list[tuple[str, list[dict]]]]:
         title = title[:1].upper() + title[1:]
         items = items if isinstance(items, list) else [items]
         sections.append((title, [_entry(item) for item in items]))
-    return _text(cv.get("name")), contact, sections
+    return _text(cv.get("name")), _text(cv.get("headline")), contact, sections
 
 
 def _runs(text: str) -> list[tuple[str, bool]]:
@@ -118,7 +118,7 @@ def _add_runs(paragraph, text: str, italic: bool = False) -> None:
 
 
 def write_docx(cv: dict, path: Path) -> None:
-    name, contact, sections = layout(cv)
+    name, headline, contact, sections = layout(cv)
     doc = _docx_base(1.8, 10.5)
     width = doc.sections[0].page_width - doc.sections[0].left_margin - doc.sections[0].right_margin
 
@@ -139,6 +139,10 @@ def write_docx(cv: dict, path: Path) -> None:
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = title.add_run(name)
     run.bold, run.font.size = True, Pt(20)
+    if headline:
+        line = doc.add_paragraph()
+        line.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _add_runs(line, headline)
     if contact:
         line = doc.add_paragraph(" | ".join(contact))
         line.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -236,7 +240,10 @@ def write_review_docx(markdown: str, path: Path) -> None:
 
 LATEX_SPECIAL = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
                  "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}",
-                 "^": r"\textasciicircum{}"}
+                 "^": r"\textasciicircum{}",
+                 # Braced, so a line starting with [ is never read as an optional argument
+                 # (of \item or \\ just before it).
+                 "[": "{[}", "]": "{]}"}
 
 
 def _latex(text: str) -> str:
@@ -250,7 +257,7 @@ def _latex(text: str) -> str:
 
 
 def write_latex(cv: dict, path: Path) -> None:
-    name, contact, sections = layout(cv)
+    name, headline, contact, sections = layout(cv)
     body = [r"\documentclass[10pt,a4paper]{article}",
             # lualatex or xelatex handle any script; pdflatex only Western European text.
             r"\usepackage{iftex}",
@@ -261,6 +268,7 @@ def write_latex(cv: dict, path: Path) -> None:
             r"\pagestyle{empty}", r"\setlength{\parindent}{0pt}", "",
             r"\begin{document}", r"\begin{center}",
             rf"{{\LARGE\textbf{{{_latex(name)}}}}}\\[4pt]",
+            *([_latex(headline) + r"\\[2pt]"] if headline else []),
             r"{\small " + r" \textbar{} ".join(_latex(c) for c in contact) + "}",
             r"\end{center}"]
     for section_title, blocks in sections:

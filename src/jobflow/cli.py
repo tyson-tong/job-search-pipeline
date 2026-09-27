@@ -6,7 +6,24 @@ import subprocess
 import sys
 
 
+def positive_int(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
+def check_variant(variant: str | None) -> None:
+    """Stop before any job is tried if --cv names no CV file."""
+    from .candidate.cvs import cv_sources
+
+    if variant is not None and variant not in (sources := cv_sources()):
+        raise RuntimeError(f"No CV_{variant}.yaml; choose from {', '.join(sources) or 'none found'}")
+
+
 def main() -> None:
+    import psycopg
+
     from .settings import load_env
     load_env()
     from .ingest.options import SITES
@@ -37,7 +54,7 @@ def main() -> None:
     tailor.add_argument("--cv", help="CV variant name (the part after CV_ in the file name) to use "
                         "for every job; defaults to each job's best-matching variant (an "
                         "unscored job is scored first)")
-    tailor.add_argument("--max-pages", type=int, default=1, metavar="N",
+    tailor.add_argument("--max-pages", type=positive_int, default=1, metavar="N",
                         help="Longest the CV may be as RenderCV lays it out; longer ones have "
                         "their least relevant bullets cut until they fit (default: 1)")
     tailor.add_argument("--format", choices=("yaml", "latex", "docx", "pdf"), default="yaml",
@@ -58,6 +75,8 @@ def main() -> None:
     except RuntimeError as exc:
         # Expected problems (missing settings, unknown job, bad CV) without a traceback.
         raise SystemExit(f"error: {exc}") from None
+    except psycopg.OperationalError as exc:
+        raise SystemExit(f"error: can't use the database (check DATABASE_URL): {exc}") from None
 
 
 def for_jobs(status: str, kind: str, what: str, run_one) -> None:
@@ -164,6 +183,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     elif args.command == "tailor-cv":
         from .candidate.tailoring import tailor_cv
         from .db import migrate
+        check_variant(args.cv)
         migrate()
 
         def tailor_one(job_id: int) -> None:
@@ -179,6 +199,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     elif args.command == "cover-letter":
         from .candidate.cover_letter import write_letter
         from .db import migrate
+        check_variant(args.cv)
         migrate()
 
         def letter_one(job_id: int) -> None:

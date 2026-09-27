@@ -116,7 +116,7 @@ def write_letter(job_id: int, variant: str | None = None,
     target = target_dir / ("COVER_LETTER_REVIEW.md" if errors else "cover-letter.docx")
     if not errors:
         documents.write_letter_docx(letter, source_doc["cv"], job, target)
-    report = [f"# Cover letter review: {job['company']} — {job['title']} (job id {job_id})", "",
+    report = [f"# Cover letter review: {job['company'] or 'Unknown employer'} — {job['title']} (job id {job_id})", "",
               reason.replace("CV variant", "Written from CV variant"), "",
               "Read the letter line by line before sending it. The automated check below "
               "catches invented numbers and names but is not exhaustive.", ""]

@@ -93,6 +93,8 @@ def test_fact_check_accepts_reordering_and_omitted_bullets():
 def test_fact_check_flags_factual_changes():
     draft = copy.deepcopy(SOURCE_CV)
     draft["phone"] = "+61 400 999 999"
+    draft["website"] = "https://invented.example"
+    draft["headline"] = "Analyst with 15 years at Google"
     job = draft["sections"]["experiences"][0]
     job["position"] = "Senior Data Analyst"
     job["start_date"] = "2020-02"
@@ -101,10 +103,11 @@ def test_fact_check_flags_factual_changes():
     errors, _ = fact_check(SOURCE_CV, draft)
     text = "\n".join(errors)
     assert "Header field 'phone'" in text
+    assert "Header field 'website' was added." in text
     assert "position: 'Senior Data Analyst'" in text
     assert "start_date: '2020-02'" in text
     assert "Education entry removed: Example University" in text
-    assert "Numbers not in the source CV: 2020, 5." in errors
+    assert "Numbers not in the source CV: 15, 2020, 5." in errors
 
 
 def test_fact_check_flags_removed_employer_and_warns_on_new_terms():

@@ -24,7 +24,7 @@ Sign-up screens and prices change, so the steps below describe what to look for 
 |---|---|---|
 | [PostgreSQL on Neon](#1-database-neon) | everything | `DATABASE_URL` in `config/.env`, and a GitHub secret |
 | [Apify](#2-apify-job-scrapers) | the daily import | `APIFY_TOKEN` in `config/.env`, and a GitHub secret |
-| [An LLM provider](#3-llm-provider) | scoring, tailor-cv, interview-prep | `LLM_API_KEY`, `LLM_MODEL` (and `LLM_BASE_URL`) in `config/.env` |
+| [An LLM provider](#3-llm-provider) | scoring, tailor-cv, cover-letter, interview-prep, skill-gaps | `LLM_API_KEY`, `LLM_MODEL` (and `LLM_BASE_URL`) in `config/.env` |
 | [Tavily](#4-tavily-web-search) | interview-prep; optional for tailor-cv and cover-letter | `WEB_SEARCH_API_KEY` in `config/.env` |
 | [GitHub CLI](#5-github-cli) | `jobflow update-searches`, setting GitHub secrets | logged in on your machine |
 
@@ -69,7 +69,7 @@ Your Apify plan may limit how much memory runs can use at once. `jobflow ingest`
 
 ## 3. LLM provider
 
-Scoring, tailored CVs, and interview briefings use any OpenAI-compatible chat-completions API.
+Scoring, tailored CVs, cover letters, interview briefings, and the skill-gaps report use any OpenAI-compatible chat-completions API.
 
 **OpenAI:**
 
@@ -96,7 +96,7 @@ LLM_REVIEW_API_KEY=               # ...with its own key (required when the endpo
 
 Leave any of them empty to use the main setting. `CV_REVIEW.md` and `COVER_LETTER_REVIEW.md` name the model that reviewed.
 
-What each command sends: scoring, tailoring, and interview prep send job text and your CV text. See the README's [Privacy](../README.md#privacy) section, and choose a provider whose data handling you accept.
+What each command sends: scoring, tailoring, cover letters, and interview prep send job text and your CV text; skill gaps sends the job requirements your CVs didn't show. See the README's [Privacy](../README.md#privacy) section, and choose a provider whose data handling you accept.
 
 Check it: mark a job Interested, save, and click **Score all jobs** in the tracker's My jobs tab. A configuration problem shows as an error instead of a score.
 

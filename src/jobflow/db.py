@@ -48,7 +48,7 @@ def migration_files() -> list[tuple[str, str]]:
 
 
 def migrate() -> None:
-    from .ingest.store import backfill_countries, backfill_keys, backfill_sources
+    from .ingest.store import backfill_countries, backfill_sources
 
     with connect() as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -64,15 +64,14 @@ def migrate() -> None:
                 conn.execute("INSERT INTO schema_migrations(name) VALUES (%s)", (name,))
             newly_applied.append(name)
             print(f"Applied migration {name}")
-        filled = backfill_keys(conn)
-        if filled:
-            print(f"Backfilled duplicate-detection keys for {filled} jobs")
         if "008_job_sources.sql:01" in newly_applied:
             added = backfill_sources(conn)
             if added:
                 print(f"Recorded {added} more site copies in job_sources")
         if "002_jobs.sql:02" in newly_applied:
-            print(f"Recorded the country of {backfill_countries(conn)} jobs")
+            filled = backfill_countries(conn)
+            if filled:
+                print(f"Recorded the country of {filled} jobs")
 
 
 def fetch_job(job_id: int) -> dict:

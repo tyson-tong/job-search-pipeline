@@ -60,7 +60,8 @@ def rank_skills(gaps: list[dict], groups: object) -> tuple[list[dict], int]:
             continue
         members = []
         for raw in group.get("gap_ids") or []:
-            gap_id = raw if isinstance(raw, int) else int(raw) if str(raw).isdigit() else None
+            gap_id = None if isinstance(raw, bool) else raw if isinstance(raw, int) \
+                else int(raw) if str(raw).isdigit() else None
             if gap_id in by_id and gap_id not in used:
                 used.add(gap_id)
                 members.append(by_id[gap_id])
