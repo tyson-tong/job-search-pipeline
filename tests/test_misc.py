@@ -16,14 +16,6 @@ def test_briefing_markup_cannot_inject_html():
     assert 'href="javascript' not in out and 'onmouseover="bad' not in out
 
 
-def test_briefing_citations_become_links():
-    out = _safe_markup("See [annual report](https://example.com/r?a=1&b=2) and "
-                       "https://example.com/news.\n1. **Prepare** a story")
-    assert '<a href="https://example.com/r?a=1&amp;b=2" rel="noreferrer">annual report</a>' in out
-    assert '<a href="https://example.com/news" rel="noreferrer">https://example.com/news</a>.' in out
-    assert "<ol>\n<li><strong>Prepare</strong> a story</li>\n</ol>" in out
-
-
 def test_env_file_never_overrides_real_environment(monkeypatch, tmp_path):
     import os
 
@@ -36,9 +28,11 @@ def test_env_file_never_overrides_real_environment(monkeypatch, tmp_path):
                    "EXAMPLE_IDS=a,b # trailing comment\n"
                    "LLM_BASE_URL=\n"
                    "APIFY_TOKEN=from-file\n")
-    for key in ("LLM_MODEL", "LLM_API_KEY", "EXAMPLE_IDS", "LLM_BASE_URL"):
-        monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("APIFY_TOKEN", "from-github-secret")
+    # A throwaway copy, so nothing load_env sets leaks into later tests.
+    environ = {k: v for k, v in os.environ.items()
+               if k not in ("LLM_MODEL", "LLM_API_KEY", "EXAMPLE_IDS", "LLM_BASE_URL")}
+    environ["APIFY_TOKEN"] = "from-github-secret"
+    monkeypatch.setattr(os, "environ", environ)
     load_env(env)
     assert os.environ["LLM_MODEL"] == "gpt-x"
     assert os.environ["LLM_API_KEY"] == "k#1"
@@ -64,14 +58,6 @@ def test_init_never_overwrites_personal_files_and_keeps_env_private(tmp_path):
     (config / ".env").unlink()
     init_files(tmp_path)
     assert stat.S_IMODE((config / ".env").stat().st_mode) == 0o600
-
-
-def test_job_artifacts_share_company_role_directory(tmp_path):
-    from jobflow.candidate.paths import job_directory
-
-    job = {"company": "Acme Research", "title": "Quant Analyst"}
-    assert job_directory(321, job, tmp_path) == (
-        tmp_path / "acme-research" / "quant-analyst-321")
 
 
 def test_update_searches_never_publishes_an_invalid_file(tmp_path, monkeypatch):

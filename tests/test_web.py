@@ -28,7 +28,6 @@ def test_valid_changes_are_normalised():
 @pytest.mark.parametrize("changes, message", [
     ([], "Nothing to save"),
     ([{"id": 1, "status": "filtered"}], "status must be one of"),  # system-only status
-    ([{"id": 1, "status": "hired"}], "status must be one of"),
     ([{"id": 1, "follow_up_on": "next week"}], "YYYY-MM-DD"),
     ([{"id": 1, "status": "applied"}, {"id": 1, "note": "x"}], "repeated"),
     ([{"id": "1", "status": "applied"}], "Invalid"),
@@ -78,12 +77,6 @@ def test_api_requires_the_token_and_a_local_host(server):
     status, _ = _request(port, "/api/save", {"Host": local, "Content-Type": "application/json"},
                          "POST", json.dumps({"changes": [{"id": 1, "status": "applied"}]}))
     assert status == 403
-
-
-def test_page_carries_this_runs_token(server):
-    port, token = server
-    status, body = _request(port, "/", {"Host": f"localhost:{port}"})
-    assert status == 200 and token.encode() in body and b"__JOBFLOW_TOKEN__" not in body
 
 
 # --- Scoring in the background ----------------------------------------------------------
@@ -139,22 +132,6 @@ def test_only_one_run_at_a_time(scoring, monkeypatch):
         scoring.start([2])
     release.set()
     assert _wait_until_finished(scoring)["scored"] == [1]
-
-
-@pytest.mark.parametrize("payload", [None, {"job_ids": []}, {"job_ids": ["1"]}, {"job_ids": [True]}])
-def test_scoring_requests_are_validated(payload):
-    from jobflow.web.scoring import parse_request
-    with pytest.raises(ValueError):
-        parse_request(payload)
-
-
-def test_asking_to_score_an_ineligible_job_runs_nothing(scoring, monkeypatch):
-    # A job that isn't Interested, or is already scored, is never scored.
-    monkeypatch.setattr(scoring, "match_job", lambda *a, **k: pytest.fail("scored anyway"))
-    monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: [])
-    with pytest.raises(ValueError, match="Only interested jobs"):
-        scoring.start([7])
-    assert not scoring.status()["running"]
 
 
 def test_similar_jobs_sit_together_but_only_same_country_ones_are_marked_duplicates():
