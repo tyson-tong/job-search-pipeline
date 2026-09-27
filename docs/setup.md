@@ -1,12 +1,12 @@
 # Setup
 
-Everything needed once, before the daily routine in the [README](../README.md). You need [uv](https://docs.astral.sh/uv/) and a GitHub account; [RenderCV](https://docs.rendercv.com) is optional: with it, tailored CVs are RenderCV PDFs; without it, they're Word files by default (or a built-in PDF or LaTeX layout).
+Everything needed once, before the daily routine in the [README](../README.md). You need [uv](https://docs.astral.sh/uv/) and a GitHub account. `uv sync` also installs [RenderCV](https://docs.rendercv.com), which renders your CVs.
 
 1. **Make your own copy.** Create a *private* repository from this template (GitHub: "Use this template"), then clone it.
 2. **Install and create your settings files**, from the repository folder:
 
    ```
-   uv sync --extra documents
+   uv sync
    uv run jobflow init
    ```
 

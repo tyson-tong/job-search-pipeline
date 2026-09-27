@@ -1,4 +1,4 @@
-"""Writing a CV as .docx, .pdf, or .tex without RenderCV, and a cover letter as .docx.
+"""Writing a CV as .docx or .tex (RenderCV makes the PDF), and a cover letter as .docx.
 
 Everything is laid out in code from the fact-checked RenderCV YAML, never by the LLM, so
 each file says exactly what passed the fact check. Like RenderCV, an entry is never split
@@ -15,22 +15,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
-from fpdf import FPDF
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-# Unicode fonts to try for PDFs, as (regular, bold), in order; the last resort is the
-# built-in Helvetica, which only has Latin-1 characters.
-PDF_FONTS = [
-    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-    ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
-    ("/System/Library/Fonts/Supplemental/Arial.ttf",
-     "/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
-    ("/Library/Fonts/Arial.ttf", "/Library/Fonts/Arial Bold.ttf"),
-    ("C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf"),
-    ("/mnt/c/Windows/Fonts/arial.ttf", "/mnt/c/Windows/Fonts/arialbd.ttf"),
-]
 LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 
 
@@ -228,127 +214,6 @@ def write_letter_docx(letter: str, cv: dict, job: dict, path: Path, today: date 
 
 
 # --- .pdf ----------------------------------------------------------------------------------
-
-def _pdf_class():
-    class CV(FPDF):
-        footer_text = ""
-
-        def footer(self):
-            self.set_y(-12)
-            self.set_font(self.family_name, size=8)
-            self.set_text_color(120)
-            self.cell(0, 5, f"{self.footer_text} – {self.page_no()}/{{nb}}"
-                      if self.unicode else f"{self.footer_text} - {self.page_no()}/{{nb}}",
-                      align="C")
-            self.set_text_color(0)
-    return CV
-
-
-LATIN_1 = str.maketrans({"–": "-", "—": "-", "‘": "'", "’": "'", "“": '"', "”": '"',
-                         "•": "-", "…": "...", "\u00a0": " "})
-
-
-def write_pdf(cv: dict, path: Path) -> list[str]:
-    """Write the CV as a PDF; returns notes worth reporting (such as a missing font)."""
-    name, contact, sections = layout(cv)
-    pdf = _pdf_class()(format="A4")
-    pdf.set_margins(18, 16, 18)
-    pdf.set_auto_page_break(True, margin=18)
-    notes = []
-    pdf.unicode = False
-    for regular, bold in PDF_FONTS:
-        if Path(regular).is_file() and Path(bold).is_file():
-            pdf.add_font("CV", "", regular)
-            pdf.add_font("CV", "B", bold)
-            pdf.family_name, pdf.unicode = "CV", True
-            break
-    else:
-        pdf.family_name = "Helvetica"
-
-    replaced = set()
-
-    def text(value: str) -> str:
-        # "--" is fpdf2's underline marker, so it becomes a dash first.
-        value = value.replace("--", "–")
-        if pdf.unicode:
-            return value
-        value = value.translate(LATIN_1)
-        out = "".join(c if ord(c) < 256 else "?" for c in value)
-        replaced.update(c for c in value if ord(c) >= 256)
-        return out
-
-    pdf.footer_text = text(name)
-    pdf.add_page()
-    width = pdf.epw
-    pdf.set_font(pdf.family_name, "B", 20)
-    pdf.cell(0, 10, text(name), align="C", new_x="LMARGIN", new_y="NEXT")
-    if contact:
-        pdf.set_font(pdf.family_name, size=9)
-        pdf.multi_cell(0, 4.5, text(" | ".join(contact)), align="C", new_x="LMARGIN", new_y="NEXT")
-    bullet = "•" if pdf.unicode else "-"
-
-    def lines(block: dict, dry: bool) -> float:
-        """Draw one block (or, dry, just measure it); returns its height."""
-        total = 0.0
-
-        def cell(w: float, h: float, value: str, style: str = "", size: float = 10,
-                 x: float | None = None, align: str = "L") -> float:
-            pdf.set_font(pdf.family_name, style, size)
-            if dry:
-                return pdf.multi_cell(w, h, text(value), markdown=True, dry_run=True, output="HEIGHT")
-            if x is not None:
-                pdf.set_x(x)
-            y = pdf.get_y()
-            pdf.multi_cell(w, h, text(value), markdown=True, align=align, new_x="LMARGIN", new_y="NEXT")
-            return pdf.get_y() - y
-
-        def row(left: str, right: str, style: str = "") -> float:
-            pdf.set_font(pdf.family_name, style, 9.5)
-            right_w = pdf.get_string_width(text(right)) + 2 if right else 0
-            if not dry and right:
-                y = pdf.get_y()
-                pdf.cell(0, 5, text(right), align="R")
-                pdf.set_xy(pdf.l_margin, y)
-            return cell(width - right_w, 5, left, style, 10)
-
-        if block["kind"] in ("text", "bullet"):
-            indent = 5 if block["kind"] == "bullet" else 0
-            prefix = f"{bullet} " if block["kind"] == "bullet" else ""
-            return cell(width - indent, 5, prefix + block["text"], x=pdf.l_margin + indent)
-        if not dry:
-            pdf.ln(1.5)
-        total += 1.5
-        total += row(block["title"], block["dates"])
-        if block["detail"] or block["location"]:
-            total += row(block["detail"], block["location"])
-        if block["summary"]:
-            total += cell(width, 5, block["summary"])
-        for item in block["bullets"]:
-            total += cell(width - 5, 5, f"{bullet} {item}", x=pdf.l_margin + 5)
-        return total
-
-    for section_title, blocks in sections:
-        for i, block in enumerate(blocks):
-            height = lines(block, dry=True) + (11 if i == 0 else 0)
-            if pdf.will_page_break(height):
-                pdf.add_page()
-            if i == 0:
-                pdf.ln(3)
-                pdf.set_font(pdf.family_name, "B", 12)
-                pdf.cell(0, 6, text(section_title), new_x="LMARGIN", new_y="NEXT")
-                pdf.set_draw_color(128)
-                pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + width, pdf.get_y())
-                pdf.ln(2)
-            lines(block, dry=False)
-    pdf.output(str(path))
-    if replaced:
-        notes.append("No Unicode font was found, so these characters were replaced in the PDF: "
-                     + " ".join(sorted(replaced)) + ". Install DejaVu or Liberation fonts, or "
-                     "use --format docx.")
-    return notes
-
-
-# --- .tex ----------------------------------------------------------------------------------
 
 LATEX_SPECIAL = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
                  "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}",

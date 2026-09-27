@@ -38,12 +38,12 @@ def main() -> None:
                         "for every job; defaults to each job's best-matching variant (an "
                         "unscored job is scored first)")
     tailor.add_argument("--max-pages", type=int, default=1, metavar="N",
-                        help="Longest a PDF CV may be; longer ones have their least relevant "
-                        "bullets cut until they fit (default: 1)")
-    tailor.add_argument("--format", choices=("pdf", "docx", "latex"),
-                        help="File to write each CV as: pdf (RenderCV's when installed, "
-                        "otherwise a built-in layout), docx, or latex (a .tex to compile "
-                        "yourself). Default: RenderCV's PDF if installed, otherwise docx")
+                        help="Longest the CV may be as RenderCV lays it out; longer ones have "
+                        "their least relevant bullets cut until they fit (default: 1)")
+    tailor.add_argument("--format", choices=("yaml", "latex", "docx", "pdf"), default="yaml",
+                        help="What to write besides the review: yaml (only the RenderCV YAML "
+                        "draft, to render yourself), latex (also a .tex to compile), docx, or "
+                        "pdf (rendered by RenderCV). Default: yaml")
     letter = sub.add_parser("cover-letter", help="Optional: draft a cover letter, reviewed and "
                             "fact-checked, for every Interested job that doesn't have one yet")
     letter.add_argument("--cv", help="CV variant to write from, for every job; defaults to each "
