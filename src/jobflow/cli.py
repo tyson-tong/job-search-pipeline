@@ -49,9 +49,8 @@ def main() -> None:
                             "exclude_title_terms (and none of its include_title_terms)")
     update.add_argument("--dry-run", action="store_true",
                         help="Check the file and list the jobs that would be filtered; change nothing")
-    web = sub.add_parser("web", help="Open the job tracker in your browser (local only)")
+    web = sub.add_parser("web", help="Run the local job tracker web server")
     web.add_argument("--port", type=int, default=8765)
-    web.add_argument("--no-browser", action="store_true", help="Don't open a browser tab")
     tailor = sub.add_parser("tailor-cv", help="Draft a tailored CV, reviewed and fact-checked, "
                             "for every Interested job that doesn't have one yet")
     tailor.add_argument("--cv", help="RenderCV YAML CV to use for every job, by name (the file "
@@ -86,9 +85,11 @@ def for_jobs(status: str, kind: str, what: str, run_one) -> None:
     """Run run_one(job_id) for each job with `status` and no recorded `kind` run.
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
-    twice, and a failed job is retried next time. One failure doesn't stop the rest.
+    twice, and a failed job is retried next time. One failure doesn't stop the rest,
+    unless the LLM provider refuses every request (no credit left, a bad key).
     """
     from .db import connect
+    from .llm import LLMError
 
     with connect() as conn:
         rows = conn.execute(
@@ -106,6 +107,10 @@ def for_jobs(status: str, kind: str, what: str, run_one) -> None:
         except Exception as exc:
             failed += 1
             print(f"error: {exc}", file=sys.stderr)
+            if isinstance(exc, LLMError) and exc.fatal:
+                raise SystemExit(f"Stopped: the LLM provider will refuse the other "
+                                 f"{len(todo) - failed} job(s) too. Fix that, then run the "
+                                 "command again") from None
     if failed:
         raise SystemExit(f"{failed} of {len(todo)} failed; run the command again to retry them")
 
@@ -182,7 +187,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         from .db import migrate
         from .web.server import serve
         migrate()
-        serve(args.port, open_browser=not args.no_browser)
+        serve(args.port)
     elif args.command == "tailor-cv":
         from .candidate.tailoring import tailor_cv
         from .db import migrate

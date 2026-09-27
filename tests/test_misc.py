@@ -94,3 +94,37 @@ def test_reviewer_llm_settings_fall_back_but_never_leak_the_main_key(monkeypatch
     monkeypatch.setenv("LLM_REVIEW_API_KEY", "other-key")
     assert credentials(reviewer=True) == ("other-key", "review-model")
     assert base_url(reviewer=True) == "https://other.example/v1"
+
+
+def test_llm_retries_rate_limits_but_not_an_empty_balance(monkeypatch):
+    # Both come back as HTTP 429 from OpenAI: a rate limit passes if you wait, an empty
+    # balance never does and must stop a batch rather than fail every job in turn.
+    import requests
+    from jobflow import llm
+
+    class Reply:
+        def __init__(self, status, body, headers=None):
+            self.status_code, self.body, self.headers = status, body, headers or {}
+            self.ok, self.reason = status < 400, "Too Many Requests"
+
+        def json(self):
+            return self.body
+
+    replies, waits = [], []
+    monkeypatch.setattr(requests, "post", lambda *a, **k: replies.pop(0))
+    monkeypatch.setattr(llm.time, "sleep", waits.append)
+    monkeypatch.setenv("LLM_API_KEY", "key")
+    monkeypatch.setenv("LLM_MODEL", "model")
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+
+    limited = {"error": {"message": "Rate limit reached", "type": "requests", "code": "rate_limit_exceeded"}}
+    replies[:] = [Reply(429, limited, {"Retry-After": "3"}),
+                  Reply(200, {"choices": [{"message": {"content": "ok"}}]})]
+    assert llm.complete("s", "u") == ("ok", "model") and waits == [3.0]
+
+    empty = {"error": {"message": "You have no credits remaining.", "type": "insufficient_quota",
+                       "code": "credit_balance_exhausted"}}
+    replies[:] = [Reply(429, empty)]
+    with pytest.raises(llm.LLMError, match="no credits remaining") as caught:
+        llm.complete("s", "u")
+    assert caught.value.fatal and not replies and waits == [3.0]

@@ -10,7 +10,6 @@ import json
 import re
 import secrets
 import sys
-import webbrowser
 from datetime import date, datetime
 from decimal import Decimal
 from http import HTTPStatus
@@ -168,16 +167,10 @@ def make_handler(token: str, port: int):
     return Handler
 
 
-def serve(port: int = 8765, open_browser: bool = True) -> None:
+def serve(port: int = 8765) -> None:
     token = secrets.token_urlsafe(24)
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(token, port))
-    url = f"http://127.0.0.1:{port}/"
-    print(f"jobflow web is running at {url}  (Ctrl+C to stop)")
-    if open_browser:
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
+    print(f"jobflow web is running at http://127.0.0.1:{port}/  (Ctrl+C to stop)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

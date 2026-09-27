@@ -2,10 +2,24 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 import requests
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
+# A rate limit or a server error is retried this many times, waiting as long as the
+# provider asks (Retry-After) up to MAX_WAIT seconds, or 2, 4, 8... seconds otherwise.
+RETRIES = 4
+MAX_WAIT = 60
+
+
+class LLMError(RuntimeError):
+    """The provider refused a request. `fatal` means every later request will fail too
+    (no credit left, a bad key, an unknown model), so a batch should stop."""
+
+    def __init__(self, message: str, fatal: bool = False):
+        super().__init__(message)
+        self.fatal = fatal
 
 
 def base_url(reviewer: bool = False) -> str:
@@ -39,10 +53,39 @@ def complete(system: str, user: str, *, json_mode: bool = False,
              {"role": "user", "content": user}], "temperature": 0.1}
     if json_mode:
         body["response_format"] = {"type": "json_object"}
-    response = requests.post(f"{base_url(reviewer)}/chat/completions", json=body,
-                             headers={"Authorization": f"Bearer {key}"}, timeout=180)
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"], model
+    for attempt in range(RETRIES + 1):
+        response = requests.post(f"{base_url(reviewer)}/chat/completions", json=body,
+                                 headers={"Authorization": f"Bearer {key}"}, timeout=180)
+        if response.ok:
+            return response.json()["choices"][0]["message"]["content"], model
+        error = _error(response)
+        # OpenAI reports an exhausted balance as a 429 too, but waiting won't fix that.
+        quota = error.get("type") == "insufficient_quota" or error.get("code") in (
+            "insufficient_quota", "credit_balance_exhausted")
+        retry = (response.status_code == 429 and not quota) or response.status_code >= 500
+        if not retry or attempt == RETRIES:
+            break
+        time.sleep(_wait(response, attempt))
+    message = error.get("message") or response.reason or "request failed"
+    raise LLMError(f"{message} (LLM provider, HTTP {response.status_code})",
+                   fatal=quota or response.status_code in (401, 403, 404))
+
+
+def _error(response: requests.Response) -> dict:
+    """The "error" object of an OpenAI-style error response, or {}."""
+    try:
+        error = response.json().get("error")
+    except (ValueError, AttributeError):
+        return {}
+    return error if isinstance(error, dict) else {"message": str(error)} if error else {}
+
+
+def _wait(response: requests.Response, attempt: int) -> float:
+    try:
+        wait = float(response.headers.get("Retry-After", ""))
+    except ValueError:
+        wait = 2.0 ** (attempt + 1)
+    return min(max(wait, 1.0), MAX_WAIT)
 
 
 def parse_json(content: str) -> dict:

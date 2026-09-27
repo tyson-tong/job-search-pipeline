@@ -679,9 +679,10 @@ async function pollScoring() {
   try { state.scoring = await api("/api/scoring"); } catch (error) { toast(error.message, true); return; }
   renderScoring();
   if (state.scoring.running) { setTimeout(pollScoring, 2000); return; }
-  const { scored, errors } = state.scoring;
+  const { scored, errors, done, total } = state.scoring;
   toast(`Scored ${scored.length} job${scored.length === 1 ? "" : "s"}` + (errors.length
-    ? `; ${errors.length} failed (${errors[0].error})` : ""), errors.length > 0);
+    ? `; ${errors.length} failed (${errors[0].error})` : "")
+    + (done < total ? `. Stopped: the other ${total - done} would fail the same way` : ""), errors.length > 0);
   await refresh();  // unsaved drafts are kept; rows just gain their new scores
   if (state.detail && !state.pending.size) await openDetail(state.detail.id);
 }

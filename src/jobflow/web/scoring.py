@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from ..candidate.cvs import cv_sources
 from ..candidate.matching import jobs_needing_match, match_job
-from ..llm import credentials
+from ..llm import LLMError, credentials
 
 MAX_JOBS = 500
 _lock = threading.Lock()
@@ -59,9 +59,13 @@ def _run(ids: list[int]) -> None:
             match_job(job_id)
             with _lock:
                 _state["scored"].append(job_id)
-        except Exception as exc:  # one failure shouldn't stop the batch
+        except Exception as exc:  # one failure shouldn't stop the batch...
             with _lock:
                 _state["errors"].append({"id": job_id, "error": str(exc)[:300]})
+                _state["done"] += 1
+            if isinstance(exc, LLMError) and exc.fatal:
+                break  # ...unless every other job would fail the same way
+            continue
         with _lock:
             _state["done"] += 1
     with _lock:
