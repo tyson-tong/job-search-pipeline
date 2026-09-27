@@ -30,9 +30,11 @@ Only the CV's `cv` section goes to the LLM; design, locale, and settings are cop
 
 New capitalised or technical terms, such as a tool name, are warnings. The check catches common problems; it does not replace reading the draft.
 
-If the rendered PDF runs past 1 page, or the `--max-pages N` given to `tailor-cv`, the LLM ranks the bullets from least to most relevant to the job, and the fewest of the least relevant that makes it fit are cut, found by re-rendering with different numbers cut (a binary search, so about 7 renders even for 50 bullets). If it can't fit even with every entry down to one bullet, all those cuts are kept and you get a warning. The LLM only ranks; the cutting is done in code, so nothing is rewritten and every entry keeps at least one bullet. `CV_REVIEW.md` lists what was cut.
+Without RenderCV, or with `--format docx` or `latex`, the CV file is laid out in code from the checked YAML (`candidate/documents.py`), never by the LLM, so it says exactly what passed the check. Like RenderCV, the built-in layouts never split an entry across pages.
 
-RenderCV never splits an entry across pages: one too long for the space left moves whole to the next page. A page other than the last that is at least 30% empty at the bottom because of this gets a warning; cutting a few of that entry's bullets pulls it up.
+If the PDF (RenderCV's or the built-in one) runs past 1 page, or the `--max-pages N` given to `tailor-cv`, the LLM ranks the bullets from least to most relevant to the job, and the fewest of the least relevant that makes it fit are cut, found by re-rendering with different numbers cut (a binary search, so about 7 renders even for 50 bullets). If it can't fit even with every entry down to one bullet, all those cuts are kept and you get a warning. The LLM only ranks; the cutting is done in code, so nothing is rewritten and every entry keeps at least one bullet. `CV_REVIEW.md` lists what was cut.
+
+Since an entry is never split, one too long for the space left moves whole to the next page. A page other than the last that is at least 30% empty at the bottom because of this gets a warning; cutting a few of that entry's bullets pulls it up.
 
 ## Cover letters and the review
 

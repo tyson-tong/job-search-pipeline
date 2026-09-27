@@ -38,8 +38,12 @@ def main() -> None:
                         "for every job; defaults to each job's best-matching variant (an "
                         "unscored job is scored first)")
     tailor.add_argument("--max-pages", type=int, default=1, metavar="N",
-                        help="Longest the rendered CV may be; longer ones have their least "
-                        "relevant bullets cut until they fit (default: 1)")
+                        help="Longest a PDF CV may be; longer ones have their least relevant "
+                        "bullets cut until they fit (default: 1)")
+    tailor.add_argument("--format", choices=("pdf", "docx", "latex"),
+                        help="File to write each CV as: pdf (RenderCV's when installed, "
+                        "otherwise a built-in layout), docx, or latex (a .tex to compile "
+                        "yourself). Default: RenderCV's PDF if installed, otherwise docx")
     letter = sub.add_parser("cover-letter", help="Optional: draft a cover letter, reviewed and "
                             "fact-checked, for every Interested job that doesn't have one yet")
     letter.add_argument("--cv", help="CV variant to write from, for every job; defaults to each "
@@ -163,7 +167,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         migrate()
 
         def tailor_one(job_id: int) -> None:
-            target, errors, warnings = tailor_cv(job_id, args.cv, max_pages=args.max_pages)
+            target, errors, warnings = tailor_cv(job_id, args.cv, max_pages=args.max_pages, fmt=args.format)
             print(target)
             for message in errors:
                 print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)

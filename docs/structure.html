@@ -163,6 +163,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>candidate/cvs.py</code></td><td>Loads <code>CV_*.yaml</code> files; shared text helpers.</td></tr>
   <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring: Interested jobs only, each scored once.</td></tr>
   <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft, the reviewer pass, the fact check, and the page check.</td></tr>
+  <tr><td><code>candidate/documents.py</code></td><td>Built-in CV layouts (.docx, .pdf, .tex) and the cover letter .docx, all laid out in code from the checked text.</td></tr>
   <tr><td><code>candidate/cover_letter.py</code></td><td>Optional cover letter, its reviewer pass and fact check.</td></tr>
   <tr><td><code>candidate/skill_gaps.py</code></td><td>Skill-gap report from stored match scores.</td></tr>
   <tr><td><code>candidate/interview.py</code></td><td>Company research, specialist agents, HTML briefing.</td></tr>
@@ -244,7 +245,8 @@ applications      42   applied   2026-09-25: Applied via referral</div>
     <li>A hiring-manager reviewer revises the draft; the revision is kept only if it passes the fact check.</li>
     <li>Only the <code>cv</code> section goes to the LLM; design and settings are kept.</li>
     <li>Errors (render skipped): changed contact details, new or altered employers, positions, dates, education; removed entries; new numbers.</li>
-    <li>Over 1 page (or <code>--max-pages N</code>): the least relevant bullets are cut, re-rendering each time, until it fits (never an entry's last bullet).</li>
+    <li>Written as RenderCV's PDF if installed, else a .docx; <code>--format pdf|docx|latex</code> chooses (pdf without RenderCV is a built-in layout).</li>
+    <li>A PDF over 1 page (or <code>--max-pages N</code>): the least relevant bullets are cut, re-rendering each time, until it fits (never an entry's last bullet).</li>
     <li>Warnings: new tool or skill names, and a page left mostly empty by an entry moved whole to the next page. Written to <code>CV_REVIEW.md</code>.</li>
     <li>Optional cover letter (<code>jobflow cover-letter</code>): reviewed the same way; numbers not in the CV, job ad, or research are errors; new terms and placeholders are warnings.</li></ul></div>
   <div class="card"><h3>Interview prep</h3>

@@ -13,9 +13,11 @@ import time
 from pathlib import Path
 
 import yaml
+from pypdf import PdfReader
 
 from ..db import connect, fetch_job
 from ..llm import complete, parse_json
+from . import documents
 from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, cv_sources, normalise_text
 from .interview import web_search
 from .matching import best_variant, match_job
@@ -24,6 +26,8 @@ from .paths import job_directory
 # A rendered CV longer than this (unless tailor-cv --max-pages says otherwise) is
 # shortened by cutting its least relevant bullets.
 DEFAULT_MAX_PAGES = 1
+# File formats tailor-cv can write; pdf uses RenderCV when it's installed.
+FORMATS = ("pdf", "docx", "latex")
 # A page (other than the last) this empty at the bottom gets a warning: RenderCV never
 # splits an entry, so one too long for the space left moves whole to the next page.
 GAP_WARNING = 0.3
@@ -146,21 +150,13 @@ def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict,
     return job, variant, reason, source_doc, source_yaml
 
 
-def _pdf_pages(pdf: Path) -> int | None:
-    try:
-        from pypdf import PdfReader
-    except ImportError:
-        return None
+def _pdf_pages(pdf: Path) -> int:
     return len(PdfReader(pdf).pages)
 
 
 def _page_gaps(pdf: Path) -> list[tuple[int, float]]:
     """(page number, empty fraction) for each page but the last whose bottom is at least
     GAP_WARNING empty. The footer (the lowest line) doesn't count as content."""
-    try:
-        from pypdf import PdfReader
-    except ImportError:
-        return []
     gaps = []
     pages = PdfReader(pdf).pages
     for number, page in enumerate(pages[:-1], 1):
@@ -281,9 +277,16 @@ def _parse_draft(content: str) -> dict:
 
 def tailor_cv(job_id: int, variant: str | None = None,
               output_dir: Path | None = None,
-              max_pages: int = DEFAULT_MAX_PAGES) -> tuple[Path, list[str], list[str]]:
+              max_pages: int = DEFAULT_MAX_PAGES,
+              fmt: str | None = None) -> tuple[Path, list[str], list[str]]:
+    """Draft, review, and check a tailored CV, then write it as `fmt`: by default
+    RenderCV's PDF when RenderCV is installed, otherwise a .docx."""
     if max_pages < 1:
         raise RuntimeError("--max-pages must be at least 1")
+    if fmt is not None and fmt not in FORMATS:
+        raise RuntimeError(f"Unknown format {fmt!r}; choose from {', '.join(FORMATS)}")
+    rendercv = shutil.which("rendercv")
+    fmt = fmt or ("pdf" if rendercv else "docx")
     fit = f"{max_pages} page{'s' if max_pages != 1 else ''}"
     job, variant, reason, source_doc, source_yaml = load_source(job_id, variant)
     prompt = {
@@ -327,18 +330,33 @@ def tailor_cv(job_id: int, variant: str | None = None,
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"CV_{variant}_draft.yaml"
     _write(target, source_doc, draft_cv)
-    rendered = "Not rendered: RenderCV is not installed."
-    rendercv = shutil.which("rendercv")
+    rendered = ""
     cut: list[dict] = []
     if errors:
-        rendered = "Not rendered: fix the fact-check errors, then run `rendercv render` yourself."
-    elif rendercv:
+        rendered = (f"Not written as {fmt}: fix the fact-check errors in the YAML draft first"
+                    + (", then run `rendercv render` yourself." if rendercv else "."))
+    elif fmt == "docx":
+        documents.write_docx(draft_cv, target.with_suffix(".docx"))
+        rendered = f"Written as {target.with_suffix('.docx').name}."
+    elif fmt == "latex":
+        documents.write_latex(draft_cv, target.with_suffix(".tex"))
+        rendered = (f"Written as {target.with_suffix('.tex').name}; compile it with lualatex "
+                    "(or pdflatex for plain Western text), and check the page count yourself.")
+    else:
+        def make_pdf(cv: dict) -> Path | None:
+            _write(target, source_doc, cv)
+            if rendercv:
+                return _render(rendercv, target, target_dir)
+            pdf_path = target.with_suffix(".pdf")
+            notes.extend(n for n in documents.write_pdf(cv, pdf_path) if n not in notes)
+            return pdf_path
+
         try:
-            pdf = _render(rendercv, target, target_dir)
-            rendered = "Rendered with RenderCV."
+            pdf = make_pdf(draft_cv)
+            rendered = ("Rendered with RenderCV." if rendercv else
+                        f"Written as {target.with_suffix('.pdf').name} (built-in layout; "
+                        "RenderCV isn't installed).")
             pages = _pdf_pages(pdf) if pdf else None
-            if pdf and pages is None:
-                notes.append("Page count not checked: install pypdf (uv sync --extra documents).")
             if pages and pages > max_pages:
                 # Cut the fewest of the least relevant bullets that makes it fit, found by
                 # binary search over how many to cut. Only removal, so the fact check holds.
@@ -346,9 +364,8 @@ def tailor_cv(job_id: int, variant: str | None = None,
                 order = cut_order(found, _rank_bullets(job, found))
 
                 def pages_after(count: int) -> int:
-                    _write(target, source_doc, without(draft_cv, order[:count]))
-                    rendered_pdf = _render(rendercv, target, target_dir)
-                    return _pdf_pages(rendered_pdf) if rendered_pdf else pages
+                    made = make_pdf(without(draft_cv, order[:count]))
+                    return _pdf_pages(made) if made else pages
 
                 low, high = 0, len(order)   # low doesn't fit; high is tried first
                 if order and pages_after(high) <= max_pages:
@@ -360,8 +377,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
                             low = middle
                 cut = order[:high]
                 draft_cv = without(draft_cv, cut)
-                _write(target, source_doc, draft_cv)
-                pdf = _render(rendercv, target, target_dir)
+                pdf = make_pdf(draft_cv)
                 pages = _pdf_pages(pdf) if pdf else pages
                 if pages > max_pages:
                     warnings.append(f"{pdf.name} is still {pages} pages even with {len(cut)} "
@@ -369,8 +385,8 @@ def tailor_cv(job_id: int, variant: str | None = None,
                                     f"to fit {fit}, or allow more with --max-pages.")
             for page, empty in _page_gaps(pdf) if pdf else []:
                 warnings.append(f"Page {page} is {empty:.0%} empty at the bottom: the next entry "
-                                "was too long for the space, so RenderCV moved it whole to the "
-                                "next page. Cutting a few of its bullets would pull it up.")
+                                "was too long for the space, so it moved whole to the next "
+                                "page. Cutting a few of its bullets would pull it up.")
         except subprocess.CalledProcessError as exc:
             rendered = f"RenderCV failed with exit code {exc.returncode}; see its output."
             warnings.append(rendered)
