@@ -1,6 +1,7 @@
 import copy
 
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
+from jobflow.candidate.skill_gaps import rank_skills
 from jobflow.candidate.tailoring import fact_check
 
 CV_TEXT = """cv:
@@ -110,3 +111,20 @@ def test_fact_check_flags_removed_employer_and_warns_on_new_terms():
     errors, warnings = fact_check(SOURCE_CV, draft)
     assert "Employer removed: Example Corp." in errors
     assert warnings and "Kubernetes" in warnings[0]
+
+
+def test_skill_ranking_counts_only_real_gaps_once():
+    gaps = [{"id": 0, "job_id": 1, "job": "A", "requirement": "AWS", "importance": "required",
+             "status": "not_evidenced"},
+            {"id": 1, "job_id": 2, "job": "B", "requirement": "Amazon Web Services",
+             "importance": "preferred", "status": "partial"},
+            {"id": 2, "job_id": 2, "job": "B", "requirement": "CFA", "importance": "required",
+             "status": "not_evidenced"}]
+    groups = [{"skill": "AWS", "gap_ids": [0, 1, 1, 99, "x"]},   # repeats and unknown ids
+              {"skill": "Cloud", "gap_ids": [0]},               # id already used above
+              {"skill": "CFA", "gap_ids": ["2"]}]
+    skills, ungrouped = rank_skills(gaps, groups)
+    assert [(s["skill"], s["weight"], s["jobs"], s["required"]) for s in skills] == [
+        ("AWS", 1.25, 2, 1), ("CFA", 1.0, 1, 1)]
+    assert ungrouped == 0
+    assert rank_skills(gaps, "not a list") == ([], 3)

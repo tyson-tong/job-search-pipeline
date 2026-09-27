@@ -14,8 +14,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="jobflow",
         description="First time: init. Everyday: web (job tracker, including your searches), "
-        "tailor-cv, and interview-prep. After editing config/searches.toml: update-searches. "
-        "The daily GitHub Action runs ingest.")
+        "tailor-cv, interview-prep, and skill-gaps. After editing config/searches.toml: "
+        "update-searches. The daily GitHub Action runs ingest.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Create config/.env, config/profile.toml, and config/searches.toml from the "
                    "templates (never overwrites existing files)")
@@ -39,6 +39,8 @@ def main() -> None:
                         "unscored job is scored first)")
     sub.add_parser("interview-prep", help="Generate an interview briefing HTML for every "
                    "Interviewing job that doesn't have one yet")
+    sub.add_parser("skill-gaps", help="Report the skills your CVs don't show that scored jobs "
+                   "ask for most, with how to close each gap")
     args = parser.parse_args()
     try:
         run(args, parser)
@@ -168,3 +170,12 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         from .db import migrate
         migrate()
         for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)))
+    elif args.command == "skill-gaps":
+        from .candidate.skill_gaps import report
+        from .db import migrate
+        migrate()
+        target, skills = report()
+        for rank, skill in enumerate(skills[:10], 1):
+            print(f"{rank:>2}. {skill['skill']}: {skill['jobs']} job{'s' if skill['jobs'] != 1 else ''}"
+                  f", weight {skill['weight']}")
+        print(target)

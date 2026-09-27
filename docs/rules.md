@@ -1,6 +1,6 @@
 # How jobflow's rules work
 
-The rules behind merging duplicates, flagging similar jobs, scoring, and checking tailored CVs. For a diagram of every component and table, open [structure.html](structure.html) in a browser.
+The rules behind merging duplicates, flagging similar jobs, scoring, checking tailored CVs, and ranking skill gaps. For a diagram of every component and table, open [structure.html](structure.html) in a browser.
 
 ## Duplicates
 
@@ -29,6 +29,10 @@ Only the CV's `cv` section goes to the LLM; design, locale, and settings are cop
 - numbers that aren't in the original
 
 New capitalised or technical terms, such as a tool name, are warnings. The check catches common problems; it does not replace reading the draft.
+
+## Skill gaps
+
+Each scored job contributes the requirements its best-matching CV didn't fully show. The LLM only groups them into skills (the same skill worded differently) and suggests how to close each gap; it can't change the counts. A skill's rank is the sum over its requirements of 1 for required or 0.5 for preferred, halved when the CV partly shows it. Ids the LLM makes up or repeats are ignored.
 
 ## Failures
 

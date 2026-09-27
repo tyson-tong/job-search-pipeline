@@ -1,6 +1,6 @@
 # Job Search Workflow
 
-A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and Seek (through Apify scrapers) into your own PostgreSQL database, merging the same job found on several sites. On your machine, you triage the new jobs, score the ones you're interested in against your CVs, draft a tailored CV for each one, and build interview briefings for the jobs you're interviewing for.
+A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and Seek (through Apify scrapers) into your own PostgreSQL database, merging the same job found on several sites. On your machine, you triage the new jobs, score the ones you're interested in against your CVs, draft a tailored CV for each one, build interview briefings for the jobs you're interviewing for, and see which skills the jobs ask for that your CVs don't show.
 
 It is a template: each person makes their own private copy with their own database, credentials, and CVs. **First time? Follow [docs/setup.md](docs/setup.md).**
 
@@ -10,6 +10,7 @@ Daily, in GitHub Actions                     On your machine, when you choose
 config/searches.toml ─► Apify ─► filter + dedupe ─► PostgreSQL ─► jobflow web                 triage, score, and track jobs
                                                            jobflow tailor-cv           CVs for Interested jobs
                                                            jobflow interview-prep      briefings for Interviewing jobs
+                                                           jobflow skill-gaps          skills your CVs don't show
 ```
 
 More: [your searches](docs/searches.md) · [rules](docs/rules.md) (duplicates, similar jobs, scores, CV checks) · [structure](docs/structure.html) (open in a browser).
@@ -39,6 +40,8 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
    These commands work through every job at that status and skip jobs they've already done, so run them whenever jobs move along. A job that fails (a network error, say) is retried the next time you run the command.
 
+7. **See your skill gaps** now and then: `uv run jobflow skill-gaps` writes `output/skill-gaps-<date>.html`, ranking the skills your scored jobs ask for that your best-matching CVs don't show, with how to close each gap. It uses your stored scores and one LLM call. "Not shown" means the CV lacks evidence, so if you have the skill, the fix may be adding it to your CV.
+
 ### In the tracker
 
 - **Tabs:** **Inbox** (new jobs), **My jobs** (Interested onwards; the status menu picks which statuses, **Default** restores them), **Filtered** (jobs your search filters kept out, with the reason; **Move to Inbox** brings one back), and **Searches** (checks your searches file).
@@ -64,6 +67,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | `jobflow web [--port N]` | The job tracker in your browser |
 | `jobflow tailor-cv [--cv VARIANT]` | A tailored CV draft and its fact check for each Interested job without one |
 | `jobflow interview-prep` | An interview briefing for each Interviewing job without one |
+| `jobflow skill-gaps` | The skills your scored jobs ask for that your CVs don't show |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
 | `jobflow ingest [--search NAME] [--site SITE]` | Run the searches now (the daily import does this; uses Apify credits) |
 | `jobflow init` | Create your settings files (first time only) |
@@ -74,7 +78,7 @@ Every command except `init` brings the database tables up to date when it starts
 
 - `config/.env`, `config/profile.toml`, `config/searches.toml`, `output/`, and `private/` are ignored by Git. Never commit them.
 - The database holds job postings, scraper history, and match results, which include short quotes from your CVs: keep it private.
-- Scoring, tailoring, and interview prep send CV and job text to your LLM provider, and the company name and job title to Tavily. Choose providers whose data handling you accept.
+- Scoring, tailoring, skill gaps, and interview prep send CV and job text to your LLM provider; interview prep sends the company name and job title to Tavily. Choose providers whose data handling you accept.
 
 ## Development
 

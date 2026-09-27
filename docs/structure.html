@@ -102,7 +102,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
 <main>
 
 <h1>Job Search Workflow Structure</h1>
-<p class="lede">How the parts fit together, from a daily scrape of LinkedIn, Indeed, and Seek to a scored job, a tailored CV, and an interview briefing. File paths are relative to <code>src/jobflow/</code>.</p>
+<p class="lede">How the parts fit together, from a daily scrape of LinkedIn, Indeed, and Seek to a scored job, a tailored CV, an interview briefing, and a skill-gap report. File paths are relative to <code>src/jobflow/</code>.</p>
 <nav>
   <a href="#flow">Flow</a><a href="#modules">Modules</a><a href="#searches">Searches</a>
   <a href="#dedupe">Duplicates</a><a href="#database">Database</a><a href="#cv">CV work</a>
@@ -163,6 +163,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>candidate/cvs.py</code></td><td>Loads <code>CV_*.yaml</code> files; shared text helpers.</td></tr>
   <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring: Interested jobs only, each scored once.</td></tr>
   <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft and its fact check.</td></tr>
+  <tr><td><code>candidate/skill_gaps.py</code></td><td>Skill-gap report from stored match scores.</td></tr>
   <tr><td><code>candidate/interview.py</code></td><td>Company research, specialist agents, HTML briefing.</td></tr>
   <tr><td><code>web/server.py</code></td><td>Local-only HTTP server for <code>jobflow web</code>; a per-start token and host check keep other websites out.</td></tr>
   <tr><td><code>web/scoring.py</code></td><td>Runs match scoring in a background thread, one run at a time, with progress for the page.</td></tr>
@@ -277,6 +278,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv</code></td><td>Tailored, fact-checked CV drafts for Interested jobs</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow interview-prep</code></td><td>Interview briefing HTML for Interviewing jobs</td><td>candidate/interview.py</td></tr>
+  <tr><td><code>jobflow skill-gaps</code></td><td>Skill-gap report HTML</td><td>candidate/skill_gaps.py</td></tr>
 </table></div>
 
 <footer>See README.md for the daily routine, docs/setup.md for setup, docs/searches.md for search settings, and docs/rules.md for the rules.</footer>
