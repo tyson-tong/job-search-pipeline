@@ -171,7 +171,7 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 <main>
   <div class="tabs">
     <button class="tab" data-view="inbox">Inbox<span class="count" id="inbox-count">0</span></button>
-    <button class="tab" data-view="jobs">My jobs</button>
+    <button class="tab" data-view="jobs">My jobs<span class="count" id="jobs-count">0</span></button>
     <button class="tab" data-view="filtered">Filtered</button>
     <button class="tab" data-view="searches">Searches</button>
   </div>
@@ -439,6 +439,9 @@ function renderPipeline() {
 function renderTabs() {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("on", tab.dataset.view === state.view));
   document.getElementById("inbox-count").textContent = state.summary.counts.new || 0;
+  // Like the Inbox's, the total with the chosen statuses, before the other filters.
+  document.getElementById("jobs-count").textContent =
+    [...state.statuses].reduce((sum, s) => sum + (state.summary.counts[s] || 0), 0);
   document.getElementById("status-filter").hidden = state.view !== "jobs";
 }
 function renderStatusMenu() {
