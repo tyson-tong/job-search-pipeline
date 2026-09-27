@@ -173,6 +173,8 @@ def test_local_job_type_and_arrangement_filters():
 def test_parse_salary_formats():
     assert parse_salary("$90k - $120k + super + bonus") == (90000, 120000)
     assert parse_salary("$120,000 - $140,000 + 11.5% super") == (120000, 140000)
+    assert parse_salary("$120,000 - 140,000 + 11.5% super") == (120000, 140000)
+    assert parse_salary("$95,000 plus 2 weeks bonus") == (95000, 95000)
     assert parse_salary(["$17.00", "$19.00"]) == (17 * 1976, 19 * 1976)
     assert parse_salary({"min": 28, "max": 32, "type": "HOUR"}) == (28 * 1976, 32 * 1976)
     assert parse_salary("$55 - $65 p.h.") == (55 * 1976, 65 * 1976)

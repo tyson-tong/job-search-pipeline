@@ -119,17 +119,30 @@ def parse_salary(value: object) -> tuple[float, float] | None:
     text = value.replace("\u2013", "-").replace("\u2014", "-")
     matches = list(re.finditer(r"(?P<cur>[$£€]|\b(?:A|AU|NZ|S|US|HK)\$)?\s*"
                                r"(?P<num>\d[\d,]*(?:\.\d+)?)\s*(?P<k>[kK]\b)?(?P<pct>\s*%)?", text))
-    amounts = []
+    amounts, skipped = [], []
     has_currency = any(m["cur"] for m in matches)
+    kept = None
     for m in matches:
-        if m["pct"] or (has_currency and not m["cur"] and not m["k"]):
+        # Once a currency is marked, an unmarked number is kept only as the top of a range
+        # ("$120,000 - 140,000"); others are things like "2 weeks" or "11.5% super".
+        range_end = kept is not None and re.fullmatch(r"\s*(?:-|to)\s*",
+                                                      text[kept.end():m.start()], re.I)
+        if m["pct"] or (has_currency and not m["cur"] and not m["k"] and not range_end):
+            skipped.append(m)
+            kept = None
             continue
         amount = float(m["num"].replace(",", "")) * (1000 if m["k"] else 1)
         if amount >= 5:
             amounts.append(amount)
+        kept = m
     if not amounts:
         return None
-    factor = ANNUAL_FACTOR[_period(text, max(amounts))]
+    # A skipped number takes its next word with it, so "2 weeks leave" doesn't read as weekly pay.
+    period_text = text
+    for m in reversed(skipped):
+        end = m.end() + len(re.match(r"\s*\w*", text[m.end():])[0])
+        period_text = period_text[:m.start()] + " " + period_text[end:]
+    factor = ANNUAL_FACTOR[_period(period_text, max(amounts))]
     return min(amounts) * factor, max(amounts) * factor
 
 
