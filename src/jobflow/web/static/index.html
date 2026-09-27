@@ -49,6 +49,8 @@ main { padding: 12px 16px 60px; max-width: 1500px; margin: 0 auto; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
 .filters input, .filters select { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 9px; }
 .filters input[type=search] { min-width: 220px; flex: 1; max-width: 360px; }
+.pager { display: inline-flex; gap: 6px; align-items: center; }
+.pager[hidden] { display: none; }
 details.multi { position: relative; }
 details.multi summary { list-style: none; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
 details.multi summary::-webkit-details-marker { display: none; }
@@ -189,10 +191,20 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
     <button class="btn" id="score-btn" disabled>Score all jobs</button>
     <a class="btn" id="export" href="#">Export CSV</a>
     <span class="meta" id="shown"></span>
+    <span class="pager" id="pager">
+      <select id="page-size" aria-label="Jobs per page">
+        <option value="5">5 per page</option><option value="10">10 per page</option>
+        <option value="20">20 per page</option><option value="50">50 per page</option>
+        <option value="100">100 per page</option>
+      </select>
+      <button class="btn small" id="page-prev" aria-label="Previous page">‹</button>
+      <span class="meta" id="page-label"></span>
+      <button class="btn small" id="page-next" aria-label="Next page">›</button>
+    </span>
   </div>
   <div class="bulk" id="bulk" hidden></div>
   <div class="table-wrap" id="jobs-table"><table>
-    <thead><tr><th class="sel" id="select-col"><input type="checkbox" id="select-all" aria-label="Select all shown jobs"></th><th class="match-col">Match</th><th>Job</th><th class="hide-sm">Country</th><th class="hide-sm">Sites</th><th class="hide-sm"><button class="sort-head" data-sort="posted" title="Sort by posted date; click again to reverse">Posted</button></th>
+    <thead><tr><th class="sel" id="select-col"><input type="checkbox" id="select-all" aria-label="Select all jobs on this page"></th><th class="match-col">Match</th><th>Job</th><th class="hide-sm">Country</th><th class="hide-sm">Sites</th><th class="hide-sm"><button class="sort-head" data-sort="posted" title="Sort by posted date; click again to reverse">Posted</button></th>
       <th class="hide-sm"><button class="sort-head" data-sort="salary" title="Sort by salary in US dollars; click again to reverse">Salary</button></th><th>Status</th><th class="hide-sm fu-col">Follow up</th></tr>
     <tr class="col-filters"><th class="sel" id="select-col-filter"></th>
       <th class="match-col"><input type="number" id="f-score" min="0" max="100" step="5" placeholder="Min" aria-label="Minimum match score"></th>
@@ -229,11 +241,15 @@ const state = { view: "jobs", statuses: new Set(["interested", "applied", "inter
   // Rows ticked for a bulk change (Inbox triage, Filtered back to the Inbox); lastPicked anchors shift-click ranges.
   selected: new Set(), lastPicked: null,
   // Country filter (empty = all), and the countries among this tab's jobs with counts.
-  countries: new Set(), countryCounts: null };
+  countries: new Set(), countryCounts: null,
+  // Paging splits the rows the filters returned (the filters themselves cover every job);
+  // pageKey is the query they came from, so a new query starts again at page 1.
+  page: 0, pageSize: 50, pageKey: null };
 // A job still in the Inbox can only be triaged; the other statuses come after Interested.
 const TRIAGE_STATUSES = ["new", "interested", "not_interested"];
 // My jobs holds only jobs you picked as Interested and what followed; these never show there.
 const NOT_MY_JOBS = ["new", "not_interested", "filtered"];
+const PAGE_SIZES = [5, 10, 20, 50, 100];
 
 // ---- Helpers -------------------------------------------------------------------------
 function el(tag, attrs = {}, ...children) {
@@ -278,7 +294,7 @@ async function api(path, options = {}) {
 }
 function remember() {
   try { localStorage.setItem("jobflow.filters", JSON.stringify({ statuses: [...state.statuses],
-    sort: sortInput.value, site: siteInput.value, view: state.view })); } catch (e) { /* optional */ }
+    sort: sortInput.value, site: siteInput.value, view: state.view, pageSize: state.pageSize })); } catch (e) { /* optional */ }
 }
 function recall() {
   try {
@@ -289,6 +305,7 @@ function recall() {
     if (saved.sort) sortInput.value = saved.sort;
     if (saved.site !== undefined) siteInput.value = saved.site;
     if (saved.view) state.view = saved.view;
+    if (PAGE_SIZES.includes(saved.pageSize)) state.pageSize = saved.pageSize;
   } catch (e) { /* optional */ }
 }
 
@@ -405,6 +422,8 @@ async function refresh() {
     state.summary = summary;
     state.jobs = jobs;
     state.countryCounts = countries;
+    const key = state.view + "?" + filterParams();
+    if (key !== state.pageKey) { state.page = 0; state.pageKey = key; }
     state.lastPicked = null;  // rows may have moved
     state.loadedAt = new Date();
     renderAll();
@@ -516,6 +535,31 @@ function renderSortHeads() {
       + (sort === desc ? " ▼" : sort === `${desc}_asc` ? " ▲" : "");
   });
 }
+// Where each page starts in state.jobs: every pageSize rows, except that similar jobs, and
+// the same ad in other countries, stay together on one page (so a page can run longer).
+function pageStarts() {
+  const starts = [0];
+  let count = 0;
+  state.jobs.forEach((job, i) => {
+    const prev = state.jobs[i - 1];
+    const continues = prev && ((job.group != null && job.group === prev.group)
+      || (job.area != null && job.area === prev.area));
+    if (count >= state.pageSize && !continues) { starts.push(i); count = 0; }
+    count++;
+  });
+  return starts;
+}
+function renderPager(starts) {
+  const pages = starts.length;
+  document.getElementById("pager").hidden = !state.jobs.length;
+  document.getElementById("page-size").value = String(state.pageSize);
+  document.getElementById("page-label").textContent = `Page ${state.page + 1} of ${pages}`;
+  document.getElementById("page-prev").disabled = state.page === 0;
+  document.getElementById("page-next").disabled = state.page >= pages - 1;
+}
+function goToPage(page) {
+  state.page = page; state.lastPicked = null; renderRows();
+}
 function renderRows() {
   renderSortHeads();
   renderCountryFilter();
@@ -529,8 +573,13 @@ function renderRows() {
   document.getElementById("export").href = "/api/export.csv?" + filterParams() + "&token=" + encodeURIComponent(TOKEN);
   const inbox = state.view === "inbox", filtered = state.view === "filtered";
   const selectable = inbox || filtered;
-  const shown = new Set(state.jobs.map((job) => job.id));
-  state.selected.forEach((id) => { if (!selectable || !shown.has(id)) state.selected.delete(id); });
+  const loaded = new Set(state.jobs.map((job) => job.id));
+  state.selected.forEach((id) => { if (!selectable || !loaded.has(id)) state.selected.delete(id); });
+  // After a save or refresh removes rows, stay on the last page that still exists.
+  const starts = pageStarts();
+  state.page = Math.min(state.page, starts.length - 1);
+  const first = starts[state.page], end = starts[state.page + 1] ?? n;
+  renderPager(starts);
   renderBulk();
   // New jobs have no follow-up yet, so the Inbox has no Follow up column; only My jobs
   // holds scored jobs, so the others have no Match column.
@@ -542,7 +591,8 @@ function renderRows() {
         : filtered ? "No filtered jobs." : "No jobs match these filters."))]);
     return;
   }
-  fill(body, [...state.jobs.map((job, index) => {
+  fill(body, [...state.jobs.slice(first, end).map((job, offset) => {
+    const index = first + offset;
     const score = job.score == null ? null : Math.round(job.score);
     const scoreClass = score == null ? "" : score >= 70 ? " hi" : score >= 45 ? " mid" : " lo";
     const statusCell = inbox
@@ -638,14 +688,19 @@ function markSelected(status, done = `marked ${label(status).toLowerCase()}`) {
   if (state.detail && jobs.some((job) => job.id === state.detail.id)) renderDetail();
   toast(`${jobs.length} job${jobs.length === 1 ? "" : "s"} ${done}: click Save to keep`);
 }
+function pageJobs() {
+  const starts = pageStarts();
+  return state.jobs.slice(starts[state.page] ?? 0, starts[state.page + 1] ?? state.jobs.length);
+}
 function renderBulk() {
   const inbox = state.view === "inbox", filtered = state.view === "filtered";
-  const selectable = inbox || filtered, n = state.selected.size, total = state.jobs.length;
+  const selectable = inbox || filtered, n = state.selected.size;
+  const onPage = pageJobs(), pageSelected = onPage.filter((job) => state.selected.has(job.id)).length;
   document.getElementById("select-col").hidden = !selectable;
   document.getElementById("select-col-filter").hidden = !selectable;
   const all = document.getElementById("select-all");
-  all.checked = selectable && total > 0 && n === total;
-  all.indeterminate = n > 0 && n < total;
+  all.checked = selectable && onPage.length > 0 && pageSelected === onPage.length;
+  all.indeterminate = pageSelected > 0 && pageSelected < onPage.length;
   const bar = document.getElementById("bulk");
   bar.hidden = !selectable || !n;
   if (bar.hidden) return;
@@ -657,7 +712,8 @@ function renderBulk() {
     el("span", { className: "meta" }, "Shift-click a checkbox to select a range.")]);
 }
 document.getElementById("select-all").addEventListener("change", (event) => {
-  state.selected = new Set(event.target.checked ? state.jobs.map((job) => job.id) : []);
+  // Ticks or clears this page's jobs; ticks on other pages stay.
+  pageJobs().forEach((job) => event.target.checked ? state.selected.add(job.id) : state.selected.delete(job.id));
   state.lastPicked = null;
   renderRows();
 });
@@ -907,6 +963,15 @@ salaryInput.addEventListener("change", refresh);
 COLUMN_FILTERS.forEach(([input]) => input.addEventListener("change", refresh));
 siteInput.addEventListener("change", () => { remember(); refresh(); });
 sortInput.addEventListener("change", () => { remember(); refresh(); });
+document.getElementById("page-size").addEventListener("change", (event) => {
+  // Keep the first row you were looking at on screen.
+  const top = pageStarts()[state.page];
+  state.pageSize = Number(event.target.value); remember();
+  const starts = pageStarts();
+  goToPage(Math.max(0, starts.findLastIndex((start) => start <= top)));
+});
+document.getElementById("page-prev").addEventListener("click", () => goToPage(state.page - 1));
+document.getElementById("page-next").addEventListener("click", () => goToPage(state.page + 1));
 // Clicking the Posted or Salary heading sorts by it (newest or highest first); clicking the
 // same heading again reverses the order.
 document.querySelectorAll(".sort-head").forEach((head) => head.addEventListener("click", () => {
