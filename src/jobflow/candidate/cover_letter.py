@@ -131,6 +131,7 @@ def write_letter(job_id: int, variant: str | None = None,
         report += ["", "## The letter (not written as cover-letter.docx until the errors are "
                    "fixed)", "", letter]
     (target_dir / "COVER_LETTER_REVIEW.md").write_text("\n".join(report) + "\n")
+    documents.write_review_docx("\n".join(report), target_dir / "COVER_LETTER_REVIEW.docx")
     with connect() as conn:
         conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "
                      "VALUES (%s,'cover-letter',%s,%s,now())",

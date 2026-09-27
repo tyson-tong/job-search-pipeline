@@ -429,6 +429,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
                    "source CV if you want it.", ""]
         report += [f"- {b['label']}: {b['text']}" for b in cut]
     (target_dir / "CV_REVIEW.md").write_text("\n".join(report) + "\n")
+    documents.write_review_docx("\n".join(report), target_dir / "CV_REVIEW.docx")
     with connect() as conn:
         conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "
                      "VALUES (%s,'tailor',%s,%s,now())",

@@ -1,4 +1,5 @@
-"""Writing a CV as .docx or .tex (RenderCV makes the PDF), and a cover letter as .docx.
+"""Writing a CV as .docx or .tex (RenderCV makes the PDF), a cover letter as .docx, and a
+.docx copy of each review.
 
 Everything is laid out in code from the fact-checked RenderCV YAML, never by the LLM, so
 each file says exactly what passed the fact check. Like RenderCV, an entry is never split
@@ -213,7 +214,25 @@ def write_letter_docx(letter: str, cv: dict, job: dict, path: Path, today: date 
     doc.save(path)
 
 
-# --- .pdf ----------------------------------------------------------------------------------
+def write_review_docx(markdown: str, path: Path) -> None:
+    """A .docx copy of a review written as simple Markdown: # and ## headings, - bullets,
+    and plain paragraphs."""
+    doc = _docx_base(2, 11)
+    for block in re.split(r"\n\s*\n", markdown.strip()):
+        for line in block.splitlines():
+            if line.startswith("## "):
+                doc.add_heading(line[3:], level=2)
+            elif line.startswith("# "):
+                doc.add_heading(line[2:], level=1)
+            elif line.startswith("- "):
+                _add_runs(doc.add_paragraph(style="List Bullet"), line[2:])
+            elif line.strip():
+                _add_runs(doc.add_paragraph(), line)
+        doc.paragraphs[-1].paragraph_format.space_after = Pt(8)
+    doc.save(path)
+
+
+# --- .tex ----------------------------------------------------------------------------------
 
 LATEX_SPECIAL = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
                  "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}",
