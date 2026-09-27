@@ -20,7 +20,7 @@ DEFAULTS = {"posted_within_days": 1, "max_results": 50, "sites": list(opt.SITES)
 SEARCH_KEYS = {"name", "terms", "locations", "sites", "posted_within_days", "max_results",
                "max_cost_usd", "radius_km", "salary_min", "salary_max", "salary_period",
                "job_types", "work_arrangements", "seek_classifications", "exclude_title_terms",
-               "include_title_terms"}
+               "include_title_terms", "exclude_companies"}
 # Earlier names still accepted, so a searches file (or the GitHub copy) written before a
 # rename keeps working until it is next edited.
 OLD_NAMES = {"classifications": "seek_classifications"}
@@ -47,6 +47,9 @@ class Search:
     # contains one of include_title_terms, which take precedence.
     exclude_title_terms: tuple[str, ...] = ()
     include_title_terms: tuple[str, ...] = ()
+    # Jobs whose employer's name contains any of these words are filtered on import;
+    # include_title_terms don't override them.
+    exclude_companies: tuple[str, ...] = ()
 
     def places(self) -> list[tuple[str, str | None]]:
         """(country, city) pairs; city None means the whole country."""
@@ -155,6 +158,7 @@ def parse_search(raw: dict, defaults: dict) -> Search:
         raise SearchConfigError(f"{where}: salary_min is greater than salary_max")
     excluded = _title_terms(merged, "exclude_title_terms", where)
     included = _title_terms(merged, "include_title_terms", where)
+    companies = _title_terms(merged, "exclude_companies", where, example='["Acme", "Randstad"]')
     period = merged.get("salary_period", "annual")
     _choices(f"{where} salary_period", [period], opt.SALARY_PERIODS)
     return Search(
@@ -171,6 +175,7 @@ def parse_search(raw: dict, defaults: dict) -> Search:
                                       merged.get("seek_classifications"), _all_classifications()),
         exclude_title_terms=excluded,
         include_title_terms=included,
+        exclude_companies=companies,
     )
 
 
@@ -184,13 +189,14 @@ def _number(merged: dict, key: str, where: str) -> float | None:
     return float(value)
 
 
-def _title_terms(merged: dict, key: str, where: str) -> tuple[str, ...]:
+def _title_terms(merged: dict, key: str, where: str,
+                 example: str = '["Internship", "Graduate"]') -> tuple[str, ...]:
     terms = merged.get(key) or []
     if isinstance(terms, str):
         terms = [terms]
     if not isinstance(terms, list) or not all(isinstance(t, str) and _words(t) for t in terms):
         raise SearchConfigError(f"{where}: {key} must be a list of words, "
-                                'e.g. ["Internship", "Graduate"]')
+                                f"e.g. {example}")
     return tuple(t.strip() for t in terms)
 
 
@@ -394,9 +400,22 @@ def excluded_title_term(title: str | None, terms: tuple[str, ...],
     return next((term for term in terms if found(term)), None)
 
 
+def excluded_reason(title: str | None, company: str | None, search: Search) -> str | None:
+    """Why the search's excluded employers or title terms keep a job out, or None. An
+    excluded employer is matched like a title term (whole words, so "Acme" excludes "Acme
+    Pty Ltd" but not "Acmera") and include_title_terms don't override it."""
+    employer = excluded_title_term(company, search.exclude_companies)
+    if employer:
+        return f"employer matches {employer!r}"
+    term = excluded_title_term(title, search.exclude_title_terms, search.include_title_terms)
+    return f"title contains {term!r}" if term else None
+
+
 def local_filters(site: str, search: Search) -> list[str]:
     support = opt.FILTER_SUPPORT.get(site, {})
     active = ["title_terms"] if search.exclude_title_terms else []
+    if search.exclude_companies:
+        active.append("companies")
     if (search.salary_min is not None or search.salary_max is not None) \
             and support.get("salary") == "local":
         active.append("salary")
@@ -417,10 +436,9 @@ def filter_reason(posting: Posting, search: Search, site: str,
     posted date listed means the job is kept.
     """
     active = local_filters(site, search)
-    term = excluded_title_term(posting.title, search.exclude_title_terms,
-                               search.include_title_terms)
-    if term:
-        return f"title contains {term!r}"
+    reason = excluded_reason(posting.title, posting.company, search)
+    if reason:
+        return reason
     if "posted_date" in active and posting.posted_at is not None:
         # One day of slack: sites and time zones disagree on what "today" is.
         oldest = (today or date.today()) - timedelta(days=search.posted_within_days + 1)

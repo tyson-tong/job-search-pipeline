@@ -18,6 +18,7 @@ Settings under `[defaults]` apply to every search unless a search sets its own. 
 | `max_results`, `max_cost_usd`, `radius_km` | `30`, `0.50`, `25` | Usually set once under `[defaults]` |
 | `exclude_title_terms` | `["Internship", "Fresh Grad", "Graduate"]` | Jobs whose title contains any of these words are stored as `filtered` and never reach the Inbox. Whole words, any capitalisation and punctuation ("Graduate" excludes "Graduate Analyst", not "Postgraduate"). Usually set under `[defaults]`; imports apply it to new jobs, and `jobflow update-searches` to jobs already in the Inbox |
 | `include_title_terms` | `["Quant Analyst", "Quantitative Analyst"]` | Overrides `exclude_title_terms`: a title containing any of these is kept even if it also contains an excluded term, so with `"Analyst"` excluded, "Quant Analyst – Equities" stays while "Credit Analyst" is filtered. Matched the same way (whole words, any capitalisation). Has no effect on titles that match no excluded term |
+| `exclude_companies` | `["Acme", "Randstad"]` | Jobs whose employer's name contains any of these words are stored as `filtered`. Matched like `exclude_title_terms` (whole words, any capitalisation and punctuation), so "Acme" excludes "ACME Pty Ltd" but not "Acmera"; a job with no employer listed is kept. `include_title_terms` don't override it. Usually set under `[defaults]`; imports apply it to new jobs, and `jobflow update-searches` to jobs already in the Inbox |
 
 ## Countries and cities
 
@@ -76,9 +77,9 @@ The three sites don't support the same filters, so each is translated to what th
 | Salary | after import | after import | after import |
 | Job type, work arrangement | after import | after import | on site |
 | Seek classifications | no | no | on site |
-| Excluded title terms | after import | after import | after import |
+| Excluded title terms, excluded employers | after import | after import | after import |
 
-"On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match, or whose title contains an excluded term; the job is stored with status `filtered` and the reason, and appears in the tracker's Filtered tab. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. LinkedIn results rarely list a salary and never say whether a job is remote, so in practice those filters seldom remove LinkedIn jobs. Salary bounds are applied after import for all three sites. Missing salary data is kept; Seek is deliberately scraped without salary bounds so it cannot hide salaryless postings upstream. This can increase the number of Seek results and Apify usage.
+"On site" filters are applied by the job site, so you don't pay for excluded jobs. "After import" filters are applied when results reach your database. They only exclude a job whose salary, job type, or arrangement is listed and doesn't match, whose title contains an excluded term, or whose employer is excluded; the job is stored with status `filtered` and the reason, and appears in the tracker's Filtered tab. LinkedIn has moved to AI search, which dropped its salary, job-type, and workplace filters, and the Indeed actor doesn't offer them. LinkedIn results rarely list a salary and never say whether a job is remote, so in practice those filters seldom remove LinkedIn jobs. Salary bounds are applied after import for all three sites. Missing salary data is kept; Seek is deliberately scraped without salary bounds so it cannot hide salaryless postings upstream. This can increase the number of Seek results and Apify usage.
 
 ## Checking your searches
 

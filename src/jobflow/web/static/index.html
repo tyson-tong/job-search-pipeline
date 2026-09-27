@@ -711,7 +711,7 @@ function renderSearches() {
     el("div", { className: "next" }, el("strong", {}, "To change your searches"),
       el("p", { className: "meta", style: "margin:4px 0" },
         "Edit the file in your editor, then click Reload to check it. After each change, run this: it checks "
-        + "the file, updates the copy the daily GitHub run uses, and filters Inbox jobs matching your excluded titles:"),
+        + "the file, updates the copy the daily GitHub run uses, and filters Inbox jobs from your excluded employers or matching your excluded titles:"),
       el("div", { className: "cmd" }, el("code", {}, "uv run jobflow update-searches"),
         el("button", { className: "btn small", onclick: () => copyCommand("uv run jobflow update-searches") }, "Copy")),
       el("div", { className: "cmd" }, el("code", {}, "uv run jobflow ingest --site seek"),
@@ -740,7 +740,9 @@ function renderSearchCard(search) {
         ? search.exclude_title_terms.map((t) => el("span", { className: "pill" }, t)) : "none"),
       item("Kept titles", search.include_title_terms.length
         ? [search.include_title_terms.map((t) => el("span", { className: "pill" }, t)),
-           el("span", { className: "meta" }, " (override excluded titles)")] : "none")),
+           el("span", { className: "meta" }, " (override excluded titles)")] : "none"),
+      item("Excluded employers", search.exclude_companies.length
+        ? search.exclude_companies.map((t) => el("span", { className: "pill" }, t)) : "none")),
     search.sites.map((site) => el("div", { className: "site-block" },
       el("strong", {}, siteName(site.site)),
       el("span", { className: "meta" }, ` · ${site.runs.length} run${site.runs.length === 1 ? "" : "s"}, up to ${site.max_results_per_run} results each`

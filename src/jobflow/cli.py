@@ -45,8 +45,8 @@ def main() -> None:
     ingest.add_argument("--site", choices=SITES, help="Only this job site")
     update = sub.add_parser("update-searches", help="After editing config/searches.toml: check "
                             "it, update the GitHub copy the daily import reads, and filter Inbox "
-                            "jobs matching its exclude_title_terms (and none of its "
-                            "include_title_terms)")
+                            "jobs from its exclude_companies or matching its "
+                            "exclude_title_terms (and none of its include_title_terms)")
     update.add_argument("--dry-run", action="store_true",
                         help="Check the file and list the jobs that would be filtered; change nothing")
     web = sub.add_parser("web", help="Open the job tracker in your browser (local only)")
@@ -112,12 +112,12 @@ def for_jobs(status: str, kind: str, what: str, run_one) -> None:
 
 def update_searches(dry_run: bool = False) -> None:
     """Check config/searches.toml, publish it as the JOBFLOW_SEARCHES GitHub variable that
-    the daily import reads, then filter Inbox jobs matching its excluded title terms
-    (imports only apply them to the jobs they bring in). An invalid file stops before
+    the daily import reads, then filter Inbox jobs from its excluded employers or matching
+    its excluded title terms (imports only apply them to the jobs they bring in). An invalid file stops before
     anything is published, so a typo never reaches the daily import."""
     from .db import migrate
     from .ingest.searches import parse_config
-    from .ingest.store import exclude_inbox_titles
+    from .ingest.store import exclude_inbox_jobs
     from .settings import ROOT, searches_file
 
     path = searches_file()
@@ -142,7 +142,7 @@ def update_searches(dry_run: bool = False) -> None:
                                f"{(result.stderr or result.stdout).strip()}. Nothing else was changed")
         print("Updated the JOBFLOW_SEARCHES GitHub variable: the daily import uses this file now")
     migrate()
-    matched, checked = exclude_inbox_titles(searches, dry_run=dry_run)
+    matched, checked = exclude_inbox_jobs(searches, dry_run=dry_run)
     for job in matched:
         print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
               f"{job['reason']}")

@@ -441,17 +441,16 @@ def backfill_sources(conn) -> int:
     return conn.execute("SELECT count(*) FROM job_sources").fetchone()[0] - before
 
 
-def exclude_inbox_titles(searches: list, dry_run: bool = False) -> tuple[list[dict], int]:
-    """Apply exclude_title_terms to jobs already in the Inbox: each New job whose title
-    contains a term of the search that found it, and none of its include_title_terms,
-    becomes 'filtered', with the reason an import would record, and the change is
+def exclude_inbox_jobs(searches: list, dry_run: bool = False) -> tuple[list[dict], int]:
+    """Apply exclude_companies and exclude_title_terms to jobs already in the Inbox: each
+    New job that the search which found it would keep out (see excluded_reason) becomes
+    'filtered', with the reason an import would record, and the change is
     recorded in status_history. Only New jobs are touched. Returns (the jobs matched, the
     number of Inbox jobs checked); with dry_run, nothing is changed."""
     from ..db import connect
-    from .searches import excluded_title_term
+    from .searches import excluded_reason
 
-    terms_by_search = {search.name: (search.exclude_title_terms, search.include_title_terms)
-                       for search in searches}
+    by_name = {search.name: search for search in searches}
     with connect() as conn:
         # A job's search is the one whose run first found it.
         rows = conn.execute(
@@ -462,10 +461,11 @@ def exclude_inbox_titles(searches: list, dry_run: bool = False) -> tuple[list[di
                WHERE j.status = 'new' ORDER BY j.id""").fetchall()
         matched = []
         for job_id, title, company, search_name in rows:
-            term = excluded_title_term(title, *terms_by_search.get(search_name, ((), ())))
-            if term:
+            search = by_name.get(search_name)
+            reason = search and excluded_reason(title, company, search)
+            if reason:
                 matched.append({"id": job_id, "title": title, "company": company,
-                                "reason": f"title contains {term!r}"})
+                                "reason": reason})
         if not dry_run:
             for job in matched:
                 changed = conn.execute(

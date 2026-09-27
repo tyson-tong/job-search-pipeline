@@ -115,7 +115,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="lane-title">Daily, in GitHub Actions</div>
     <div class="lane-sub">00:30 Sydney time · <code>jobflow ingest</code></div>
     <div class="step"><b>Your searches</b><span class="mod">JOBFLOW_SEARCHES variable (= config/searches.toml)</span>
-      <div class="what">Terms, countries and cities, sites, salary, job type, work arrangement, Seek classifications, posted window, excluded title terms, and kept titles that override them.</div></div>
+      <div class="what">Terms, countries and cities, sites, salary, job type, work arrangement, Seek classifications, posted window, excluded title terms, kept titles that override them, and excluded employers.</div></div>
     <div class="step"><b>Plan runs per site</b><span class="mod">ingest/searches.py · ingest/options.py</span>
       <div class="what">Validates values and translates each search into each actor's input. LinkedIn: one run per search; Indeed and Seek: one per term and location.</div></div>
     <div class="step"><b>Run Apify actors</b><span class="mod">ingest/apify.py</span>
@@ -181,7 +181,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td>Salary</td><td>after import</td><td>after import</td><td>after import</td></tr>
   <tr><td>Job type, work arrangement</td><td>after import</td><td>after import</td><td class="yes">on site</td></tr>
   <tr><td>Seek classifications</td><td class="no">not available</td><td class="no">not available</td><td class="yes">on site</td></tr>
-  <tr><td>Excluded title terms</td><td>after import</td><td>after import</td><td>after import</td></tr>
+  <tr><td>Excluded title terms, excluded employers</td><td>after import</td><td>after import</td><td>after import</td></tr>
   <tr><td>Posted: 24 hours, 1 week</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
   <tr><td>Posted: 2 weeks</td><td class="no">uses 1 month, then filters</td><td class="yes">✓</td><td class="yes">✓</td></tr>
   <tr><td>Posted: 1 month</td><td class="yes">✓</td><td class="no">uses any time, then filters</td><td class="yes">✓</td></tr>
@@ -280,7 +280,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
 <div class="table-wrap"><table>
   <tr><th>Command</th><th>Does</th><th>Module</th></tr>
   <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
-  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES GitHub variable, filter Inbox jobs matching excluded title terms</td><td>cli.py → ingest/store.py</td></tr>
+  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES GitHub variable, filter Inbox jobs from excluded employers or matching excluded title terms</td><td>cli.py → ingest/store.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv</code></td><td>Reviewed, fact-checked CVs for Interested jobs</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow cover-letter</code></td><td>Optional reviewed, fact-checked cover letters for Interested jobs</td><td>candidate/cover_letter.py</td></tr>

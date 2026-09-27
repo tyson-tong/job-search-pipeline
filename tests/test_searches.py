@@ -308,6 +308,19 @@ def test_included_title_terms_override_excluded_ones():
     assert reason("MGR/AVP, Quantitative Analyst") is None
 
 
+def test_excluded_employers_keep_jobs_out_even_with_a_kept_title():
+    config = CONFIG.replace("max_results = 40", 'max_results = 40\nexclude_companies = ["Acme", "Big Bank"]\n'
+                            'include_title_terms = ["Quant Analyst"]')
+    search = parse_config(config)[0]
+    def reason(company):
+        return filter_reason(normalise({"title": "Quant Analyst", "companyName": company}), search, "linkedin")
+    assert reason("ACME Pty Ltd") == "employer matches 'Acme'"
+    assert reason("Big-Bank Group") == "employer matches 'Big Bank'"
+    # Whole words only, and a job with no employer listed is kept.
+    assert reason("Acmera") is None
+    assert reason(None) is None
+
+
 def test_old_setting_names_still_work():
     # The GitHub copy of a searches file may predate a rename; the daily import must still
     # read it. Setting both names at once is an error rather than a silent choice.

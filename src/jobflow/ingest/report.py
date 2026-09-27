@@ -48,7 +48,8 @@ def describe_searches() -> dict:
             "job_types": list(search.job_types), "work_arrangements": list(search.work_arrangements),
             "seek_classifications": list(search.seek_classifications),
             "exclude_title_terms": list(search.exclude_title_terms),
-            "include_title_terms": list(search.include_title_terms), "sites": sites})
+            "include_title_terms": list(search.include_title_terms),
+            "exclude_companies": list(search.exclude_companies), "sites": sites})
     return {"ok": True, "source": source, "path": path, "error": None, "searches": described,
             "total_runs": len(runs), "total_max_results": total_results}
 
