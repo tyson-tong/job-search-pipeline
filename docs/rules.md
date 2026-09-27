@@ -14,7 +14,7 @@ The job keeps the first site's details (and the longest description). Each site'
 
 ## Similar jobs
 
-Merging is kept strict so two different jobs are never combined, which means some copies stay separate: a recruiter re-post with an edited ad, a reworded title, or a suburb instead of the city. As a safety net, the tracker and `jobflow tailor-cv` compare the job with every job first seen in the last 180 days in the same country, ignoring employer and city: titles sharing at least 60% of their words and ads sharing at least 40% are listed as similar jobs, and as highly similar when the ads share at least 80%. They are never merged automatically. The same ad in another country (one role advertised for offices in Sydney and Hong Kong, say) is not listed as similar: it is placed next to the job in the list with a blue bar (similar jobs get an orange one), tagged "Same ad in" that country, and listed separately in the job panel.
+Merging is kept strict so two different jobs are never combined, which means some copies stay separate: a recruiter re-post with an edited ad, a reworded title, or a suburb instead of the city. As a safety net, the tracker compares each job with every job first seen in the last 180 days in the same country, ignoring employer and city: titles sharing at least 60% of their words and ads sharing at least 40% are listed as similar jobs, and as highly similar when the ads share at least 80%. They are never merged automatically. The same ad in another country (one role advertised for offices in Sydney and Hong Kong, say) is not listed as similar: it is placed next to the job in the list with a blue bar (similar jobs get an orange one), tagged "Same ad in" that country, and listed separately in the job panel.
 
 ## Match scores
 

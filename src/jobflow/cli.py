@@ -4,7 +4,6 @@ import argparse
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
 
 def main() -> None:
@@ -33,15 +32,13 @@ def main() -> None:
     web = sub.add_parser("web", help="Open the job tracker in your browser (local only)")
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--no-browser", action="store_true", help="Don't open a browser tab")
-    tailor = sub.add_parser("tailor-cv", help="Draft a CV tailored to a job, with a fact check")
-    tailor.add_argument("job_id", type=int)
-    tailor.add_argument("--cv", help="CV variant name (the part after CV_ in the file name); "
-                        "defaults to the best-matching variant")
-    prep = sub.add_parser("interview-prep", help="Generate an interview briefing HTML")
-    prep.add_argument("job_id", type=int)
-    prep.add_argument("--email-file",
-                      help="Optional interview email text file, or - for stdin; read for this "
-                      "run only and never stored")
+    tailor = sub.add_parser("tailor-cv", help="Draft a tailored CV, with a fact check, for "
+                            "every Interviewing job that doesn't have one yet")
+    tailor.add_argument("--cv", help="CV variant name (the part after CV_ in the file name) to use "
+                        "for every job; defaults to each job's best-matching variant, which "
+                        "needs the job to be scored")
+    sub.add_parser("interview-prep", help="Generate an interview briefing HTML for every "
+                   "Interviewing job that doesn't have one yet")
     args = parser.parse_args()
     try:
         run(args, parser)
@@ -50,23 +47,32 @@ def main() -> None:
         raise SystemExit(f"error: {exc}") from None
 
 
-def warn_possible_duplicates(job_id: int, about_to_apply: bool) -> None:
-    """List jobs that may be this role under another employer name or place, loudly if
-    one is already in progress, so the same role isn't applied for twice."""
-    from .ingest.store import IN_PROGRESS, possible_duplicates
+def for_interviewing_jobs(kind: str, what: str, run_one) -> None:
+    """Run run_one(job_id) for each Interviewing job without a recorded `kind` run.
 
-    matches = possible_duplicates(job_id)
-    if not matches:
-        return
-    started = [m for m in matches if m["status"] in IN_PROGRESS]
-    if started and about_to_apply:
-        print(f"WARNING: this may be the same role as job {started[0]['id']}, which is "
-              f"already {started[0]['status']}.")
-    print("similar jobs (similar title and ad text; not merged):")
-    for m in matches:
-        print(f"  {m['id']}\t{m['level']}\t{m['status']}\t{m['company'] or ''} — {m['title']}"
-              f" ({m['location'] or 'no location'}), {m['similarity']:.0%} same text"
-              + (f"\n\t{m['url']}" if m["url"] else ""))
+    A run is recorded in workflow_runs only once it finishes, so a job is never done
+    twice, and a failed job is retried next time. One failure doesn't stop the rest.
+    """
+    from .db import connect
+
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT j.id, j.company, j.title, EXISTS (SELECT 1 FROM workflow_runs r "
+            "WHERE r.job_id=j.id AND r.kind=%s) FROM jobs j WHERE j.status='interviewing' "
+            "ORDER BY j.id", (kind,)).fetchall()
+    todo = [row for row in rows if not row[3]]
+    print(f"{len(rows)} Interviewing job{'s' if len(rows) != 1 else ''}: "
+          f"{len(rows) - len(todo)} already have {what}, {len(todo)} to do")
+    failed = 0
+    for job_id, company, title, _ in todo:
+        print(f"\n#{job_id} {title} ({company or 'unknown employer'})")
+        try:
+            run_one(job_id)
+        except Exception as exc:
+            failed += 1
+            print(f"error: {exc}", file=sys.stderr)
+    if failed:
+        raise SystemExit(f"{failed} of {len(todo)} failed; run the command again to retry them")
 
 
 def update_searches(dry_run: bool = False) -> None:
@@ -146,23 +152,19 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         from .candidate.tailoring import tailor_cv
         from .db import migrate
         migrate()
-        warn_possible_duplicates(args.job_id, about_to_apply=True)
-        target, errors, warnings = tailor_cv(args.job_id, args.cv)
-        print(target)
-        for message in errors:
-            print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)
-        for message in warnings:
-            print(f"warning: {message}", file=sys.stderr)
-        print(f"Review {target.parent / 'REVIEW_REQUIRED.md'} before using this draft.")
-        if errors:
-            raise SystemExit(1)
+
+        def tailor_one(job_id: int) -> None:
+            target, errors, warnings = tailor_cv(job_id, args.cv)
+            print(target)
+            for message in errors:
+                print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)
+            for message in warnings:
+                print(f"warning: {message}", file=sys.stderr)
+            print(f"Review {target.parent / 'REVIEW_REQUIRED.md'} before using this draft.")
+
+        for_interviewing_jobs("tailor", "a tailored CV", tailor_one)
     elif args.command == "interview-prep":
         from .candidate.interview import prepare
         from .db import migrate
         migrate()
-        email_text = None
-        if args.email_file == "-":
-            email_text = sys.stdin.read()
-        elif args.email_file:
-            email_text = Path(args.email_file).read_text()
-        print(prepare(args.job_id, email_text))
+        for_interviewing_jobs("interview-prep", "a briefing", lambda job_id: print(prepare(job_id)))

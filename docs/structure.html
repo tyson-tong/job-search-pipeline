@@ -141,9 +141,9 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="step"><b>Score jobs against each CV</b><span class="mod">candidate/matching.py · Score all jobs in jobflow web</span>
       <div class="what">Interested jobs only, each scored once. Runs in the background from the tracker. Requirements with verified CV quotes; score computed from required and preferred coverage.</div></div>
     <div class="step"><b>Tailor a CV</b><span class="mod">candidate/tailoring.py · jobflow tailor-cv</span>
-      <div class="what">Draft from the best-matching CV, fact-checked against the original before rendering.</div></div>
+      <div class="what">For each Interviewing job without one: a draft from the best-matching CV, fact-checked against the original before rendering.</div></div>
     <div class="step"><b>Prepare for the interview</b><span class="mod">candidate/interview.py · jobflow interview-prep</span>
-      <div class="what">Web research plus four specialist agents, merged into one HTML briefing.</div></div>
+      <div class="what">For each Interviewing job without one: web research plus four specialist agents, merged into one HTML briefing.</div></div>
   </div>
 </div>
 
@@ -192,7 +192,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <div class="card"><h3>Exact content</h3>Same fingerprint: a hash of company, title, location, and description. Catches exact reposts.</div>
   <div class="card"><h3>Same job on another site</h3>Same employer (ignoring "Pty Ltd" etc.) and title, same city when both name one, first seen in the last 90 days, and descriptions sharing at least half their words.</div>
   <div class="card"><h3>Same ad, same title</h3>Identical title (ignoring case and punctuation), same country, first seen in the last 90 days, and ads at least 95% the same words (30+ words), under any employer spelling or city.</div>
-  <div class="card safety"><h3>Safety net: similar jobs (never merged)</h3>The merge is strict, so a recruiter re-post with an edited ad, a reworded title, or a suburb can stay separate. <code>jobflow web</code> and <code>tailor-cv</code> compare against jobs from the last 180 days in the same country, ignoring employer and city (titles ≥ 60% alike, ads ≥ 40% alike), and warn if one is already applied, interviewing, offered, or accepted. Labelled highly similar when ads are ≥ 80% alike, else similar. The same ad in another country is shown alongside, not as similar.</div>
+  <div class="card safety"><h3>Safety net: similar jobs (never merged)</h3>The merge is strict, so a recruiter re-post with an edited ad, a reworded title, or a suburb can stay separate. <code>jobflow web</code> compares against jobs from the last 180 days in the same country, ignoring employer and city (titles ≥ 60% alike, ads ≥ 40% alike), and warn if one is already applied, interviewing, offered, or accepted. Labelled highly similar when ads are ≥ 80% alike, else similar. The same ad in another country is shown alongside, not as similar.</div>
 </div>
 <p style="margin-top:14px">A merged job keeps the first site's details (and the longest description). Because status, notes, and scores belong to the job, marking it <code>applied</code> covers every site it was listed on:</p>
 <div class="example">jobs              id 42   source linkedin   "Data Analyst"   Acme Pty Ltd
@@ -237,7 +237,8 @@ applications      42   applied   2026-09-25: Applied via referral</div>
     <li>Score = matched 1, partial 0.5, averaged per group, weighted by <code>required_weight</code> / <code>preferred_weight</code>.</li>
     <li>Only Interested jobs; each is scored once and never again, even if a CV changes.</li></ul></div>
   <div class="card"><h3>Tailoring</h3>
-    <ul><li>Uses the best-matching CV unless <code>--cv</code> is given (a job that is neither scored nor Interested needs <code>--cv</code>).</li>
+    <ul><li>Runs for every Interviewing job without a draft; jobs already done are skipped.</li>
+    <li>Uses each job's best-matching CV unless <code>--cv</code> is given (an unscored job needs <code>--cv</code>).</li>
     <li>Only the <code>cv</code> section goes to the LLM; design and settings are kept.</li>
     <li>Errors (render skipped): changed contact details, new or altered employers, positions, dates, education; removed entries; new numbers.</li>
     <li>Warnings: new tool or skill names. Written to <code>REVIEW_REQUIRED.md</code>.</li></ul></div>
@@ -245,7 +246,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
     <ul><li>Tavily web search for company facts and news.</li>
     <li>Four agents in parallel: company, role, CV evidence, likely questions.</li>
     <li>An editor agent merges them into one briefing with sources.</li>
-    <li>The invitation email is optional and never stored.</li></ul></div>
+    <li>Runs for every Interviewing job without a briefing; jobs already done are skipped.</li></ul></div>
 </div>
 
 <h2 id="config">Config and secrets</h2>
@@ -274,8 +275,8 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
   <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES GitHub variable, filter Inbox jobs matching excluded title terms</td><td>cli.py → ingest/store.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
-  <tr><td><code>jobflow tailor-cv ID</code></td><td>Tailored, fact-checked CV draft</td><td>candidate/tailoring.py</td></tr>
-  <tr><td><code>jobflow interview-prep ID</code></td><td>Interview briefing HTML</td><td>candidate/interview.py</td></tr>
+  <tr><td><code>jobflow tailor-cv</code></td><td>Tailored, fact-checked CV drafts for Interviewing jobs</td><td>candidate/tailoring.py</td></tr>
+  <tr><td><code>jobflow interview-prep</code></td><td>Interview briefing HTML for Interviewing jobs</td><td>candidate/interview.py</td></tr>
 </table></div>
 
 <footer>See README.md for the daily routine, docs/setup.md for setup, docs/searches.md for search settings, and docs/rules.md for the rules.</footer>

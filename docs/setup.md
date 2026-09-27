@@ -86,7 +86,7 @@ Scoring, tailored CVs, and interview briefings use any OpenAI-compatible chat-co
 
 **Another provider** (for example a hosted open model, or a gateway): set `LLM_BASE_URL` to its OpenAI-compatible endpoint (usually ending in `/v1`), and `LLM_API_KEY` and `LLM_MODEL` to its key and model name. Use an `https://` address, so your key isn't sent unencrypted.
 
-What each command sends: scoring and tailoring send job text and your CV text; interview prep also sends the invitation email if you give one. See the README's [Privacy](../README.md#privacy) section, and choose a provider whose data handling you accept.
+What each command sends: scoring, tailoring, and interview prep send job text and your CV text. See the README's [Privacy](../README.md#privacy) section, and choose a provider whose data handling you accept.
 
 Check it: mark a job Interested, save, and click **Score all jobs** in the tracker's My jobs tab. A configuration problem shows as an error instead of a score.
 

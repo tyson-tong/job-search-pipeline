@@ -1,6 +1,6 @@
 # Job Search Workflow
 
-A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and Seek (through Apify scrapers) into your own PostgreSQL database, merging the same job found on several sites. On your machine, you triage the new jobs, score the ones you're interested in against your CVs, draft tailored CVs, and build interview briefings.
+A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and Seek (through Apify scrapers) into your own PostgreSQL database, merging the same job found on several sites. On your machine, you triage the new jobs, score the ones you're interested in against your CVs, and draft tailored CVs and interview briefings for the jobs you're interviewing for.
 
 It is a template: each person makes their own private copy with their own database, credentials, and CVs. **First time? Follow [docs/setup.md](docs/setup.md).**
 
@@ -8,8 +8,8 @@ It is a template: each person makes their own private copy with their own databa
 Daily, in GitHub Actions                     On your machine, when you choose
 ─────────────────────────                    ────────────────────────────────
 config/searches.toml ─► Apify ─► filter + dedupe ─► PostgreSQL ─► jobflow web                 triage, score, and track jobs
-                                                           jobflow tailor-cv ID        draft a CV for one job
-                                                           jobflow interview-prep ID   briefing before an interview
+                                                           jobflow tailor-cv           draft CVs for Interviewing jobs
+                                                           jobflow interview-prep      briefings for Interviewing jobs
 ```
 
 More: [your searches](docs/searches.md) · [rules](docs/rules.md) (duplicates, similar jobs, scores, CV checks) · [structure](docs/structure.html) (open in a browser).
@@ -26,24 +26,19 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
 4. **Track applications** in **My jobs**: status (applied, interviewing, offered, accepted, declined, rejected, withdrawn), follow-up date, and dated notes, all saved with **Save**. Rows flag overdue follow-ups and applications with no progress after three weeks.
 
-5. **Draft a CV** for a job you're applying to:
+5. **Draft CVs and interview briefings** for the jobs you've set to **Interviewing**:
 
    ```
-   uv run jobflow tailor-cv 123              # uses the best-matching CV
-   uv run jobflow tailor-cv 123 --cv dev     # or choose one: CV_dev.yaml is "dev"
+   uv run jobflow tailor-cv              # a CV draft for each, from its best-matching CV
+   uv run jobflow tailor-cv --cv dev     # or use one CV for all: CV_dev.yaml is "dev"
+   uv run jobflow interview-prep         # a briefing for each
    ```
 
-   Without `--cv`, it scores the job first if it's an unscored Interested job; any other unscored job needs `--cv`. It warns if a similar job is already applied for, then writes `CV_<variant>_draft.yaml` and a fact check, `REVIEW_REQUIRED.md`, to `output/<company>/<role>-<job-id>/`, and renders a PDF if RenderCV is installed and the check found no errors. Read the draft line by line; after fixing it, render it from that folder: `rendercv render CV_<variant>_draft.yaml`.
+   Each command works through every Interviewing job and skips jobs it has already done, so run them whenever a job moves to Interviewing. A job that fails (a network error, say) is retried the next time you run the command. Without `--cv`, a job needs a match score (scored while it was Interested); an unscored one fails with a message until you give `--cv`.
 
-6. **Prepare for an interview:**
+   `tailor-cv` writes `CV_<variant>_draft.yaml` and a fact check, `REVIEW_REQUIRED.md`, to `output/<company>/<role>-<job-id>/`, and renders a PDF if RenderCV is installed and the check found no errors. Read the draft line by line; after fixing it, render it from that folder: `rendercv render CV_<variant>_draft.yaml`.
 
-   ```
-   uv run jobflow interview-prep 123 --email-file ./invite.txt   # with the invitation email
-   uv run jobflow interview-prep 123                             # without one
-   pbpaste | uv run jobflow interview-prep 123 --email-file -    # email from the clipboard (macOS)
-   ```
-
-   It writes `interview-prep.html` to the same folder: the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps, questions to ask, and a 30-minute checklist. The email is used only for that run and never saved.
+   `interview-prep` writes `interview-prep.html` to the same folder: the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps, questions to ask, and a 30-minute checklist.
 
 ### In the tracker
 
@@ -68,8 +63,8 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | Command | What it does |
 |---|---|
 | `jobflow web [--port N]` | The job tracker in your browser |
-| `jobflow tailor-cv ID [--cv VARIANT]` | A tailored CV draft and its fact check |
-| `jobflow interview-prep ID [--email-file FILE]` | An interview briefing |
+| `jobflow tailor-cv [--cv VARIANT]` | A tailored CV draft and its fact check for each Interviewing job without one |
+| `jobflow interview-prep` | An interview briefing for each Interviewing job without one |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
 | `jobflow ingest [--search NAME] [--site SITE]` | Run the searches now (the daily import does this; uses Apify credits) |
 | `jobflow init` | Create your settings files (first time only) |
@@ -80,7 +75,7 @@ Every command except `init` brings the database tables up to date when it starts
 
 - `config/.env`, `config/profile.toml`, `config/searches.toml`, `output/`, and `private/` are ignored by Git. Never commit them.
 - The database holds job postings, scraper history, and match results, which include short quotes from your CVs: keep it private.
-- Scoring, tailoring, and interview prep send CV, job, and email text to your LLM provider, and the company name and job title to Tavily. Interview emails are never stored. Choose providers whose data handling you accept.
+- Scoring, tailoring, and interview prep send CV and job text to your LLM provider, and the company name and job title to Tavily. Choose providers whose data handling you accept.
 
 ## Development
 
