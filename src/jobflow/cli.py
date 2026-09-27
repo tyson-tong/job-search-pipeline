@@ -33,10 +33,10 @@ def main() -> None:
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--no-browser", action="store_true", help="Don't open a browser tab")
     tailor = sub.add_parser("tailor-cv", help="Draft a tailored CV, with a fact check, for "
-                            "every Interviewing job that doesn't have one yet")
+                            "every Interested job that doesn't have one yet")
     tailor.add_argument("--cv", help="CV variant name (the part after CV_ in the file name) to use "
-                        "for every job; defaults to each job's best-matching variant, which "
-                        "needs the job to be scored")
+                        "for every job; defaults to each job's best-matching variant (an "
+                        "unscored job is scored first)")
     sub.add_parser("interview-prep", help="Generate an interview briefing HTML for every "
                    "Interviewing job that doesn't have one yet")
     args = parser.parse_args()
@@ -47,8 +47,8 @@ def main() -> None:
         raise SystemExit(f"error: {exc}") from None
 
 
-def for_interviewing_jobs(kind: str, what: str, run_one) -> None:
-    """Run run_one(job_id) for each Interviewing job without a recorded `kind` run.
+def for_jobs(status: str, kind: str, what: str, run_one) -> None:
+    """Run run_one(job_id) for each job with `status` and no recorded `kind` run.
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
     twice, and a failed job is retried next time. One failure doesn't stop the rest.
@@ -58,10 +58,10 @@ def for_interviewing_jobs(kind: str, what: str, run_one) -> None:
     with connect() as conn:
         rows = conn.execute(
             "SELECT j.id, j.company, j.title, EXISTS (SELECT 1 FROM workflow_runs r "
-            "WHERE r.job_id=j.id AND r.kind=%s) FROM jobs j WHERE j.status='interviewing' "
-            "ORDER BY j.id", (kind,)).fetchall()
+            "WHERE r.job_id=j.id AND r.kind=%s) FROM jobs j WHERE j.status=%s "
+            "ORDER BY j.id", (kind, status)).fetchall()
     todo = [row for row in rows if not row[3]]
-    print(f"{len(rows)} Interviewing job{'s' if len(rows) != 1 else ''}: "
+    print(f"{len(rows)} {status.capitalize()} job{'s' if len(rows) != 1 else ''}: "
           f"{len(rows) - len(todo)} already have {what}, {len(todo)} to do")
     failed = 0
     for job_id, company, title, _ in todo:
@@ -162,9 +162,9 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
                 print(f"warning: {message}", file=sys.stderr)
             print(f"Review {target.parent / 'REVIEW_REQUIRED.md'} before using this draft.")
 
-        for_interviewing_jobs("tailor", "a tailored CV", tailor_one)
+        for_jobs("interested", "tailor", "a tailored CV", tailor_one)
     elif args.command == "interview-prep":
         from .candidate.interview import prepare
         from .db import migrate
         migrate()
-        for_interviewing_jobs("interview-prep", "a briefing", lambda job_id: print(prepare(job_id)))
+        for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)))

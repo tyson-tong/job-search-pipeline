@@ -1,6 +1,6 @@
 # Job Search Workflow
 
-A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and Seek (through Apify scrapers) into your own PostgreSQL database, merging the same job found on several sites. On your machine, you triage the new jobs, score the ones you're interested in against your CVs, and draft tailored CVs and interview briefings for the jobs you're interviewing for.
+A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and Seek (through Apify scrapers) into your own PostgreSQL database, merging the same job found on several sites. On your machine, you triage the new jobs, score the ones you're interested in against your CVs, draft a tailored CV for each one, and build interview briefings for the jobs you're interviewing for.
 
 It is a template: each person makes their own private copy with their own database, credentials, and CVs. **First time? Follow [docs/setup.md](docs/setup.md).**
 
@@ -8,7 +8,7 @@ It is a template: each person makes their own private copy with their own databa
 Daily, in GitHub Actions                     On your machine, when you choose
 ─────────────────────────                    ────────────────────────────────
 config/searches.toml ─► Apify ─► filter + dedupe ─► PostgreSQL ─► jobflow web                 triage, score, and track jobs
-                                                           jobflow tailor-cv           draft CVs for Interviewing jobs
+                                                           jobflow tailor-cv           CVs for Interested jobs
                                                            jobflow interview-prep      briefings for Interviewing jobs
 ```
 
@@ -26,19 +26,18 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
 4. **Track applications** in **My jobs**: status (applied, interviewing, offered, accepted, declined, rejected, withdrawn), follow-up date, and dated notes, all saved with **Save**. Rows flag overdue follow-ups and applications with no progress after three weeks.
 
-5. **Draft CVs and interview briefings** for the jobs you've set to **Interviewing**:
+5. **Draft a CV** for each **Interested** job, before you apply:
 
    ```
-   uv run jobflow tailor-cv              # a CV draft for each, from its best-matching CV
+   uv run jobflow tailor-cv              # from each job's best-matching CV
    uv run jobflow tailor-cv --cv dev     # or use one CV for all: CV_dev.yaml is "dev"
-   uv run jobflow interview-prep         # a briefing for each
    ```
 
-   Each command works through every Interviewing job and skips jobs it has already done, so run them whenever a job moves to Interviewing. A job that fails (a network error, say) is retried the next time you run the command. Without `--cv`, a job needs a match score (scored while it was Interested); an unscored one fails with a message until you give `--cv`.
+   It writes `CV_<variant>_draft.yaml` and a fact check, `REVIEW_REQUIRED.md`, to `output/<company>/<role>-<job-id>/`, and renders a PDF if RenderCV is installed and the check found no errors. Read the draft line by line; after fixing it, render it from that folder: `rendercv render CV_<variant>_draft.yaml`. An unscored job is scored first.
 
-   `tailor-cv` writes `CV_<variant>_draft.yaml` and a fact check, `REVIEW_REQUIRED.md`, to `output/<company>/<role>-<job-id>/`, and renders a PDF if RenderCV is installed and the check found no errors. Read the draft line by line; after fixing it, render it from that folder: `rendercv render CV_<variant>_draft.yaml`.
+6. **Prepare for an interview**, once a job is **Interviewing**: `uv run jobflow interview-prep` writes `interview-prep.html` to the same folder for each: the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps, questions to ask, and a 30-minute checklist.
 
-   `interview-prep` writes `interview-prep.html` to the same folder: the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps, questions to ask, and a 30-minute checklist.
+   These commands work through every job at that status and skip jobs they've already done, so run them whenever jobs move along. A job that fails (a network error, say) is retried the next time you run the command.
 
 ### In the tracker
 
@@ -63,7 +62,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | Command | What it does |
 |---|---|
 | `jobflow web [--port N]` | The job tracker in your browser |
-| `jobflow tailor-cv [--cv VARIANT]` | A tailored CV draft and its fact check for each Interviewing job without one |
+| `jobflow tailor-cv [--cv VARIANT]` | A tailored CV draft and its fact check for each Interested job without one |
 | `jobflow interview-prep` | An interview briefing for each Interviewing job without one |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
 | `jobflow ingest [--search NAME] [--site SITE]` | Run the searches now (the daily import does this; uses Apify credits) |
