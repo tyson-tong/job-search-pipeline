@@ -129,7 +129,12 @@ def make_handler(token: str, port: int):
                 return self._error(HTTPStatus.NOT_FOUND, "Not found")
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 return self._error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Send JSON")
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0:
+                return self._error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length")
             if length > MAX_BODY:
                 return self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request too large")
             if url.path == "/api/scoring":
