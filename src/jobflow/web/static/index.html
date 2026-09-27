@@ -836,6 +836,7 @@ function renderDetail() {
           : "Not scored: only interested jobs are scored. Mark it interested and save to score it."),
     el("div", { className: "next" }, el("strong", {}, "Next steps (in a terminal)"),
       [["uv run jobflow tailor-cv", "Tailored CV drafts"],
+       ["uv run jobflow cover-letter", "Cover letters (optional)"],
        ["uv run jobflow interview-prep", "Interview briefings"]].map(([command, what]) =>
         el("div", { className: "cmd" }, el("span", { className: "meta", style: "min-width:120px" }, what),
           el("code", {}, command), el("button", { className: "btn small", onclick: () => copyCommand(command) }, "Copy")))),

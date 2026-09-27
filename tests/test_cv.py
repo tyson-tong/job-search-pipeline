@@ -1,6 +1,7 @@
 import copy
 
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
+from jobflow.candidate.cover_letter import check_letter
 from jobflow.candidate.skill_gaps import rank_skills
 from jobflow.candidate.tailoring import fact_check
 
@@ -111,6 +112,24 @@ def test_fact_check_flags_removed_employer_and_warns_on_new_terms():
     errors, warnings = fact_check(SOURCE_CV, draft)
     assert "Employer removed: Example Corp." in errors
     assert warnings and "Kubernetes" in warnings[0]
+
+
+JOB = {"title": "Data Analyst", "company": "Acme",
+       "description": "You will own 3 dashboards and work with Snowflake."}
+
+
+def test_letter_check_flags_numbers_and_terms_from_nowhere():
+    research = [{"title": "Acme news", "content": "Acme was founded in 1998 in Sydney."}]
+    letter = ("Dear Hiring Manager,\nAt Example Corp I built Python ETL pipelines processing "
+              "2M records daily, and I'd enjoy owning your 3 dashboards at a company founded in "
+              "1998. I also cut costs by 40% using Kubernetes.\nAlex Example")
+    errors, warnings = check_letter(letter, SOURCE_CV, JOB, research)
+    # 2M (CV), 3 (job ad), and 1998 (research) are allowed; 40 appears nowhere.
+    assert errors == ["Numbers not in your CV, the job ad, or the company research: 40."]
+    assert warnings == ["Terms not in your CV, the job ad, or the company research (check each "
+                        "is true): Kubernetes."]
+    assert ("A [placeholder] is left in; fill it in or remove it."
+            in check_letter("Dear [Name], I built dashboards.", SOURCE_CV, JOB, [])[1])
 
 
 def test_skill_ranking_counts_only_real_gaps_once():

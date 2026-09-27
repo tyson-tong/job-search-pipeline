@@ -14,8 +14,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="jobflow",
         description="First time: init. Everyday: web (job tracker, including your searches), "
-        "tailor-cv, interview-prep, and skill-gaps. After editing config/searches.toml: "
-        "update-searches. The daily GitHub Action runs ingest.")
+        "tailor-cv, cover-letter (optional), interview-prep, and skill-gaps. After editing "
+        "config/searches.toml: update-searches. The daily GitHub Action runs ingest.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Create config/.env, config/profile.toml, and config/searches.toml from the "
                    "templates (never overwrites existing files)")
@@ -37,6 +37,10 @@ def main() -> None:
     tailor.add_argument("--cv", help="CV variant name (the part after CV_ in the file name) to use "
                         "for every job; defaults to each job's best-matching variant (an "
                         "unscored job is scored first)")
+    letter = sub.add_parser("cover-letter", help="Optional: draft a cover letter, reviewed and "
+                            "fact-checked, for every Interested job that doesn't have one yet")
+    letter.add_argument("--cv", help="CV variant to write from, for every job; defaults to each "
+                        "job's best-matching variant (an unscored job is scored first)")
     sub.add_parser("interview-prep", help="Generate an interview briefing HTML for every "
                    "Interviewing job that doesn't have one yet")
     sub.add_parser("skill-gaps", help="Report the skills your CVs don't show that scored jobs "
@@ -165,6 +169,21 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
             print(f"Review {target.parent / 'CV_REVIEW.md'} before using this draft.")
 
         for_jobs("interested", "tailor", "a tailored CV", tailor_one)
+    elif args.command == "cover-letter":
+        from .candidate.cover_letter import write_letter
+        from .db import migrate
+        migrate()
+
+        def letter_one(job_id: int) -> None:
+            target, errors, warnings = write_letter(job_id, args.cv)
+            print(target)
+            for message in errors:
+                print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)
+            for message in warnings:
+                print(f"warning: {message}", file=sys.stderr)
+            print(f"Review {target.parent / 'COVER_LETTER_REVIEW.md'} before sending it.")
+
+        for_jobs("interested", "cover-letter", "a cover letter", letter_one)
     elif args.command == "interview-prep":
         from .candidate.interview import prepare
         from .db import migrate

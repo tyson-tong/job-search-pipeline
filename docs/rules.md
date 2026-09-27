@@ -1,6 +1,6 @@
 # How jobflow's rules work
 
-The rules behind merging duplicates, flagging similar jobs, scoring, checking tailored CVs, and ranking skill gaps. For a diagram of every component and table, open [structure.html](structure.html) in a browser.
+The rules behind merging duplicates, flagging similar jobs, scoring, checking tailored CVs and cover letters, and ranking skill gaps. For a diagram of every component and table, open [structure.html](structure.html) in a browser.
 
 ## Duplicates
 
@@ -30,9 +30,9 @@ Only the CV's `cv` section goes to the LLM; design, locale, and settings are cop
 
 New capitalised or technical terms, such as a tool name, are warnings. The check catches common problems; it does not replace reading the draft.
 
-## The review
+## Cover letters and the review
 
-A reviewer prompted as the job's hiring manager critiques the first CV draft and revises it. The revision is checked the same way and kept only if it has no more errors than the first draft; otherwise the first draft is kept and `CV_REVIEW.md` says so.
+The cover letter may draw only on your CV, the job ad, and the company research. A number found in none of them is an error; a new capitalised or technical term is a warning, as is a `[placeholder]` left in. Cover letters are optional (`jobflow cover-letter`). For both CVs and letters, a reviewer prompted as the job's hiring manager critiques the first draft and revises it. The revision is checked the same way and kept only if it has no more errors than the first draft; otherwise the first draft is kept and the review file (`CV_REVIEW.md` or `COVER_LETTER_REVIEW.md`) says so.
 
 ## Skill gaps
 

@@ -107,7 +107,7 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
 
 
 def research(job: dict) -> tuple[list[dict], list[str]]:
-    """Company web research for the reviewer; optional."""
+    """Company web research for a reviewer or cover letter; optional."""
     if not os.environ.get("WEB_SEARCH_API_KEY"):
         return [], ["No company research: WEB_SEARCH_API_KEY is not set, so only the job ad "
                     "is used."]

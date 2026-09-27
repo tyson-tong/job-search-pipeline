@@ -1,6 +1,6 @@
 # Job Search Workflow
 
-A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and Seek (through Apify scrapers) into your own PostgreSQL database, merging the same job found on several sites. On your machine, you triage the new jobs, score the ones you're interested in against your CVs, draft a tailored CV for each one, build interview briefings for the jobs you're interviewing for, and see which skills the jobs ask for that your CVs don't show.
+A personal job-search pipeline. Every day it collects job postings from LinkedIn, Indeed, and Seek (through Apify scrapers) into your own PostgreSQL database, merging the same job found on several sites. On your machine, you triage the new jobs, score the ones you're interested in against your CVs, draft a tailored CV (and, if you want, a cover letter) for each one, build interview briefings for the jobs you're interviewing for, and see which skills the jobs ask for that your CVs don't show.
 
 It is a template: each person makes their own private copy with their own database, credentials, and CVs. **First time? Follow [docs/setup.md](docs/setup.md).**
 
@@ -9,11 +9,12 @@ Daily, in GitHub Actions                     On your machine, when you choose
 ─────────────────────────                    ────────────────────────────────
 config/searches.toml ─► Apify ─► filter + dedupe ─► PostgreSQL ─► jobflow web                 triage, score, and track jobs
                                                            jobflow tailor-cv           CVs for Interested jobs
+                                                           jobflow cover-letter        optional letters for Interested jobs
                                                            jobflow interview-prep      briefings for Interviewing jobs
                                                            jobflow skill-gaps          skills your CVs don't show
 ```
 
-More: [your searches](docs/searches.md) · [rules](docs/rules.md) (duplicates, similar jobs, scores, CV checks) · [structure](docs/structure.html) (open in a browser).
+More: [your searches](docs/searches.md) · [rules](docs/rules.md) (duplicates, similar jobs, scores, CV and cover letter checks) · [structure](docs/structure.html) (open in a browser).
 
 ## Daily routine
 
@@ -35,6 +36,8 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
    ```
 
    For each job it drafts the CV; a reviewer, playing the hiring manager (with company research from Tavily, if set up), then critiques and revises it. The revision is kept only if it passes the fact check at least as well as the first draft. It writes `CV_<variant>_draft.yaml` and `CV_REVIEW.md` (the fact check and the reviewer's critique) to `output/<company>/<role>-<job-id>/`, and renders a PDF if the check found no errors. Read the draft line by line; after fixing it, render it from that folder: `rendercv render CV_<variant>_draft.yaml`. An unscored job is scored first.
+
+   **Cover letters are optional:** `uv run jobflow cover-letter` (also with `--cv`) writes `cover-letter.txt` and `COVER_LETTER_REVIEW.md` to the same folder for each Interested job, drafted from your CV, the job ad, and the company research, then reviewed and checked the same way.
 
 6. **Prepare for an interview**, once a job is **Interviewing**: `uv run jobflow interview-prep` writes `interview-prep.html` to the same folder for each: the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps, questions to ask, and a 30-minute checklist.
 
@@ -66,6 +69,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 |---|---|
 | `jobflow web [--port N]` | The job tracker in your browser |
 | `jobflow tailor-cv [--cv VARIANT]` | A reviewed, fact-checked CV for each Interested job without one |
+| `jobflow cover-letter [--cv VARIANT]` | Optional: a reviewed, fact-checked cover letter for each Interested job without one |
 | `jobflow interview-prep` | An interview briefing for each Interviewing job without one |
 | `jobflow skill-gaps` | The skills your scored jobs ask for that your CVs don't show |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
@@ -78,7 +82,7 @@ Every command except `init` brings the database tables up to date when it starts
 
 - `config/.env`, `config/profile.toml`, `config/searches.toml`, `output/`, and `private/` are ignored by Git. Never commit them.
 - The database holds job postings, scraper history, and match results, which include short quotes from your CVs: keep it private.
-- Scoring, tailoring, skill gaps, and interview prep send CV and job text to your LLM provider; tailoring and interview prep send the company name and job title to Tavily. Choose providers whose data handling you accept.
+- Scoring, tailoring, cover letters, skill gaps, and interview prep send CV and job text to your LLM provider; tailoring, cover letters, and interview prep send the company name and job title to Tavily. Choose providers whose data handling you accept.
 
 ## Development
 
