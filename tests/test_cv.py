@@ -1,6 +1,8 @@
 import copy
+import json
 
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
+from jobflow.candidate import cover_letter
 from jobflow.candidate.cover_letter import check_letter
 from jobflow.candidate.skill_gaps import rank_skills
 from jobflow.candidate.tailoring import bullets, cut_order, fact_check, without
@@ -130,6 +132,26 @@ def test_letter_check_flags_numbers_and_terms_from_nowhere():
                         "is true): Kubernetes."]
     assert ("A [placeholder] is left in; fill it in or remove it."
             in check_letter("Dear [Name], I built dashboards.", SOURCE_CV, JOB, [])[1])
+
+
+def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypatch):
+    class Conn:
+        def execute(self, *args): return self
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+
+    letter = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
+    monkeypatch.setattr(cover_letter, "load_source", lambda job_id, variant: (
+        JOB, "main", "CV variant main.", {"cv": SOURCE_CV}, ""))
+    monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
+    monkeypatch.setattr(cover_letter, "connect", Conn)
+    monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
+        json.dumps({"critique": [], "cover_letter": letter}) if kw.get("reviewer")
+        else letter, "m"))
+    target, errors, _ = cover_letter.write_letter(1, output_dir=tmp_path)
+    assert errors and target.name == "COVER_LETTER_REVIEW.md"
+    assert not (tmp_path / "cover-letter.docx").exists()
+    assert letter in target.read_text()
 
 
 def test_skill_ranking_counts_only_real_gaps_once():
