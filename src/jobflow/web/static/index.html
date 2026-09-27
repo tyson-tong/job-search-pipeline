@@ -440,9 +440,13 @@ function renderTabs() {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("on", tab.dataset.view === state.view));
   document.getElementById("inbox-count").textContent = state.summary.counts.new || 0;
   // Like the Inbox's, the total with the chosen statuses, before the other filters.
-  document.getElementById("jobs-count").textContent =
-    [...state.statuses].reduce((sum, s) => sum + (state.summary.counts[s] || 0), 0);
+  document.getElementById("jobs-count").textContent = tabTotal("jobs");
   document.getElementById("status-filter").hidden = state.view !== "jobs";
+}
+// All jobs in a tab (for My jobs, with the chosen statuses), before the other filters.
+function tabTotal(view) {
+  const statuses = view === "inbox" ? ["new"] : view === "filtered" ? ["filtered"] : [...state.statuses];
+  return statuses.reduce((sum, s) => sum + (state.summary.counts[s] || 0), 0);
 }
 function renderStatusMenu() {
   const menu = document.getElementById("status-menu");
@@ -516,9 +520,12 @@ function renderRows() {
   renderSortHeads();
   renderCountryFilter();
   const body = document.getElementById("rows");
-  const n = state.jobs.length;
+  // The summary and the rows load separately, so a job saved in between can make the
+  // rows outnumber the total; then there is nothing hidden to report.
+  const n = state.jobs.length, total = tabTotal(state.view);
   document.getElementById("shown").textContent = n >= state.summary.max_rows
-    ? `The first ${n} jobs: narrow the filters to see the rest` : `${n} job${n === 1 ? "" : "s"}`;
+    ? `The first ${n} jobs: narrow the filters to see the rest`
+    : n < total ? `${n} of ${total} jobs` : `${n} job${n === 1 ? "" : "s"}`;
   document.getElementById("export").href = "/api/export.csv?" + filterParams() + "&token=" + encodeURIComponent(TOKEN);
   const inbox = state.view === "inbox", filtered = state.view === "filtered";
   const selectable = inbox || filtered;
