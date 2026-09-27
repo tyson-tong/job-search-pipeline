@@ -34,7 +34,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
    uv run jobflow tailor-cv --cv dev     # or use one CV for all: CV_dev.yaml is "dev"
    ```
 
-   It writes `CV_<variant>_draft.yaml` and a fact check, `REVIEW_REQUIRED.md`, to `output/<company>/<role>-<job-id>/`, and renders a PDF if RenderCV is installed and the check found no errors. Read the draft line by line; after fixing it, render it from that folder: `rendercv render CV_<variant>_draft.yaml`. An unscored job is scored first.
+   For each job it drafts the CV; a reviewer, playing the hiring manager (with company research from Tavily, if set up), then critiques and revises it. The revision is kept only if it passes the fact check at least as well as the first draft. It writes `CV_<variant>_draft.yaml` and `CV_REVIEW.md` (the fact check and the reviewer's critique) to `output/<company>/<role>-<job-id>/`, and renders a PDF if the check found no errors. Read the draft line by line; after fixing it, render it from that folder: `rendercv render CV_<variant>_draft.yaml`. An unscored job is scored first.
 
 6. **Prepare for an interview**, once a job is **Interviewing**: `uv run jobflow interview-prep` writes `interview-prep.html` to the same folder for each: the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps, questions to ask, and a 30-minute checklist.
 
@@ -65,7 +65,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | Command | What it does |
 |---|---|
 | `jobflow web [--port N]` | The job tracker in your browser |
-| `jobflow tailor-cv [--cv VARIANT]` | A tailored CV draft and its fact check for each Interested job without one |
+| `jobflow tailor-cv [--cv VARIANT]` | A reviewed, fact-checked CV for each Interested job without one |
 | `jobflow interview-prep` | An interview briefing for each Interviewing job without one |
 | `jobflow skill-gaps` | The skills your scored jobs ask for that your CVs don't show |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
@@ -78,7 +78,7 @@ Every command except `init` brings the database tables up to date when it starts
 
 - `config/.env`, `config/profile.toml`, `config/searches.toml`, `output/`, and `private/` are ignored by Git. Never commit them.
 - The database holds job postings, scraper history, and match results, which include short quotes from your CVs: keep it private.
-- Scoring, tailoring, skill gaps, and interview prep send CV and job text to your LLM provider; interview prep sends the company name and job title to Tavily. Choose providers whose data handling you accept.
+- Scoring, tailoring, skill gaps, and interview prep send CV and job text to your LLM provider; tailoring and interview prep send the company name and job title to Tavily. Choose providers whose data handling you accept.
 
 ## Development
 

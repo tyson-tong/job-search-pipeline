@@ -25,7 +25,7 @@ Sign-up screens and prices change, so the steps below describe what to look for 
 | [PostgreSQL on Neon](#1-database-neon) | everything | `DATABASE_URL` in `config/.env`, and a GitHub secret |
 | [Apify](#2-apify-job-scrapers) | the daily import | `APIFY_TOKEN` in `config/.env`, and a GitHub secret |
 | [An LLM provider](#3-llm-provider) | scoring, tailor-cv, interview-prep | `LLM_API_KEY`, `LLM_MODEL` (and `LLM_BASE_URL`) in `config/.env` |
-| [Tavily](#4-tavily-web-search) | interview-prep | `WEB_SEARCH_API_KEY` in `config/.env` |
+| [Tavily](#4-tavily-web-search) | interview-prep; optional for tailor-cv | `WEB_SEARCH_API_KEY` in `config/.env` |
 | [GitHub CLI](#5-github-cli) | `jobflow update-searches`, setting GitHub secrets | logged in on your machine |
 
 Keep every key out of Git: `config/.env` is ignored by Git and readable only by you. Never paste a key into `config/searches.toml`, `config/profile.toml`, or an issue.
@@ -92,9 +92,9 @@ Check it: mark a job Interested, save, and click **Score all jobs** in the track
 
 ## 4. Tavily (web search)
 
-`jobflow interview-prep` uses [Tavily](https://tavily.com) to research the company. It is only needed for interview briefings.
+`jobflow interview-prep` uses [Tavily](https://tavily.com) to research the company, and `jobflow tailor-cv` uses it, if set, for its review. Interview briefings need it; tailoring works without it, from the job ad alone.
 
-1. Sign up at [tavily.com](https://tavily.com); there is a free monthly allowance, and each briefing makes two searches.
+1. Sign up at [tavily.com](https://tavily.com); there is a free monthly allowance, and each briefing or tailored CV makes two searches.
 2. Copy your API key from the Tavily dashboard (Tavily's docs: [Quickstart](https://docs.tavily.com)).
 3. In `config/.env`:
 

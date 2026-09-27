@@ -30,6 +30,10 @@ Only the CV's `cv` section goes to the LLM; design, locale, and settings are cop
 
 New capitalised or technical terms, such as a tool name, are warnings. The check catches common problems; it does not replace reading the draft.
 
+## The review
+
+A reviewer prompted as the job's hiring manager critiques the first CV draft and revises it. The revision is checked the same way and kept only if it has no more errors than the first draft; otherwise the first draft is kept and `CV_REVIEW.md` says so.
+
 ## Skill gaps
 
 Each scored job contributes the requirements its best-matching CV didn't fully show. The LLM only groups them into skills (the same skill worded differently) and suggests how to close each gap; it can't change the counts. A skill's rank is the sum over its requirements of 1 for required or 0.5 for preferred, halved when the CV partly shows it. Ids the LLM makes up or repeats are ignored.

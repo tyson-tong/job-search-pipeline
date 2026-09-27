@@ -141,7 +141,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="step"><b>Score jobs against each CV</b><span class="mod">candidate/matching.py · Score all jobs in jobflow web</span>
       <div class="what">Interested jobs only, each scored once. Runs in the background from the tracker. Requirements with verified CV quotes; score computed from required and preferred coverage.</div></div>
     <div class="step"><b>Tailor a CV</b><span class="mod">candidate/tailoring.py · jobflow tailor-cv</span>
-      <div class="what">For each Interested job without one: a draft from the best-matching CV, fact-checked against the original before rendering.</div></div>
+      <div class="what">For each Interested job without one: a draft from the best-matching CV, revised by a hiring-manager reviewer, fact-checked against the original before rendering.</div></div>
     <div class="step"><b>Prepare for the interview</b><span class="mod">candidate/interview.py · jobflow interview-prep</span>
       <div class="what">For each Interviewing job without one: web research plus four specialist agents, merged into one HTML briefing.</div></div>
   </div>
@@ -162,7 +162,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>ingest/report.py</code></td><td>The tracker's Searches tab: your searches, their planned runs, and allowed values.</td></tr>
   <tr><td><code>candidate/cvs.py</code></td><td>Loads <code>CV_*.yaml</code> files; shared text helpers.</td></tr>
   <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring: Interested jobs only, each scored once.</td></tr>
-  <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft and its fact check.</td></tr>
+  <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft, the reviewer pass, and the fact check.</td></tr>
   <tr><td><code>candidate/skill_gaps.py</code></td><td>Skill-gap report from stored match scores.</td></tr>
   <tr><td><code>candidate/interview.py</code></td><td>Company research, specialist agents, HTML briefing.</td></tr>
   <tr><td><code>web/server.py</code></td><td>Local-only HTTP server for <code>jobflow web</code>; a per-start token and host check keep other websites out.</td></tr>
@@ -240,9 +240,10 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="card"><h3>Tailoring</h3>
     <ul><li>Runs for every Interested job without a draft; jobs already done are skipped.</li>
     <li>Uses each job's best-matching CV unless <code>--cv</code> is given (an unscored job is scored first).</li>
+    <li>A hiring-manager reviewer revises the draft; the revision is kept only if it passes the fact check.</li>
     <li>Only the <code>cv</code> section goes to the LLM; design and settings are kept.</li>
     <li>Errors (render skipped): changed contact details, new or altered employers, positions, dates, education; removed entries; new numbers.</li>
-    <li>Warnings: new tool or skill names. Written to <code>REVIEW_REQUIRED.md</code>.</li></ul></div>
+    <li>Warnings: new tool or skill names. Written to <code>CV_REVIEW.md</code>.</li></ul></div>
   <div class="card"><h3>Interview prep</h3>
     <ul><li>Tavily web search for company facts and news.</li>
     <li>Four agents in parallel: company, role, CV evidence, likely questions.</li>
@@ -276,7 +277,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
   <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES GitHub variable, filter Inbox jobs matching excluded title terms</td><td>cli.py → ingest/store.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
-  <tr><td><code>jobflow tailor-cv</code></td><td>Tailored, fact-checked CV drafts for Interested jobs</td><td>candidate/tailoring.py</td></tr>
+  <tr><td><code>jobflow tailor-cv</code></td><td>Reviewed, fact-checked CVs for Interested jobs</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow interview-prep</code></td><td>Interview briefing HTML for Interviewing jobs</td><td>candidate/interview.py</td></tr>
   <tr><td><code>jobflow skill-gaps</code></td><td>Skill-gap report HTML</td><td>candidate/skill_gaps.py</td></tr>
 </table></div>

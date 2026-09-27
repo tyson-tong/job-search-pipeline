@@ -32,8 +32,8 @@ def main() -> None:
     web = sub.add_parser("web", help="Open the job tracker in your browser (local only)")
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--no-browser", action="store_true", help="Don't open a browser tab")
-    tailor = sub.add_parser("tailor-cv", help="Draft a tailored CV, with a fact check, for "
-                            "every Interested job that doesn't have one yet")
+    tailor = sub.add_parser("tailor-cv", help="Draft a tailored CV, reviewed and fact-checked, "
+                            "for every Interested job that doesn't have one yet")
     tailor.add_argument("--cv", help="CV variant name (the part after CV_ in the file name) to use "
                         "for every job; defaults to each job's best-matching variant (an "
                         "unscored job is scored first)")
@@ -162,7 +162,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
                 print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)
             for message in warnings:
                 print(f"warning: {message}", file=sys.stderr)
-            print(f"Review {target.parent / 'REVIEW_REQUIRED.md'} before using this draft.")
+            print(f"Review {target.parent / 'CV_REVIEW.md'} before using this draft.")
 
         for_jobs("interested", "tailor", "a tailored CV", tailor_one)
     elif args.command == "interview-prep":
