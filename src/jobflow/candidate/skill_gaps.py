@@ -24,14 +24,15 @@ MAX_GAPS_SENT = 600
 
 
 def collect_gaps() -> tuple[list[dict], int]:
-    """Requirements not fully evidenced by each scored job's best CV, and the job count."""
+    """Requirements not fully evidenced by each scored job's best CV, newest job first, and
+    the job count."""
     weights = matching_weights()
     gaps: list[dict] = []
     with connect() as conn:
         jobs = conn.execute(
             """SELECT j.id, j.title, j.company FROM jobs j
                WHERE EXISTS (SELECT 1 FROM match_assessments m WHERE m.job_id = j.id)
-               ORDER BY j.id""").fetchall()
+               ORDER BY j.id DESC""").fetchall()
         scored = 0
         for job_id, title, company in jobs:
             cached = _cached_assessments(conn, job_id)
@@ -97,7 +98,8 @@ def _group(gaps: list[dict]) -> tuple[object, str]:
     return parse_json(content).get("skills"), model
 
 
-def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated: str) -> str:
+def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated: str,
+          left_out: int = 0) -> str:
     rows = []
     for rank, s in enumerate(skills, 1):
         examples = "".join(
@@ -113,6 +115,9 @@ def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated
             "</details></td></tr>")
     note = (f"<p class=meta>{ungrouped} requirement{'s were' if ungrouped != 1 else ' was'} "
             "not grouped by the LLM and are left out.</p>" if ungrouped else "")
+    if left_out:
+        note += (f"<p class=meta>Only the {MAX_GAPS_SENT} requirements from your most recently "
+                 f"added scored jobs are grouped; {left_out} older ones are left out.</p>")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Skill gaps</title>
@@ -143,5 +148,6 @@ def report(output: Path | None = None) -> tuple[Path, list[dict]]:
     now = datetime.now(tz)
     target = output or (output_directory() / f"skill-gaps-{now:%Y-%m-%d}.html")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(_page(skills, scored, ungrouped, model, now.strftime("%Y-%m-%d %H:%M %Z")))
+    target.write_text(_page(skills, scored, ungrouped, model, now.strftime("%Y-%m-%d %H:%M %Z"),
+                            left_out=max(0, len(gaps) - MAX_GAPS_SENT)))
     return target, skills

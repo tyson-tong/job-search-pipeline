@@ -29,6 +29,8 @@ SORTS = {
 FX_CODES = list(CURRENCIES)
 FX_RATES = [USD_PER_UNIT[CURRENCIES[code]] for code in FX_CODES]
 STALE_AFTER = timedelta(days=21)
+# The most jobs one list shows; the page says so when a list reaches it.
+MAX_ROWS = 2000
 MAX_NOTE = 2000
 # The Country filter's value for a job whose country isn't known.
 UNKNOWN_COUNTRY = "none"
@@ -71,9 +73,9 @@ def parse_filters(params: dict[str, list[str]]) -> dict:
     sort = (params.get("sort") or ["score"])[0]
     posted = (params.get("posted") or [""])[0]
     try:
-        limit = max(1, min(int((params.get("limit") or ["300"])[0]), 2000))
+        limit = max(1, min(int((params.get("limit") or [MAX_ROWS])[0]), MAX_ROWS))
     except ValueError:
-        limit = 300
+        limit = MAX_ROWS
     return {"statuses": statuses, "q": (params.get("q") or [""])[0].strip(),
             "site": (params.get("site") or [""])[0].strip(),
             # Chosen countries; none chosen means all.
@@ -85,6 +87,11 @@ def parse_filters(params: dict[str, list[str]]) -> dict:
             # In US dollars a year, compared after converting each job's own currency.
             "salary_min_usd": _number(params, "salary_min_usd"),
             "limit": limit}
+
+
+def _like_escape(text: str) -> str:
+    """Search text matched literally by ILIKE: % and _ are otherwise wildcards."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def list_jobs(filters: dict) -> list[dict]:
@@ -129,7 +136,7 @@ def list_jobs(filters: dict) -> list[dict]:
                        < %(today)s::date - %(older_than_days)s::int)
                 ORDER BY {SORTS[filters['sort']]}
                 LIMIT %(limit)s""",
-            {**filters, "pattern": f"%{filters['q']}%", "unknown": UNKNOWN_COUNTRY,
+            {**filters, "pattern": f"%{_like_escape(filters['q'])}%", "unknown": UNKNOWN_COUNTRY,
              "fx_codes": FX_CODES, "fx_rates": FX_RATES,
              # This machine's date, as the rows' overdue flags use: the database's date is
              # UTC, a day behind Sydney every morning.
@@ -240,7 +247,7 @@ def summary() -> dict:
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,
             "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,
             "default_statuses": DEFAULT_STATUSES, "cv_count": cv_count, "unscored": unscored,
-            "scoring_problem": scoring_problem}
+            "scoring_problem": scoring_problem, "max_rows": MAX_ROWS}
 
 
 def job_detail(job_id: int) -> dict | None:

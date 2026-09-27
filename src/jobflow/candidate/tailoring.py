@@ -143,8 +143,8 @@ def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict,
     files = cv_files()
     yaml_variants = [name for name, path in files.items() if is_yaml(path)]
     if not yaml_variants:
-        raise RuntimeError("tailor-cv and cover-letter work from a RenderCV YAML CV "
-                           "(for example CV_main.yaml), and your CV folder has none")
+        raise RuntimeError("tailor-cv works from a RenderCV YAML CV (for example "
+                           "CV_main.yaml), and your CV folder has none")
     reason = f"CV variant {variant!r} chosen manually."
     if variant is None:
         results = match_job(job_id)

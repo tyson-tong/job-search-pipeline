@@ -507,7 +507,8 @@ function renderRows() {
   renderCountryFilter();
   const body = document.getElementById("rows");
   const n = state.jobs.length;
-  document.getElementById("shown").textContent = `${n} job${n === 1 ? "" : "s"}`;
+  document.getElementById("shown").textContent = n >= state.summary.max_rows
+    ? `The first ${n} jobs: narrow the filters to see the rest` : `${n} job${n === 1 ? "" : "s"}`;
   document.getElementById("export").href = "/api/export.csv?" + filterParams() + "&token=" + encodeURIComponent(TOKEN);
   const inbox = state.view === "inbox", filtered = state.view === "filtered";
   const selectable = inbox || filtered;
