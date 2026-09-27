@@ -3,7 +3,7 @@ import copy
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
 from jobflow.candidate.cover_letter import check_letter
 from jobflow.candidate.skill_gaps import rank_skills
-from jobflow.candidate.tailoring import fact_check
+from jobflow.candidate.tailoring import bullets, cut_order, fact_check, without
 
 CV_TEXT = """cv:
   name: Alex Example
@@ -147,3 +147,18 @@ def test_skill_ranking_counts_only_real_gaps_once():
         ("AWS", 1.25, 2, 1), ("CFA", 1.0, 1, 1)]
     assert ungrouped == 0
     assert rank_skills(gaps, "not a list") == ([], 3)
+
+
+def test_shortening_never_empties_an_entry_or_rewrites_anything():
+    cv = copy.deepcopy(SOURCE_CV)
+    cv["sections"]["experiences"].append({"company": "Other Co", "highlights": ["Only bullet"]})
+    found = bullets(cv)
+    # Rank everything least relevant first, with junk and repeated ids.
+    order = cut_order(found, [3, 3, 0, 1, 2, 99, "x"])
+    assert [b["text"] for b in order] == ["Built Python ETL pipelines processing 2M records daily"]
+    trimmed = without(cv, order)
+    assert trimmed["sections"]["experiences"][0]["highlights"] == [
+        "Presented dashboards to executives using Tableau"]
+    assert trimmed["sections"]["experiences"][1]["highlights"] == ["Only bullet"]
+    assert fact_check(cv, trimmed) == ([], [])  # only removals, so nothing to flag
+    assert cv["sections"]["experiences"][0]["highlights"][0].startswith("Built")  # input untouched

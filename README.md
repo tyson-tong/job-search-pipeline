@@ -33,9 +33,10 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
    ```
    uv run jobflow tailor-cv              # from each job's best-matching CV
    uv run jobflow tailor-cv --cv dev     # or use one CV for all: CV_dev.yaml is "dev"
+   uv run jobflow tailor-cv --max-pages 2   # allow 2 pages (default 1)
    ```
 
-   For each job it drafts the CV; a reviewer, playing the hiring manager (with company research from Tavily, if set up), then critiques and revises it. The revision is kept only if it passes the fact check at least as well as the first draft. It writes `CV_<variant>_draft.yaml` and `CV_REVIEW.md` (the fact check and the reviewer's critique) to `output/<company>/<role>-<job-id>/`, and renders a PDF if the check found no errors. Read the draft line by line; after fixing it, render it from that folder: `rendercv render CV_<variant>_draft.yaml`. An unscored job is scored first.
+   For each job it drafts the CV; a reviewer, playing the hiring manager (with company research from Tavily, if set up), then critiques and revises it. The revision is kept only if it passes the fact check at least as well as the first draft. It writes `CV_<variant>_draft.yaml` and `CV_REVIEW.md` (the fact check and the reviewer's critique) to `output/<company>/<role>-<job-id>/`, and renders a PDF if the check found no errors. If the PDF runs past 1 page (or `--max-pages N`), it cuts the bullets least relevant to the job until it fits (listed in `CV_REVIEW.md`, so you can restore any), and it warns about a page left mostly empty because a long entry moved to the next one. Read the draft line by line; after fixing it, render it from that folder: `rendercv render CV_<variant>_draft.yaml`. An unscored job is scored first.
 
    **Cover letters are optional:** `uv run jobflow cover-letter` (also with `--cv`) writes `cover-letter.txt` and `COVER_LETTER_REVIEW.md` to the same folder for each Interested job, drafted from your CV, the job ad, and the company research, then reviewed and checked the same way.
 
@@ -68,7 +69,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | Command | What it does |
 |---|---|
 | `jobflow web [--port N]` | The job tracker in your browser |
-| `jobflow tailor-cv [--cv VARIANT]` | A reviewed, fact-checked CV for each Interested job without one |
+| `jobflow tailor-cv [--cv VARIANT] [--max-pages N]` | A reviewed, fact-checked CV for each Interested job without one |
 | `jobflow cover-letter [--cv VARIANT]` | Optional: a reviewed, fact-checked cover letter for each Interested job without one |
 | `jobflow interview-prep` | An interview briefing for each Interviewing job without one |
 | `jobflow skill-gaps` | The skills your scored jobs ask for that your CVs don't show |

@@ -30,6 +30,10 @@ Only the CV's `cv` section goes to the LLM; design, locale, and settings are cop
 
 New capitalised or technical terms, such as a tool name, are warnings. The check catches common problems; it does not replace reading the draft.
 
+If the rendered PDF runs past 1 page, or the `--max-pages N` given to `tailor-cv`, the LLM ranks the bullets from least to most relevant to the job, and the fewest of the least relevant that makes it fit are cut, found by re-rendering with different numbers cut (a binary search, so about 7 renders even for 50 bullets). If it can't fit even with every entry down to one bullet, all those cuts are kept and you get a warning. The LLM only ranks; the cutting is done in code, so nothing is rewritten and every entry keeps at least one bullet. `CV_REVIEW.md` lists what was cut.
+
+RenderCV never splits an entry across pages: one too long for the space left moves whole to the next page. A page other than the last that is at least 30% empty at the bottom because of this gets a warning; cutting a few of that entry's bullets pulls it up.
+
 ## Cover letters and the review
 
 The cover letter may draw only on your CV, the job ad, and the company research. A number found in none of them is an error; a new capitalised or technical term is a warning, as is a `[placeholder]` left in. Cover letters are optional (`jobflow cover-letter`). For both CVs and letters, a reviewer prompted as the job's hiring manager critiques the first draft and revises it. The revision is checked the same way and kept only if it has no more errors than the first draft; otherwise the first draft is kept and the review file (`CV_REVIEW.md` or `COVER_LETTER_REVIEW.md`) says so.

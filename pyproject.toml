@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-documents = ["rendercv[full]==2.8"]
+documents = ["rendercv[full]==2.8", "pypdf>=5"]
 test = ["pytest>=8"]
 
 [project.scripts]
