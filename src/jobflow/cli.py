@@ -188,7 +188,10 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
                 print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)
             for message in warnings:
                 print(f"warning: {message}", file=sys.stderr)
-            print(f"Review {target.parent / 'COVER_LETTER_REVIEW.md'} before sending it.")
+            if errors:
+                print(f"No cover-letter.docx: fix the letter in {target} first.")
+            else:
+                print(f"Review {target.parent / 'COVER_LETTER_REVIEW.md'} before sending it.")
 
         for_jobs("interested", "cover-letter", "a cover letter", letter_one)
     elif args.command == "interview-prep":

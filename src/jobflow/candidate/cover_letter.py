@@ -111,8 +111,11 @@ def write_letter(job_id: int, variant: str | None = None,
 
     target_dir = output_dir or job_directory(job_id, job)
     target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / "cover-letter.docx"
-    documents.write_letter_docx(letter, source_doc["cv"], job, target)
+    # Like a CV, a letter that fails the fact check is not written as a finished document:
+    # its text goes in the review, to fix before use.
+    target = target_dir / ("COVER_LETTER_REVIEW.md" if errors else "cover-letter.docx")
+    if not errors:
+        documents.write_letter_docx(letter, source_doc["cv"], job, target)
     report = [f"# Cover letter review: {job['company']} — {job['title']} (job id {job_id})", "",
               reason.replace("CV variant", "Written from CV variant"), "",
               "Read the letter line by line before sending it. The automated check below "
@@ -124,6 +127,9 @@ def write_letter(job_id: int, variant: str | None = None,
     report += [f"- {w}" for w in warnings] or ["- None."]
     report += ["", "## Reviewer's critique", ""]
     report += [f"- {c}" for c in critique] or ["- None."]
+    if errors:
+        report += ["", "## The letter (not written as cover-letter.docx until the errors are "
+                   "fixed)", "", letter]
     (target_dir / "COVER_LETTER_REVIEW.md").write_text("\n".join(report) + "\n")
     with connect() as conn:
         conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "

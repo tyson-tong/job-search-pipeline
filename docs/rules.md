@@ -38,7 +38,7 @@ Since an entry is never split, one too long for the space left moves whole to th
 
 ## Cover letters and the review
 
-The cover letter may draw only on your CV, the job ad, and the company research. A number found in none of them is an error; a new capitalised or technical term is a warning, as is a `[placeholder]` left in. Cover letters are optional (`jobflow cover-letter`). For both CVs and letters, a reviewer prompted as the job's hiring manager critiques the first draft and revises it. The revision is checked the same way and kept only if it has no more errors than the first draft; otherwise the first draft is kept and the review file (`CV_REVIEW.md` or `COVER_LETTER_REVIEW.md`) says so.
+The cover letter may draw only on your CV, the job ad, and the company research. A number found in none of them is an error; a new capitalised or technical term is a warning, as is a `[placeholder]` left in. A letter with errors is not written as `cover-letter.docx`; its text is in `COVER_LETTER_REVIEW.md` to fix. Cover letters are optional (`jobflow cover-letter`). For both CVs and letters, a reviewer prompted as the job's hiring manager critiques the first draft and revises it. The revision is checked the same way and kept only if it has no more errors than the first draft; otherwise the first draft is kept and the review file (`CV_REVIEW.md` or `COVER_LETTER_REVIEW.md`) says so.
 
 ## Skill gaps
 
