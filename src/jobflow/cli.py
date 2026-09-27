@@ -14,11 +14,13 @@ def positive_int(text: str) -> int:
 
 
 def check_variant(variant: str | None) -> None:
-    """Stop before any job is tried if --cv names no CV file."""
-    from .candidate.cvs import cv_sources
+    """Stop before any job is tried if --cv names no RenderCV YAML CV."""
+    from .candidate.cvs import cv_files, is_yaml
 
-    if variant is not None and variant not in (sources := cv_sources()):
-        raise RuntimeError(f"No CV_{variant}.yaml; choose from {', '.join(sources) or 'none found'}")
+    choices = [name for name, path in cv_files().items() if is_yaml(path)]
+    if variant is not None and variant not in choices:
+        raise RuntimeError(f"No RenderCV YAML CV named {variant!r}; choose from "
+                           f"{', '.join(choices) or 'none found'}")
 
 
 def main() -> None:
@@ -155,12 +157,12 @@ def init() -> None:
         print(f"{'created' if created else 'kept   '}  {CONFIG_DIR / name}"
               + ("" if created else "  (already exists; not changed)"))
     if not any(created for _, created in results):
-        print("\nNothing to create: all three files exist.")
+        print("\nNothing to create: all three files exist. Your CVs go in cv/.")
         return
     print("""
 Next:
   1. config/.env           DATABASE_URL, APIFY_TOKEN, LLM_API_KEY, LLM_MODEL, WEB_SEARCH_API_KEY
-  2. config/profile.toml   cv_directory: the folder with your CV_*.yaml files
+  2. cv/                   your CVs (names containing "cv": .yaml, .tex, .docx, or .pdf)
   3. config/searches.toml  your job searches (it starts with example searches: replace them)
   4. uv run jobflow web, then the Searches tab to check your searches""")
 

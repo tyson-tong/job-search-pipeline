@@ -11,5 +11,5 @@ build/
 /config/profile.toml
 /config/searches.toml
 /config/.env
-/private/
+/cv/
 /output/

@@ -1,7 +1,10 @@
-# Copy to config/profile.toml and point it at your private CV folder.
-# config/profile.toml is ignored by Git. Never put API credentials here.
+# Copy to config/profile.toml (jobflow init does). It is ignored by Git. Never put API
+# credentials here.
 [paths]
-cv_directory = "/path/to/your/private/cv"
+# Your CVs: every file whose name contains "cv" (any case), as .yaml (RenderCV), .tex,
+# .docx, or .pdf. Relative paths are relative to this file, so the default is the cv
+# folder in this repository, which Git ignores.
+cv_directory = "../cv"
 output_directory = "../output"
 # Job searches to run on Apify (copy config/searches.example.toml).
 searches_file = "./searches.toml"

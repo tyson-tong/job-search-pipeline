@@ -24,7 +24,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
 2. **Triage the Inbox.** Mark each new job **Interested** or **Not interested**, one at a time or by ticking several rows (shift-click selects a range). Changes are drafts until you click **Save** (or press Ctrl+S). Interested jobs move to **My jobs**; Not interested jobs leave the tracker (they stay in the database), so undo a misclick before saving.
 
-3. **Score your picks.** In **My jobs**, click **Score all jobs**: each Interested job not yet scored is compared with each of your CVs by the LLM. A job is scored once and keeps its scores even if a CV changes. Only Interested jobs are ever scored.
+3. **Score your picks.** In **My jobs**, click **Score all jobs**: each Interested job not yet scored is compared with each of your CVs (every file in `cv` whose name contains "cv": .yaml, .tex, .docx, or .pdf) by the LLM. A job is scored once and keeps its scores even if a CV changes. Only Interested jobs are ever scored.
 
 4. **Track applications** in **My jobs**: status (applied, interviewing, offered, accepted, declined, rejected, withdrawn), follow-up date, and dated notes, all saved with **Save**. Rows flag overdue follow-ups and applications with no progress after three weeks.
 
@@ -32,12 +32,12 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
    ```
    uv run jobflow tailor-cv              # from each job's best-matching CV
-   uv run jobflow tailor-cv --cv dev     # or use one CV for all: CV_dev.yaml is "dev"
+   uv run jobflow tailor-cv --cv dev     # or use one CV for all: cv/CV_dev.yaml is "dev"
    uv run jobflow tailor-cv --max-pages 2   # allow 2 pages (default 1)
    uv run jobflow tailor-cv --format pdf    # also write the CV: pdf, docx, or latex
    ```
 
-   For each job it drafts the CV; a reviewer, playing the hiring manager (with company research from Tavily, if set up), then critiques and revises it. The revision is kept only if it passes the fact check at least as well as the first draft. It writes `CV_<variant>_draft.yaml` and `CV_REVIEW.md` (the fact check and the reviewer's critique, with a `CV_REVIEW.docx` copy) to `output/<company>/<role>-<job-id>/`. If the draft runs past 1 page (or `--max-pages N`) as RenderCV lays it out, it cuts the bullets least relevant to the job until it fits (listed in `CV_REVIEW.md`, so you can restore any), and it warns about a page left mostly empty because a long entry moved to the next one. By default that's all: read the draft line by line, fix the YAML, and render it from that folder with `uv run rendercv render CV_<variant>_draft.yaml`. `--format` also writes the CV itself if the check found no errors: `pdf` (RenderCV's), `docx`, or `latex` (a `.tex` to compile with lualatex). The `.docx` and `.tex` are laid out in code from the checked YAML, not by the LLM, so they say exactly what passed the check; they're fitted to RenderCV's page count, so check theirs in the program you open them with. An unscored job is scored first.
+   It works from your best-matching RenderCV YAML CV (CVs in other formats are scored, not tailored). For each job it drafts the CV; a reviewer, playing the hiring manager (with company research from Tavily, if set up), then critiques and revises it. The revision is kept only if it passes the fact check at least as well as the first draft. It writes `CV_<variant>_draft.yaml` and `CV_REVIEW.md` (the fact check and the reviewer's critique, with a `CV_REVIEW.docx` copy) to `output/<company>/<role>-<job-id>/`. If the draft runs past 1 page (or `--max-pages N`) as RenderCV lays it out, it cuts the bullets least relevant to the job until it fits (listed in `CV_REVIEW.md`, so you can restore any), and it warns about a page left mostly empty because a long entry moved to the next one. By default that's all: read the draft line by line, fix the YAML, and render it from that folder with `uv run rendercv render CV_<variant>_draft.yaml`. `--format` also writes the CV itself if the check found no errors: `pdf` (RenderCV's), `docx`, or `latex` (a `.tex` to compile with lualatex). The `.docx` and `.tex` are laid out in code from the checked YAML, not by the LLM, so they say exactly what passed the check; they're fitted to RenderCV's page count, so check theirs in the program you open them with. An unscored job is scored first.
 
    **Cover letters are optional:** `uv run jobflow cover-letter` (also with `--cv`) writes `COVER_LETTER_REVIEW.md` (with a `.docx` copy) and, if the check found no errors, `cover-letter.docx` (a standard business letter: your details, the date, the employer, a subject line, then the letter) to the same folder for each Interested job, drafted from your CV, the job ad, and the company research, then reviewed and checked the same way. A letter with errors is left in the review for you to fix.
 
@@ -82,7 +82,7 @@ Every command except `init` brings the database tables up to date when it starts
 
 ## Privacy
 
-- `config/.env`, `config/profile.toml`, `config/searches.toml`, `output/`, and `private/` are ignored by Git. Never commit them.
+- `config/.env`, `config/profile.toml`, `config/searches.toml`, `output/`, and `cv/` are ignored by Git. Never commit them.
 - The database holds job postings, scraper history, and match results, which include short quotes from your CVs: keep it private.
 - Scoring, tailoring, cover letters, skill gaps, and interview prep send CV and job text to your LLM provider; tailoring, cover letters, and interview prep send the company name and job title to Tavily. Choose providers whose data handling you accept.
 

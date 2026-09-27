@@ -17,10 +17,12 @@ INIT_FILES = ((".env.example", ".env", 0o600),
 
 
 def init_files(root: Path = ROOT) -> list[tuple[str, bool]]:
-    """Copy each missing personal file from its template. Existing files are never
-    touched. Returns (file name, created) pairs."""
+    """Copy each missing personal file from its template, and create cv/ for your
+    CVs (ignored by Git). Existing files are never touched. Returns (file name, created)
+    pairs."""
     config_dir = root / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
+    (root / "cv").mkdir(parents=True, exist_ok=True)
     results = []
     for template, target, mode in INIT_FILES:
         source, destination = config_dir / template, config_dir / target
@@ -79,7 +81,7 @@ def profile() -> dict:
     if not path.exists():
         raise RuntimeError(
             f"Profile not found at {path}. Run `uv run jobflow init` to create "
-            "config/profile.toml (or set JOBFLOW_PROFILE) and set paths.cv_directory."
+            "config/profile.toml (or set JOBFLOW_PROFILE), then put your CVs in cv/."
         )
     with path.open("rb") as stream:
         return tomllib.load(stream)
@@ -94,7 +96,7 @@ def configured_path(section: str, name: str, default: str) -> Path:
 
 
 def cv_directory() -> Path:
-    return configured_path("paths", "cv_directory", "../private/cv")
+    return configured_path("paths", "cv_directory", "../cv")
 
 
 def output_directory() -> Path:

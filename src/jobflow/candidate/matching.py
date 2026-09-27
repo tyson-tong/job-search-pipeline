@@ -7,7 +7,7 @@ import sys
 from ..db import connect, fetch_job
 from ..llm import complete, parse_json
 from ..settings import cv_directory, matching_weights
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, cv_digest, cv_sources, normalise_text
+from .cvs import CV_CHAR_LIMIT, CV_FORMATS, JOB_CHAR_LIMIT, cv_digest, cv_sources, normalise_text
 
 # Bump when the stored assessment shape changes.
 ASSESSMENT_FORMAT = 2
@@ -149,17 +149,18 @@ def match_job(job_id: int) -> list[dict]:
     job = fetch_job(job_id)
     sources = cv_sources()
     if not sources:
-        raise RuntimeError(f"No CV_*.yaml files found under {cv_directory()}")
+        raise RuntimeError(f"No CV files found in {cv_directory()} (file names containing "
+                           f"\"cv\": {', '.join(CV_FORMATS)})")
     results = []
     for variant, source in sources.items():
         digest = cv_digest(source)
         if len(source) > CV_CHAR_LIMIT:
-            print(f"warning: CV_{variant}.yaml exceeds {CV_CHAR_LIMIT} characters; only the "
+            print(f"warning: CV {variant!r} exceeds {CV_CHAR_LIMIT} characters; only the "
                   "start is assessed, so later evidence will show as not evidenced",
                   file=sys.stderr)
         prompt = {"job": {"title": job["title"], "company": job["company"],
                           "description": job["description"][:JOB_CHAR_LIMIT]},
-                  "cv_variant": variant, "cv_source_yaml": source[:CV_CHAR_LIMIT],
+                  "cv_variant": variant, "cv_source": source[:CV_CHAR_LIMIT],
                   "instructions": MATCH_INSTRUCTIONS}
         content, model = complete(
             "You are a careful CV-to-job evidence assessor. Never invent facts. Return valid JSON only.",

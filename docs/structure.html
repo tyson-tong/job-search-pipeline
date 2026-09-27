@@ -160,7 +160,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>ingest/sources.py</code></td><td>Converts LinkedIn, Indeed, and Seek records to one <code>Posting</code> shape.</td></tr>
   <tr><td><code>ingest/store.py</code></td><td>Duplicate detection, saving jobs and sightings, run records, similar-job search, excluding titles already in the Inbox.</td></tr>
   <tr><td><code>ingest/report.py</code></td><td>The tracker's Searches tab: your searches, their planned runs, and allowed values.</td></tr>
-  <tr><td><code>candidate/cvs.py</code></td><td>Loads <code>CV_*.yaml</code> files; shared text helpers.</td></tr>
+  <tr><td><code>candidate/cvs.py</code></td><td>Finds your CVs (file names containing "cv": .yaml, .tex, .docx, .pdf) and reads their text; shared text helpers.</td></tr>
   <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring: Interested jobs only, each scored once.</td></tr>
   <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft, the reviewer pass, the fact check, and fitting to --max-pages with RenderCV.</td></tr>
   <tr><td><code>candidate/documents.py</code></td><td>CV layouts for --format docx and latex, and the cover letter .docx, all laid out in code from the checked text.</td></tr>
@@ -266,7 +266,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><td>CV folder, output root, weights, timezone</td><td><code>config/profile.toml</code></td><td>not needed</td></tr>
 </table></div>
 <p class="small muted" style="margin-top:8px"><code>jobflow init</code> creates <code>config/.env</code>, <code>config/profile.toml</code>, and <code>config/searches.toml</code> from the templates, never overwriting existing files.</p>
-<p class="small muted" style="margin-top:8px"><code>config/.env</code>, <code>config/profile.toml</code>, <code>config/searches.toml</code>, <code>output/</code>, and <code>private/</code> are ignored by Git; the <code>.example</code> files show what goes in them.</p>
+<p class="small muted" style="margin-top:8px"><code>config/.env</code>, <code>config/profile.toml</code>, <code>config/searches.toml</code>, <code>output/</code>, and <code>cv/</code> are ignored by Git; the <code>.example</code> files show what goes in them.</p>
 
 <h2 id="cost">Keeping Apify cost down</h2>
 <div class="grid">

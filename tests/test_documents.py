@@ -54,3 +54,23 @@ def test_latex_cv_text_can_never_run_commands(tmp_path):
     assert r"\input{" not in tex and r"A \& B" in tex
     # A leading [ would otherwise be read as an optional argument and lose its brackets.
     assert "{[}Confidential{]} project" in tex
+
+
+def test_every_cv_file_is_found_once_and_read_as_text(tmp_path, monkeypatch):
+    from jobflow.candidate import cvs
+
+    write_docx(CV, tmp_path / "Resume_CV_2026.docx")
+    (tmp_path / "CV_dev.yaml").write_text("cv:\n  name: José Example\n")
+    (tmp_path / "CV_dev.pdf").write_bytes(b"an export of CV_dev.yaml")  # same CV: skipped
+    (tmp_path / "strat-cv.tex").write_text(
+        "\\documentclass{article}\n\\begin{document}\n\\textbf{Built} ETL 100\\% % note\n"
+        "\\end{document}\n")
+    (tmp_path / "~$CV_dev.docx").write_bytes(b"Word lock file")
+    (tmp_path / "cover-letter.docx").write_bytes(b"not a CV")
+    (tmp_path / "CV_notes.txt").write_text("not a CV format")
+    monkeypatch.setattr(cvs, "cv_directory", lambda: tmp_path)
+    assert {name: path.name for name, path in cvs.cv_files().items()} == {
+        "Resume_CV_2026": "Resume_CV_2026.docx", "dev": "CV_dev.yaml", "strat-cv": "strat-cv.tex"}
+    sources = cvs.cv_sources()
+    assert "Built Python ETL pipelines" in sources["Resume_CV_2026"]
+    assert _words(sources["strat-cv"]).strip() == "Built ETL 100%"

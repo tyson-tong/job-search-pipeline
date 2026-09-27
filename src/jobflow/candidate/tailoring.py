@@ -18,7 +18,7 @@ from pypdf import PdfReader
 from ..db import connect, fetch_job
 from ..llm import complete, parse_json
 from . import documents
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, cv_sources, normalise_text
+from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, cv_files, is_yaml, normalise_text
 from .interview import web_search
 from .matching import best_variant, match_job
 from .paths import job_directory
@@ -135,22 +135,41 @@ def research(job: dict) -> tuple[list[dict], list[str]]:
 
 def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict, str]:
     """The job, the CV variant to use (best-matching unless given, scoring the job first
-    if needed), why it was chosen, and that CV's document and cv-section YAML."""
+    if needed), why it was chosen, and that CV's document and cv-section YAML.
+
+    Every CV format is scored, but only a RenderCV YAML CV has the structure to tailor
+    and fact-check, so the best-matching YAML CV is used."""
     job = fetch_job(job_id)
-    sources = cv_sources()
+    files = cv_files()
+    yaml_variants = [name for name, path in files.items() if is_yaml(path)]
+    if not yaml_variants:
+        raise RuntimeError("tailor-cv and cover-letter work from a RenderCV YAML CV "
+                           "(for example CV_main.yaml), and your CV folder has none")
     reason = f"CV variant {variant!r} chosen manually."
     if variant is None:
-        best = best_variant(match_job(job_id))
-        variant = best["variant"]
-        reason = f"CV variant {variant!r} chosen automatically: highest match score ({best['score']}/100)."
-    if variant not in sources:
-        raise RuntimeError(f"Unknown CV variant {variant!r}; choose from {', '.join(sources)}")
-    source_doc = yaml.safe_load(sources[variant])
+        results = match_job(job_id)
+        usable = [r for r in results if r["variant"] in yaml_variants]
+        if not usable:
+            raise RuntimeError("None of this job's scored CVs is a RenderCV YAML file; "
+                               "choose one with --cv")
+        best, chosen = best_variant(results), best_variant(usable)
+        variant = chosen["variant"]
+        reason = (f"CV variant {variant!r} chosen automatically: highest match score "
+                  f"({chosen['score']}/100)")
+        reason += (f" among your YAML CVs ({best['variant']!r} scored {best['score']}, but only "
+                   "a RenderCV YAML CV can be tailored)." if best is not chosen else ".")
+    if variant not in files:
+        raise RuntimeError(f"Unknown CV variant {variant!r}; choose from {', '.join(files)}")
+    if variant not in yaml_variants:
+        raise RuntimeError(f"{files[variant].name} isn't a RenderCV YAML file; choose from "
+                           f"{', '.join(yaml_variants)}")
+    name = files[variant].name
+    source_doc = yaml.safe_load(files[variant].read_text())
     if not isinstance(source_doc, dict) or not isinstance(source_doc.get("cv"), dict):
-        raise RuntimeError(f"CV_{variant}.yaml has no cv mapping")
+        raise RuntimeError(f"{name} has no cv mapping")
     source_yaml = yaml.safe_dump({"cv": source_doc["cv"]}, sort_keys=False, allow_unicode=True)
     if len(source_yaml) > CV_CHAR_LIMIT:
-        raise RuntimeError(f"CV_{variant}.yaml cv section is {len(source_yaml)} characters; "
+        raise RuntimeError(f"{name} cv section is {len(source_yaml)} characters; "
                            f"over {CV_CHAR_LIMIT} it would be truncated and the draft would "
                            "silently lose content")
     return job, variant, reason, source_doc, source_yaml

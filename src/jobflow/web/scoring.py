@@ -33,7 +33,8 @@ def start(job_ids: list[int] | None = None) -> dict:
     first, so a configuration problem fails now rather than on every job."""
     credentials()
     if not cv_sources():
-        raise RuntimeError("No CV_*.yaml files found; check cv_directory in config/profile.toml")
+        raise RuntimeError("No CV files found: put them in cv/ (or the folder "
+                           "cv_directory in config/profile.toml names)")
     with _lock:
         if _state["running"]:
             raise Busy("Scoring is already running")
