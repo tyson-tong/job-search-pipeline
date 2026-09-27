@@ -180,13 +180,36 @@ def write_docx(cv: dict, path: Path) -> None:
     doc.save(path)
 
 
-def write_letter_docx(letter: str, cv: dict, job: dict, path: Path, today: date | None = None) -> None:
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# Only numbers written like a phone number (starting with +, a bracket, or 0), so dates
+# and figures elsewhere in a CV are never taken for one.
+PHONE = re.compile(r"(?<![\w+])[+(0][\d ()-]{6,}\d")
+
+
+def letter_sender(cv: dict | str, letter: str) -> list[str]:
+    """The name and contact lines for the letter's header. From a RenderCV YAML CV: its
+    name, location, email, and phone. From another format's text: the name the letter
+    signs off with, and the first email address and phone number found in the CV."""
+    if isinstance(cv, dict):
+        return [_text(cv.get("name"))] + [
+            _text(cv.get(key)).removeprefix("tel:").removeprefix("mailto:")
+            for key in ("location", "email", "phone") if cv.get(key)]
+    lines = [line.strip() for line in letter.strip().splitlines() if line.strip()]
+    name = lines[-1] if lines and len(lines[-1].split()) <= 5 \
+        and not re.search(r"[\d,.:;!?]", lines[-1]) else ""
+    phone = next((m[0].strip() for m in PHONE.finditer(cv)
+                  if 8 <= len(re.sub(r"\D", "", m[0])) <= 15), None)
+    email = EMAIL.search(cv)
+    return [name] + [part for part in (email and email[0], phone) if part]
+
+
+def write_letter_docx(letter: str, cv: dict | str, job: dict, path: Path,
+                      today: date | None = None) -> None:
     """A standard business letter: sender, date, recipient, subject line, then the
-    letter's own text (which opens with its greeting and ends with its sign-off)."""
+    letter's own text (which opens with its greeting and ends with its sign-off). `cv` is
+    a RenderCV YAML CV's cv mapping, or another format's text."""
     doc = _docx_base(2.5, 11)
-    sender = [_text(cv.get("name"))] + [
-        _text(cv.get(key)).removeprefix("tel:").removeprefix("mailto:")
-        for key in ("location", "email", "phone") if cv.get(key)]
+    sender = letter_sender(cv, letter)
     greeting = re.match(r"\s*Dear\s+([^,\n]+),", letter)
     addressee = greeting[1].strip() if greeting else "Hiring Manager"
     recipient = [addressee] + [part for part in (job.get("company"), job.get("location")) if part]
@@ -201,7 +224,8 @@ def write_letter_docx(letter: str, cv: dict, job: dict, path: Path, today: date 
             if i < len(lines) - 1:
                 run.add_break()
 
-    block(sender, bold_first=True)
+    if any(sender):
+        block(sender, bold_first=bool(sender[0]))
     block([f"{today.day} {today:%B %Y}"])
     block(recipient)
     block([f"Re: {job.get('title') or 'Application'}"], bold_first=True)

@@ -13,14 +13,15 @@ def positive_int(text: str) -> int:
     return value
 
 
-def check_variant(variant: str | None) -> None:
-    """Stop before any job is tried if --cv names no RenderCV YAML CV."""
+def check_variant(variant: str | None, yaml_only: bool) -> None:
+    """Stop before any job is tried if --cv names no CV (for tailor-cv, no RenderCV YAML
+    CV)."""
     from .candidate.cvs import cv_files, is_yaml
 
-    choices = [name for name, path in cv_files().items() if is_yaml(path)]
+    choices = [name for name, path in cv_files().items() if is_yaml(path) or not yaml_only]
     if variant is not None and variant not in choices:
-        raise RuntimeError(f"No RenderCV YAML CV named {variant!r}; choose from "
-                           f"{', '.join(choices) or 'none found'}")
+        raise RuntimeError(f"No {'RenderCV YAML ' if yaml_only else ''}CV named {variant!r}; "
+                           f"choose from {', '.join(choices) or 'none found'}")
 
 
 def main() -> None:
@@ -53,9 +54,9 @@ def main() -> None:
     web.add_argument("--no-browser", action="store_true", help="Don't open a browser tab")
     tailor = sub.add_parser("tailor-cv", help="Draft a tailored CV, reviewed and fact-checked, "
                             "for every Interested job that doesn't have one yet")
-    tailor.add_argument("--cv", help="CV variant name (the part after CV_ in the file name) to use "
-                        "for every job; defaults to each job's best-matching variant (an "
-                        "unscored job is scored first)")
+    tailor.add_argument("--cv", help="RenderCV YAML CV to use for every job, by name (the file "
+                        "name without its extension and a leading CV_); defaults to each job's "
+                        "best-matching YAML CV (an unscored job is scored first)")
     tailor.add_argument("--max-pages", type=positive_int, default=1, metavar="N",
                         help="Longest the CV may be as RenderCV lays it out; longer ones have "
                         "their least relevant bullets cut until they fit (default: 1)")
@@ -65,8 +66,8 @@ def main() -> None:
                         "pdf (rendered by RenderCV). Default: yaml")
     letter = sub.add_parser("cover-letter", help="Optional: draft a cover letter, reviewed and "
                             "fact-checked, for every Interested job that doesn't have one yet")
-    letter.add_argument("--cv", help="CV variant to write from, for every job; defaults to each "
-                        "job's best-matching variant (an unscored job is scored first)")
+    letter.add_argument("--cv", help="CV to write from, in any format, for every job; defaults "
+                        "to each job's best-matching CV (an unscored job is scored first)")
     sub.add_parser("interview-prep", help="Generate an interview briefing HTML for every "
                    "Interviewing job that doesn't have one yet")
     sub.add_parser("skill-gaps", help="Report the skills your CVs don't show that scored jobs "
@@ -185,7 +186,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     elif args.command == "tailor-cv":
         from .candidate.tailoring import tailor_cv
         from .db import migrate
-        check_variant(args.cv)
+        check_variant(args.cv, yaml_only=True)
         migrate()
 
         def tailor_one(job_id: int) -> None:
@@ -201,7 +202,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     elif args.command == "cover-letter":
         from .candidate.cover_letter import write_letter
         from .db import migrate
-        check_variant(args.cv)
+        check_variant(args.cv, yaml_only=False)
         migrate()
 
         def letter_one(job_id: int) -> None:

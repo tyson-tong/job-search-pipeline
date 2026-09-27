@@ -74,3 +74,14 @@ def test_every_cv_file_is_found_once_and_read_as_text(tmp_path, monkeypatch):
     sources = cvs.cv_sources()
     assert "Built Python ETL pipelines" in sources["Resume_CV_2026"]
     assert _words(sources["strat-cv"]).strip() == "Built ETL 100%"
+
+
+def test_letter_from_a_non_yaml_cv_takes_its_header_only_from_the_cv(tmp_path):
+    cv_text = ("José Example\njose@example.com | +61 400 000 000\n"
+               "Example Corp 2016 - 2019: processed 2,000,000 records")
+    letter = "Dear Hiring Manager,\n\nI built ETL pipelines.\n\nKind regards,\nJosé Example"
+    write_letter_docx(letter, cv_text, {"title": "Analyst", "company": "Acme"},
+                      tmp_path / "l.docx", date(2026, 9, 27))
+    paragraphs = [p.text for p in Document(tmp_path / "l.docx").paragraphs]
+    # Dates and figures are never taken for a phone number.
+    assert paragraphs[0] == "José Example\njose@example.com\n+61 400 000 000"

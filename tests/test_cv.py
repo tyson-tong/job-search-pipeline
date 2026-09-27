@@ -144,8 +144,8 @@ def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypat
         def __exit__(self, *args): pass
 
     letter = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
-    monkeypatch.setattr(cover_letter, "load_source", lambda job_id, variant: (
-        JOB, "main", "CV variant main.", {"cv": SOURCE_CV}, ""))
+    monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
+        JOB, "main", "CV variant main.", SOURCE_CV, ""))
     monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
     monkeypatch.setattr(cover_letter, "connect", Conn)
     monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
