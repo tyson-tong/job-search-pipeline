@@ -86,6 +86,16 @@ Scoring, tailored CVs, and interview briefings use any OpenAI-compatible chat-co
 
 **Another provider** (for example a hosted open model, or a gateway): set `LLM_BASE_URL` to its OpenAI-compatible endpoint (usually ending in `/v1`), and `LLM_API_KEY` and `LLM_MODEL` to its key and model name. Use an `https://` address, so your key isn't sent unencrypted.
 
+**Optional: a different model as reviewer.** `tailor-cv` and `cover-letter` have a second model call review each draft as the hiring manager would. By default that's `LLM_MODEL`; a different model makes a better critic, since it doesn't share the drafting model's blind spots. In `config/.env`:
+
+```
+LLM_REVIEW_MODEL=<model name>     # same provider, another model
+LLM_REVIEW_BASE_URL=              # or another provider's endpoint...
+LLM_REVIEW_API_KEY=               # ...with its own key (required when the endpoint differs)
+```
+
+Leave any of them empty to use the main setting. `CV_REVIEW.md` and `COVER_LETTER_REVIEW.md` name the model that reviewed.
+
 What each command sends: scoring, tailoring, and interview prep send job text and your CV text. See the README's [Privacy](../README.md#privacy) section, and choose a provider whose data handling you accept.
 
 Check it: mark a job Interested, save, and click **Score all jobs** in the tracker's My jobs tab. A configuration problem shows as an error instead of a score.

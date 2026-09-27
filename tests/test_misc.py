@@ -1,3 +1,4 @@
+import pytest
 from jobflow.db import migration_files
 from jobflow.candidate.interview import _safe_markup
 
@@ -86,3 +87,24 @@ def test_update_searches_never_publishes_an_invalid_file(tmp_path, monkeypatch):
     monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: pytest.fail("published anyway"))
     with pytest.raises(SearchConfigError, match="unknown AU city"):
         cli.update_searches()
+
+
+def test_reviewer_llm_settings_fall_back_but_never_leak_the_main_key(monkeypatch):
+    from jobflow.llm import base_url, credentials
+
+    for name in ("LLM_REVIEW_MODEL", "LLM_REVIEW_BASE_URL", "LLM_REVIEW_API_KEY",
+                 "LLM_BASE_URL", "OPENAI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LLM_API_KEY", "main-key")
+    monkeypatch.setenv("LLM_MODEL", "main-model")
+    assert credentials(reviewer=True) == ("main-key", "main-model")
+    monkeypatch.setenv("LLM_REVIEW_MODEL", "review-model")
+    assert credentials(reviewer=True) == ("main-key", "review-model")
+    assert credentials() == ("main-key", "main-model")
+    # Another provider without its own key must not receive the main key.
+    monkeypatch.setenv("LLM_REVIEW_BASE_URL", "https://other.example/v1")
+    with pytest.raises(RuntimeError, match="LLM_REVIEW_API_KEY"):
+        credentials(reviewer=True)
+    monkeypatch.setenv("LLM_REVIEW_API_KEY", "other-key")
+    assert credentials(reviewer=True) == ("other-key", "review-model")
+    assert base_url(reviewer=True) == "https://other.example/v1"
