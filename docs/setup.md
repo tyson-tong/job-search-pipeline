@@ -10,7 +10,7 @@ Everything needed once, before the daily routine in the [README](../README.md). 
    uv run jobflow init
    ```
 
-   `init` creates `config/.env`, `config/profile.toml`, and `config/searches.toml` from the `.example` templates. It never overwrites an existing file, so it's safe to rerun. These files are ignored by Git, and `config/.env` is readable only by you.
+   `init` creates `config/.env`, `config/profile.toml`, and `config/searches.toml` from the `.example` templates. It never overwrites an existing file, so it's safe to rerun. These files are ignored by Git, and `init` creates `config/.env` readable only by you. If you made `config/.env` yourself, make it so with `chmod 600 config/.env`.
 3. **Get your accounts and keys** (sections 1 to 5 below) and put them in `config/.env`.
 4. **Add your CVs** to `cv/` (`init` creates it; Git ignores it). They can be RenderCV YAML (`.yaml`), `.tex`, `.docx`, or `.pdf`. Then **name 1 or 2 of them exactly** with `cvs` at the top of `config/profile.toml`, such as `cvs = ["CV_dev.yaml", "CV_strat.pdf"]`: jobs are scored against those (one LLM call per job per CV), and `tailor-cv`, `cover-letter`, `skill-gaps`, and `interview-prep` use only those; other files in `cv/` are ignored. `--cv` takes one of them by file name or by short name, the file name without its extension and a leading `CV_` (`CV_dev.yaml` is `dev`), which is also how scores are labelled. `cover-letter` works from any format. `tailor-cv` needs a [RenderCV](https://docs.rendercv.com) YAML CV, since it edits and fact-checks the CV's structure, so it uses your best-matching YAML CV. To keep your CVs elsewhere, set `cv_directory` in `config/profile.toml`; the same file sets the output folder, the scoring weights, and your timezone.
 5. **Define your searches** in `config/searches.toml`: see [searches.md](searches.md).
@@ -28,7 +28,7 @@ Sign-up screens and prices change, so the steps below describe what to look for 
 | [Tavily](#4-tavily-web-search) | interview-prep; optional for tailor-cv and cover-letter | `WEB_SEARCH_API_KEY` in `config/.env` |
 | [GitHub CLI](#5-github-cli) | `jobflow update-searches`, setting GitHub secrets | logged in on your machine |
 
-Keep every key out of Git: `config/.env` is ignored by Git and readable only by you. Never paste a key into `config/searches.toml`, `config/profile.toml`, or an issue.
+Keep every key out of Git: `config/.env` is ignored by Git, and should be readable only by you (as `init` creates it). Never paste a key into `config/searches.toml`, `config/profile.toml`, or an issue.
 
 Optional: `APIFY_MAX_WAIT_MINUTES` in `config/.env` sets how long to wait for each Apify run (default 60); a run still going then is stopped, so it can't keep charging, and recorded as failed. `JOBFLOW_PROFILE` names another profile file, and `CV_DIRECTORY`, `OUTPUT_DIRECTORY`, and `SEARCHES_FILE` override those paths in it. `OPENAI_API_KEY` works in place of `LLM_API_KEY`. `jobflow` reads `config/.env` by itself; variables already set in your shell take precedence. The database tables are created the first time you run any command other than `init`.
 
