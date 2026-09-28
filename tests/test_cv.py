@@ -1,5 +1,7 @@
 import copy
 import json
+
+import pytest
 from concurrent.futures import Future
 
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
@@ -234,3 +236,29 @@ def test_shortening_never_empties_an_entry_or_rewrites_anything():
     assert trimmed["sections"]["experiences"][1]["highlights"] == ["Only bullet"]
     assert fact_check(cv, trimmed) == ([], [])  # only removals, so nothing to flag
     assert cv["sections"]["experiences"][0]["highlights"][0].startswith("Built")  # input untouched
+
+
+def test_an_empty_assessment_is_never_saved_as_a_score(monkeypatch):
+    # A job is scored only once: saving an answer listing no requirements would fix its
+    # score at 0 for good.
+    from jobflow.candidate import matching
+
+    class Conn:
+        sql = []
+        def execute(self, sql, *args):
+            self.sql.append(sql)
+            self.last = sql
+            return self
+        def fetchall(self): return []
+        def fetchone(self): return ("interested",) if "status" in self.last else (False,)
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+
+    monkeypatch.setattr(matching, "connect", Conn)
+    monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
+    monkeypatch.setattr(matching, "fetch_job", lambda job_id: JOB)
+    monkeypatch.setattr(matching, "chosen_sources", lambda: {"dev": CV_TEXT})
+    monkeypatch.setattr(matching, "complete", lambda *a, **k: ('{"requirements": []}', "m"))
+    with pytest.raises(RuntimeError, match="no requirements"):
+        matching.match_job(1)
+    assert not any("INSERT" in sql for sql in Conn.sql)

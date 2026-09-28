@@ -166,6 +166,10 @@ def match_job(job_id: int) -> list[dict]:
             json.dumps(prompt, ensure_ascii=False), json_mode=True)
         result = parse_json(content)
         items = normalise_requirements(result.get("requirements"), source[:CV_CHAR_LIMIT])
+        if not items:
+            # A job is scored only once, so saving this would fix its score at 0 for good.
+            raise RuntimeError(f"The LLM listed no requirements for CV {variant!r}; nothing "
+                               "was saved, so the job can be scored again")
         return _record(variant, digest, items, str(result.get("rationale") or ""), model, weights)
 
     # The CVs are independent, so their LLM calls run side by side.
