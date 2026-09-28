@@ -498,7 +498,7 @@ def archive_filtered(today: date | None = None) -> int:
     """Move filtered jobs posted (or, with no posted date, first seen) more than
     ARCHIVE_FILTERED_AFTER ago out of the Filtered tab, to status 'archived'. They stay in
     the database and still match as duplicates, so a repost stays out of the Inbox; the
-    tracker never shows them. Returns how many were archived."""
+    tracker shows them in no tab. Returns how many were archived."""
     from ..db import connect
 
     cutoff = (today or date.today()) - ARCHIVE_FILTERED_AFTER
