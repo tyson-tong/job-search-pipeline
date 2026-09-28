@@ -269,14 +269,16 @@ def add_format(directory: Path, fmt: str) -> Path | None:
     """For a job tailor-cv has already done: write its CV as fmt ("docx" or "latex") from
     the YAML draft in its folder, with no LLM call. The draft (which you may have edited)
     is fact-checked against its source CV first, since these files must say only what
-    passed the check. Returns the file written, or None if it already exists; raises
+    passed the check. Returns the file written, or None if it exists and is newer than the
+    draft (a draft edited since is written again, so the file has your edits); raises
     RuntimeError if it can't be written."""
     drafts = sorted(directory.glob("CV_*_draft.yaml"), key=lambda p: p.stat().st_mtime_ns)
     if not drafts:
         raise RuntimeError(f"no CV_*_draft.yaml in {directory}")
     draft_path = drafts[-1]
     target = draft_path.with_suffix(".docx" if fmt == "docx" else ".tex")
-    if target.exists():
+    stale = target.exists() and target.stat().st_mtime_ns < draft_path.stat().st_mtime_ns
+    if target.exists() and not stale:
         return None
     variant = draft_path.name.removeprefix("CV_").removesuffix("_draft.yaml")
     files = chosen_files()
@@ -290,8 +292,9 @@ def add_format(directory: Path, fmt: str) -> Path | None:
         raise RuntimeError(f"{draft_path.name} has no cv mapping")
     errors, _ = fact_check(source["cv"], draft["cv"])
     if errors:
-        raise RuntimeError(f"{draft_path.name} fails the fact check, so no {fmt} was written: "
-                           + " ".join(errors))
+        kept = f" ({target.name} is from before your edit)" if stale else ""
+        raise RuntimeError(f"{draft_path.name} fails the fact check, so no {fmt} was "
+                           f"written{kept}: " + " ".join(errors))
     (documents.write_docx if fmt == "docx" else documents.write_latex)(draft["cv"], target)
     return target
 

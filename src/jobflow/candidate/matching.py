@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from concurrent.futures import ThreadPoolExecutor
 
 from ..db import connect, fetch_job
@@ -150,22 +149,23 @@ def match_job(job_id: int) -> list[dict]:
     job = fetch_job(job_id)
     sources = chosen_sources()
     for variant, source in sources.items():
+        # A job is scored only once, so a score from part of a CV would stand for good.
         if len(source) > CV_CHAR_LIMIT:
-            print(f"warning: CV {variant!r} exceeds {CV_CHAR_LIMIT} characters; only the "
-                  "start is assessed, so later evidence will show as not evidenced",
-                  file=sys.stderr)
+            raise RuntimeError(f"CV {variant!r} is {len(source)} characters; over "
+                               f"{CV_CHAR_LIMIT} it would be truncated and evidence later in "
+                               "it would count as missing")
 
     def assess(variant: str, source: str) -> dict:
         digest = cv_digest(source)
         prompt = {"job": {"title": job["title"], "company": job["company"],
                           "description": job["description"][:JOB_CHAR_LIMIT]},
-                  "cv_variant": variant, "cv_source": source[:CV_CHAR_LIMIT],
+                  "cv_variant": variant, "cv_source": source,
                   "instructions": MATCH_INSTRUCTIONS}
         content, model = complete(
             "You are a careful CV-to-job evidence assessor. Never invent facts. Return valid JSON only.",
             json.dumps(prompt, ensure_ascii=False), json_mode=True)
         result = parse_json(content)
-        items = normalise_requirements(result.get("requirements"), source[:CV_CHAR_LIMIT])
+        items = normalise_requirements(result.get("requirements"), source)
         if not items:
             # A job is scored only once, so saving this would fix its score at 0 for good.
             raise RuntimeError(f"The LLM listed no requirements for CV {variant!r}; nothing "

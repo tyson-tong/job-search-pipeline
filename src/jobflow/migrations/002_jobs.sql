@@ -38,3 +38,7 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS country TEXT;
 -- Migration ID: 03
 -- An archived job's scraped record is cleared after a while (see store.prune_archived_jobs).
 ALTER TABLE jobs ALTER COLUMN raw_json DROP NOT NULL;
+
+-- Migration ID: 04
+-- Tracker search matches titles, companies, and locations with ILIKE; nothing searched descriptions.
+DROP INDEX IF EXISTS jobs_description_fts_idx;

@@ -1,8 +1,10 @@
 import copy
 import json
+import os
 from concurrent.futures import Future
 
 import pytest
+from docx import Document
 
 from jobflow.candidate import cover_letter, review
 from jobflow.candidate.cover_letter import letter_fixed_by_hand
@@ -349,6 +351,14 @@ def test_format_for_a_job_already_tailored_comes_from_its_checked_draft(tmp_path
     draft.write_text(yaml.safe_dump({"cv": SOURCE_CV}))
     assert tailoring.add_format(folder, "docx") == folder / "CV_dev_draft.docx"
     assert tailoring.add_format(folder, "docx") is None   # already there
+    # A draft edited since the .docx was written gets a new one, so no stale CV is sent.
+    trimmed = copy.deepcopy(SOURCE_CV)
+    trimmed["sections"]["experiences"][0]["highlights"].pop()
+    draft.write_text(yaml.safe_dump({"cv": trimmed}))
+    docx = folder / "CV_dev_draft.docx"
+    os.utime(draft, ns=(docx.stat().st_mtime_ns + 10**9,) * 2)
+    assert tailoring.add_format(folder, "docx") == docx
+    assert "Presented dashboards" not in " ".join(p.text for p in Document(docx).paragraphs)
     # A draft edited since into something the check fails never becomes a .tex.
     edited = copy.deepcopy(SOURCE_CV)
     edited["sections"]["experiences"][0]["position"] = "Head of Data"
