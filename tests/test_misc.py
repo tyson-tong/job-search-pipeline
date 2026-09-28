@@ -19,17 +19,20 @@ def test_env_file_never_overrides_real_environment(monkeypatch, tmp_path):
                    "export LLM_MODEL='gpt-x'\n"
                    'LLM_API_KEY="k#1"\n'
                    "EXAMPLE_IDS=a,b # trailing comment\n"
+                   "APIFY_MAX_WAIT_MINUTES=\"30\" # quoted, then a comment\n"
                    "LLM_BASE_URL=\n"
                    "APIFY_TOKEN=from-file\n")
     # A throwaway copy, so nothing load_env sets leaks into later tests.
     environ = {k: v for k, v in os.environ.items()
-               if k not in ("LLM_MODEL", "LLM_API_KEY", "EXAMPLE_IDS", "LLM_BASE_URL")}
+               if k not in ("LLM_MODEL", "LLM_API_KEY", "EXAMPLE_IDS", "LLM_BASE_URL",
+                            "APIFY_MAX_WAIT_MINUTES")}
     environ["APIFY_TOKEN"] = "from-github-secret"
     monkeypatch.setattr(os, "environ", environ)
     load_env(env)
     assert os.environ["LLM_MODEL"] == "gpt-x"
     assert os.environ["LLM_API_KEY"] == "k#1"
     assert os.environ["EXAMPLE_IDS"] == "a,b"
+    assert os.environ["APIFY_MAX_WAIT_MINUTES"] == "30"   # kept its quotes, then failed as a number
     assert "LLM_BASE_URL" not in os.environ  # empty values don't mask defaults
     assert os.environ["APIFY_TOKEN"] == "from-github-secret"
 

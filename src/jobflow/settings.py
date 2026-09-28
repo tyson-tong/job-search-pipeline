@@ -61,8 +61,11 @@ def load_env(path: Path | None = None) -> None:
             continue
         key, value = line.removeprefix("export ").split("=", 1)
         key, value = key.strip(), value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-            value = value[1:-1]
+        # A quoted value is what's inside the quotes, so it may hold " #" and be followed
+        # by a comment; an unquoted one ends at a " #" comment.
+        closing = value.find(value[0], 1) if value[:1] in ("'", '"') else -1
+        if closing > 0:
+            value = value[1:closing]
         else:
             value = value.split(" #", 1)[0].strip()
         if key and value and key not in os.environ:
