@@ -59,6 +59,10 @@ def test_defaults_are_inherited_and_overridden():
     ("posted_within_days = 3", "must be one of \\[1, 7, 14, 30\\]"),
     # A quoted number crashed instead of stopping update-searches with a reason.
     ('salary_min = "100k"', "salary_min must be a number"),
+    # 0 was sent to Apify as no cost cap at all.
+    ("max_cost_usd = 0", "max_cost_usd must be more than 0"),
+    ("max_cost_usd = nan", "max_cost_usd must be a number"),
+    ("max_results = 2.5", "max_results must be a whole number"),
 ])
 def test_invalid_config_is_rejected(bad, message):
     base = '[[search]]\nname = "x"\nterms = ["a"]\n'

@@ -5,6 +5,7 @@ See config/searches.example.toml for the format and options.py for allowed value
 """
 from __future__ import annotations
 
+import math
 import os
 import re
 import tomllib
@@ -149,11 +150,16 @@ def parse_search(raw: dict, defaults: dict) -> Search:
         raise SearchConfigError(f"{where}: posted_within_days must be one of "
                                 f"{list(opt.POSTED_WITHIN_DAYS)} (24 hours, 1 week, 2 weeks, "
                                 f"1 month), not {days!r}")
-    max_results = int(_number(merged, "max_results", where) or 0)
+    max_results = int(_number(merged, "max_results", where, whole=True) or 0)
     if max_results < 1:
         raise SearchConfigError(f"{where}: max_results must be at least 1")
     salary_min, salary_max = _number(merged, "salary_min", where), _number(merged, "salary_max", where)
-    max_cost_usd, radius_km = _number(merged, "max_cost_usd", where), _number(merged, "radius_km", where)
+    max_cost_usd = _number(merged, "max_cost_usd", where)
+    radius_km = _number(merged, "radius_km", where, whole=True)
+    # A cap of 0 would be sent as no cap at all, the opposite of what it says.
+    if max_cost_usd == 0:
+        raise SearchConfigError(f"{where}: max_cost_usd must be more than 0; leave it out "
+                                "for no cap")
     if salary_min is not None and salary_max is not None and salary_min > salary_max:
         raise SearchConfigError(f"{where}: salary_min is greater than salary_max")
     excluded = _title_terms(merged, "exclude_title_terms", where)
@@ -164,7 +170,7 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     return Search(
         name=name, terms=tuple(t.strip() for t in terms), locations=locations, sites=sites,
         posted_within_days=days, max_results=max_results,
-        max_cost_usd=max_cost_usd or None,
+        max_cost_usd=max_cost_usd,
         radius_km=int(radius_km) if radius_km else None,
         salary_min=salary_min, salary_max=salary_max,
         salary_period=period,
@@ -179,13 +185,16 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     )
 
 
-def _number(merged: dict, key: str, where: str) -> float | None:
-    """A non-negative number setting, or None when it isn't set."""
+def _number(merged: dict, key: str, where: str, whole: bool = False) -> float | None:
+    """A non-negative number setting (a whole one if `whole`), or None when it isn't set.
+    TOML's nan and inf are rejected."""
     value = merged.get(key)
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-        raise SearchConfigError(f"{where}: {key} must be a number of 0 or more, not {value!r}")
+    kind = "whole number" if whole else "number"
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or value < 0 or (whole and value != int(value))):
+        raise SearchConfigError(f"{where}: {key} must be a {kind} of 0 or more, not {value!r}")
     return float(value)
 
 
