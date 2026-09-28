@@ -62,7 +62,8 @@ def main() -> None:
         prog="jobflow",
         description="First time: init. Everyday: web (job tracker, including your searches), "
         "tailor-cv, cover-letter (optional), interview-prep, and skill-gaps. After editing "
-        "config/searches.toml: update-searches. The daily GitHub Action runs ingest.")
+        "config/searches.toml: update-searches. The daily GitHub Action runs ingest; status "
+        "shows what it uses.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Create config/.env, config/profile.toml, and config/searches.toml from the "
                    "templates (never overwrites existing files)")
@@ -105,6 +106,9 @@ def main() -> None:
     sub.add_parser("clean-up", help="Delete the output folders of Not interested, Withdrawn, "
                    "Declined, and Rejected jobs, after asking you to confirm (the jobs stay in "
                    "the database)")
+    sub.add_parser("status", help="Show the daily GitHub import, read from GitHub: whether it's "
+                   "on, its last run, its secrets, whether its searches match "
+                   "config/searches.toml, and which job sites it calls")
     manual = sub.add_parser("help", help="Show every command, what it does, and its options "
                             "(or just one command's)")
     manual.add_argument("topic", nargs="?", metavar="COMMAND",
@@ -265,6 +269,21 @@ def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
         raise SystemExit(f"{len(failed)} of {len(todo)} failed; run the command again to retry them")
 
 
+def _gh(args: list[str], doing: str, input: str | None = None, hint: str = "") -> str:
+    """Run the GitHub CLI in this checkout, where it finds the repository from the Git
+    remote, and return what it prints. A failure raises RuntimeError saying what was
+    being done."""
+    from .settings import ROOT
+
+    gh = shutil.which("gh")
+    if not gh:
+        raise RuntimeError(f"GitHub CLI (gh) not found. Install it and run `gh auth login`{hint}")
+    result = subprocess.run([gh, *args], input=input, text=True, capture_output=True, cwd=ROOT)
+    if result.returncode:
+        raise RuntimeError(f"{doing} failed: {(result.stderr or result.stdout).strip()}")
+    return result.stdout
+
+
 def update_searches(dry_run: bool = False) -> None:
     """Check config/searches.toml, publish it as the JOBFLOW_SEARCHES GitHub variable that
     the daily import reads, then filter Inbox jobs from its excluded employers or matching
@@ -273,7 +292,7 @@ def update_searches(dry_run: bool = False) -> None:
     from .db import migrate
     from .ingest.searches import parse_config, search_warnings
     from .ingest.store import exclude_inbox_jobs
-    from .settings import ROOT, searches_file
+    from .settings import searches_file
 
     path = searches_file()
     if not path.exists():
@@ -288,17 +307,10 @@ def update_searches(dry_run: bool = False) -> None:
     if dry_run:
         print("Would update the JOBFLOW_SEARCHES GitHub variable (dry run: not updated)")
     else:
-        gh = shutil.which("gh")
-        if not gh:
-            raise RuntimeError("GitHub CLI (gh) not found. Install it and run `gh auth login`, "
-                               "or set the variable by hand: "
-                               "gh variable set JOBFLOW_SEARCHES < config/searches.toml")
-        # gh finds the repository from this checkout's Git remote.
-        result = subprocess.run([gh, "variable", "set", "JOBFLOW_SEARCHES"], input=text,
-                                text=True, capture_output=True, cwd=ROOT)
-        if result.returncode:
-            raise RuntimeError(f"Updating the JOBFLOW_SEARCHES GitHub variable failed: "
-                               f"{(result.stderr or result.stdout).strip()}. Nothing else was changed")
+        _gh(["variable", "set", "JOBFLOW_SEARCHES"], "Updating the JOBFLOW_SEARCHES GitHub "
+            "variable (nothing else was changed)", input=text,
+            hint=", or set the variable by hand: gh variable set JOBFLOW_SEARCHES < "
+            "config/searches.toml")
         print("Updated the JOBFLOW_SEARCHES GitHub variable: the daily import uses this file now")
     migrate()
     matched, checked = exclude_inbox_jobs(searches, dry_run=dry_run)
@@ -307,6 +319,77 @@ def update_searches(dry_run: bool = False) -> None:
               f"{job['reason']}")
     print(f"{'Would filter' if dry_run else 'Filtered'} {len(matched)} of {checked} Inbox jobs"
           f"{' (dry run: nothing changed)' if dry_run else ''}")
+
+
+# The daily import's workflow file, the secrets it needs, and what GitHub's workflow states
+# mean for it.
+WORKFLOW = "daily-ingest.yml"
+ACTIONS_SECRETS = ("DATABASE_URL", "APIFY_TOKEN")
+WORKFLOW_STATES = {"active": "on", "disabled_manually": "off",
+                   "disabled_inactivity": "off (GitHub turned it off after 60 days without "
+                                          "activity in the repository)"}
+
+
+def status() -> None:
+    """Show what the daily GitHub import uses, reading it from GitHub: whether it's on, its
+    last run, its secrets, its searches (and whether they match config/searches.toml), and
+    which job sites (Apify scrapers) it calls. Changes nothing."""
+    import json
+    from datetime import datetime
+
+    from .ingest.options import ACTORS, SITES
+    from .ingest.searches import SearchConfigError, parse_config
+    from .settings import searches_file
+
+    state = _gh(["api", f"repos/{{owner}}/{{repo}}/actions/workflows/{WORKFLOW}", "--jq", ".state"],
+                "Reading the daily import's workflow").strip()
+    runs = json.loads(_gh(["run", "list", "--workflow", WORKFLOW, "-L", "1", "--json",
+                           "status,conclusion,createdAt,event"], "Reading the daily import's runs"))
+    secrets = {s["name"]: s["updatedAt"][:10] for s in json.loads(_gh(
+        ["secret", "list", "--json", "name,updatedAt"], "Reading the repository's secret names"))}
+    variables = {v["name"]: v["value"] for v in json.loads(_gh(
+        ["variable", "list", "--json", "name,value"], "Reading the repository's Actions variables"))}
+    print(f"Daily import (.github/workflows/{WORKFLOW}): {WORKFLOW_STATES.get(state, state)}")
+    if runs:
+        run = runs[0]
+        started = datetime.fromisoformat(run["createdAt"]).astimezone()
+        print(f"  Last run: {started:%Y-%m-%d %H:%M %Z} ({run['event']}), "
+              f"{run['conclusion'] or run['status']}")
+    else:
+        print("  Last run: none yet")
+    print("Secrets:  " + ", ".join(f"{name} set {secrets[name]}" if name in secrets
+                                   else f"{name} MISSING (gh secret set {name})"
+                                   for name in ACTIONS_SECRETS))
+    text = variables.get("JOBFLOW_SEARCHES")
+    used: dict[str, list[str]] = {}
+    if not text:
+        print("Searches: JOBFLOW_SEARCHES not set: run `uv run jobflow update-searches`")
+    else:
+        try:
+            searches = parse_config(text)
+        except SearchConfigError as exc:
+            print(f"Searches: JOBFLOW_SEARCHES can't be used ({exc}): fix config/searches.toml and "
+                  "run `uv run jobflow update-searches`")
+            searches = []
+        for search in searches:
+            for site in search.sites:
+                used.setdefault(site, []).append(search.name)
+        if searches:
+            try:
+                local = searches_file()
+                # GitHub drops the file's final newline when it stores the variable.
+                same = local.exists() and local.read_text().strip() == text.strip()
+            except RuntimeError:  # no config/profile.toml
+                same = None
+            print(f"Searches: JOBFLOW_SEARCHES, {len(searches)} search"
+                  f"{'es' if len(searches) != 1 else ''}"
+                  + ("" if same is None else " (same as config/searches.toml)" if same
+                     else " (differs from config/searches.toml: run `uv run jobflow update-searches`)"))
+    print("Sites (the Apify scrapers the import calls):")
+    for site in SITES:
+        print(f"  {site:<9} {'used' if site in used else 'not used':<9} {ACTORS[site]:<38} "
+              f"{', '.join(used.get(site, [])) or 'no search lists it'}")
+    print("The LLM and Tavily keys stay on your machine: the daily import doesn't use them.")
 
 
 # The statuses whose jobs' output folders clean-up deletes, with how it names them. Only a
@@ -418,7 +501,7 @@ def manual(parser: argparse.ArgumentParser, command: str | None = None) -> str:
             "tailor-cv, cover-letter, and interview-prep work on two jobs at a time and skip "
             "jobs they've already done (a job that failed, whose draft failed the fact "
             "check, or whose draft, letter, or briefing was deleted is tried again). Only one run of each can go at a time. Every command "
-            "except init and help brings the database tables up to date when it starts.")),
+            "except init, help, and status brings the database tables up to date when it starts.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
                 "docs/structure.html"),
     ])
@@ -507,6 +590,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         migrate()
         for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)),
                  lambda folder: (folder / "interview-prep.html").exists())
+    elif args.command == "status":
+        status()
     elif args.command == "clean-up":
         from .db import migrate
         migrate()
