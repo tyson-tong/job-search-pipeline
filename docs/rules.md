@@ -42,7 +42,7 @@ The cover letter is written from your best-matching CV, in any format (`--cv` pi
 
 ## Skill gaps
 
-Each scored job contributes the requirements its best-matching CV didn't fully show. The LLM only groups them into skills (the same skill worded differently) and suggests how to close each gap; it can't change the counts. A skill's rank is the sum over its requirements of 1 for required or 0.5 for preferred, halved when the CV partly shows it. Ids the LLM makes up or repeats are ignored.
+Each scored job that is Interested now contributes the requirements its best-matching CV didn't fully show; jobs you've since applied for, rejected, or dropped don't count. The LLM only groups them into skills (the same skill worded differently) and suggests how to close each gap; it can't change the counts. A skill's rank is the sum over its requirements of 1 for required or 0.5 for preferred, halved when the CV partly shows it. Ids the LLM makes up or repeats are ignored.
 
 ## Failures
 

@@ -45,7 +45,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
    These commands work through every job at that status and skip jobs they've already done, so run them whenever jobs move along. A job that fails (a network error, say) is retried the next time you run the command.
 
-7. **See your skill gaps** now and then: `uv run jobflow skill-gaps` writes `output/skill-gaps-<date>.html`, ranking the skills your scored jobs ask for that your best-matching CVs don't show, with how to close each gap. It uses your stored scores and one LLM call. "Not shown" means the CV lacks evidence, so if you have the skill, the fix may be adding it to your CV.
+7. **See your skill gaps** now and then: `uv run jobflow skill-gaps` writes `output/skill-gaps-<date>.html`, ranking the skills your scored Interested jobs ask for that your best-matching CVs don't show, with how to close each gap. It uses your stored scores and one LLM call. "Not shown" means the CV lacks evidence, so if you have the skill, the fix may be adding it to your CV.
 
 ### In the tracker
 
@@ -73,7 +73,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | `jobflow tailor-cv [--cv VARIANT] [--max-pages N] [--format yaml\|latex\|docx\|pdf]` | A reviewed, fact-checked CV for each Interested job without one |
 | `jobflow cover-letter [--cv VARIANT]` | Optional: a reviewed, fact-checked cover letter for each Interested job without one |
 | `jobflow interview-prep` | An interview briefing for each Interviewing job without one |
-| `jobflow skill-gaps` | The skills your scored jobs ask for that your CVs don't show |
+| `jobflow skill-gaps` | The skills your scored Interested jobs ask for that your CVs don't show |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
 | `jobflow ingest [--search NAME] [--site SITE]` | Run the searches now (the daily import does this; uses Apify credits) |
 | `jobflow init` | Create your settings files (first time only) |

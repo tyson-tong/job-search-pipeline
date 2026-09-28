@@ -1,7 +1,7 @@
 """The skills your CVs don't show that scored jobs ask for most, with a plan to close them.
 
-Built from stored match scores, so it costs one LLM call and no rescoring. Each scored job
-contributes the requirements its best-matching CV didn't fully evidence. The LLM only
+Built from stored match scores, so it costs one LLM call and no rescoring. Each scored
+Interested job contributes the requirements its best-matching CV didn't fully evidence. The LLM only
 groups those requirements into skills and suggests how to close each gap; the counts and
 the ranking are computed here, from the stored requirements.
 """
@@ -25,14 +25,15 @@ MAX_GAPS_SENT = 600
 
 
 def collect_gaps() -> tuple[list[dict], int]:
-    """Requirements not fully evidenced by each scored job's best CV, among those cvs in
-    config/profile.toml names, newest job first, and the job count."""
+    """Requirements not fully evidenced by each scored Interested job's best CV, among those
+    cvs in config/profile.toml names, newest job first, and the job count."""
     weights, chosen = matching_weights(), chosen_sources()
     gaps: list[dict] = []
     with connect() as conn:
         jobs = conn.execute(
             """SELECT j.id, j.title, j.company FROM jobs j
-               WHERE EXISTS (SELECT 1 FROM match_assessments m WHERE m.job_id = j.id)
+               WHERE j.status = 'interested'
+                 AND EXISTS (SELECT 1 FROM match_assessments m WHERE m.job_id = j.id)
                ORDER BY j.id DESC""").fetchall()
         scored = 0
         for job_id, title, company in jobs:
@@ -129,7 +130,7 @@ table{{border-collapse:collapse;width:100%;background:white}}th,td{{padding:.6re
 th{{background:#eef1f4}}.meta{{color:#52606d;font-size:.9em}}details{{margin-top:.4rem}}li{{margin:.25rem 0}}
 </style></head><body>
 <h1>Skill gaps</h1>
-<p class=meta>Generated {generated} from {scored} scored job{'s' if scored != 1 else ''}, using each job's
+<p class=meta>Generated {generated} from {scored} scored Interested job{'s' if scored != 1 else ''}, using each job's
 best-matching CV of those cvs in config/profile.toml names. Ranked by how often a skill is asked for and not shown: a required
 requirement counts 1, a preferred one 0.5, halved when your CV partly shows it. "Not shown"
 means your CV doesn't evidence it, not that you lack it: if you have the skill, add evidence
@@ -143,8 +144,9 @@ of it to your CV.</p>{note}
 def report(output: Path | None = None) -> tuple[Path, list[dict]]:
     gaps, scored = collect_gaps()
     if not gaps:
-        raise RuntimeError("No skill gaps to report: score some Interested jobs in the tracker "
-                           "first (against the CVs cvs in config/profile.toml names)")
+        raise RuntimeError("No skill gaps to report: it reads scored Interested jobs, so score "
+                           "some in the tracker first (against the CVs cvs in "
+                           "config/profile.toml names)")
     groups, model = _group(gaps)
     skills, ungrouped = rank_skills(gaps[:MAX_GAPS_SENT], groups)
     tz = timezone()

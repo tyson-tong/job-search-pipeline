@@ -83,8 +83,8 @@ def main() -> None:
                         "first)")
     sub.add_parser("interview-prep", help="Generate an interview briefing HTML for every "
                    "Interviewing job that doesn't have one yet")
-    sub.add_parser("skill-gaps", help="Report the skills your CVs don't show that scored jobs "
-                   "ask for most, with how to close each gap")
+    sub.add_parser("skill-gaps", help="Report the skills your CVs don't show that scored "
+                   "Interested jobs ask for most, with how to close each gap")
     args = parser.parse_args()
     try:
         run(args, parser)
