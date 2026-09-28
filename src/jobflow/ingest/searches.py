@@ -390,8 +390,27 @@ def plan(searches: list[Search], only_search: str | None = None,
 
 
 def _words(text: str | None) -> str:
-    """Lower-case words separated by single spaces, ignoring punctuation."""
-    return re.sub(r"[^a-z0-9]+", " ", (text or "").casefold()).strip()
+    """Lower-case words separated by single spaces, ignoring punctuation other than + and #,
+    so "C++" and "C#" stay themselves rather than the word "c"."""
+    return re.sub(r"[^a-z0-9+#]+", " ", (text or "").casefold()).strip()
+
+
+def search_warnings(search: Search) -> list[str]:
+    """Settings that are allowed but probably not what you meant: a term listed twice, and
+    an excluded title term that never excludes anything because it contains a kept one."""
+    warnings = []
+    for key in ("exclude_title_terms", "include_title_terms", "exclude_companies"):
+        terms = [_words(t) for t in getattr(search, key)]
+        repeated = sorted({t for t in terms if terms.count(t) > 1})
+        if repeated:
+            warnings.append(f"{key} lists {', '.join(map(repr, repeated))} more than once")
+    for term in search.exclude_title_terms:
+        kept = next((k for k in search.include_title_terms
+                     if excluded_title_term(term, (k,))), None)
+        if kept:
+            warnings.append(f"exclude_title_terms {term!r} never applies: a title containing it "
+                            f"also contains {kept!r}, which include_title_terms keeps")
+    return warnings
 
 
 def excluded_title_term(title: str | None, terms: tuple[str, ...],

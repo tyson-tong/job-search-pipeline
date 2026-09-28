@@ -852,6 +852,8 @@ function renderSearchCard(search) {
   const item = (label, value) => [el("dt", {}, label), el("dd", {}, value)];
   return el("div", { className: "sv-card" },
     el("h2", {}, search.name),
+    search.warnings.length ? el("div", { className: "flags" },
+      search.warnings.map((w) => el("span", { className: "flag warn" }, w))) : null,
     el("dl", { className: "kv" },
       item("Terms", search.terms.map((t) => el("span", { className: "pill" }, t))),
       item("Locations", Object.entries(search.locations).map(([country, cities]) =>

@@ -267,7 +267,7 @@ def update_searches(dry_run: bool = False) -> None:
     its excluded title terms (imports only apply them to the jobs they bring in). An invalid file stops before
     anything is published, so a typo never reaches the daily import."""
     from .db import migrate
-    from .ingest.searches import parse_config
+    from .ingest.searches import parse_config, search_warnings
     from .ingest.store import exclude_inbox_jobs
     from .settings import ROOT, searches_file
 
@@ -277,6 +277,10 @@ def update_searches(dry_run: bool = False) -> None:
     text = path.read_text()
     searches = parse_config(text)
     print(f"{path}: valid ({len(searches)} search{'es' if len(searches) != 1 else ''})")
+    # [defaults] reach every search, so the same warning can come from each: show it once.
+    sys.stdout.flush()
+    for warning in dict.fromkeys(w for s in searches for w in search_warnings(s)):
+        print(f"warning: {warning}", file=sys.stderr)
     if dry_run:
         print("Would update the JOBFLOW_SEARCHES GitHub variable (dry run: not updated)")
     else:

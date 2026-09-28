@@ -310,6 +310,12 @@ def test_excluded_title_terms_keep_jobs_out_of_the_inbox():
     # Whole words only: a longer word containing a term is kept.
     assert reason("Postgraduate Researcher") is None
     assert reason("Quant Analyst") is None
+    # Symbols count: "C++" and "C#" once both matched any title with the word "C".
+    cpp = parse_config(CONFIG.replace("max_results = 40", 'max_results = 40\nexclude_title_terms = ["C++", "C#"]'))[0]
+    assert filter_reason(normalise({"title": "Senior C++ Developer", "companyName": "Acme"}), cpp,
+                         "linkedin") == "title contains 'C++'"
+    assert filter_reason(normalise({"title": "Series C Fintech Quant", "companyName": "Acme"}), cpp,
+                         "linkedin") is None
 
 
 def test_included_title_terms_override_excluded_ones():

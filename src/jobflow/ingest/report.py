@@ -7,7 +7,7 @@ from itertools import groupby
 
 from . import options as opt
 from .searches import (POSTED_WITHIN, WINDOW_NAMES, SearchConfigError, load_searches,
-                       local_filters, plan)
+                       local_filters, plan, search_warnings)
 
 
 def describe_searches() -> dict:
@@ -49,7 +49,8 @@ def describe_searches() -> dict:
             "seek_classifications": list(search.seek_classifications),
             "exclude_title_terms": list(search.exclude_title_terms),
             "include_title_terms": list(search.include_title_terms),
-            "exclude_companies": list(search.exclude_companies), "sites": sites})
+            "exclude_companies": list(search.exclude_companies),
+            "warnings": search_warnings(search), "sites": sites})
     return {"ok": True, "source": source, "path": path, "error": None, "searches": described,
             "total_runs": len(runs), "total_max_results": total_results}
 
