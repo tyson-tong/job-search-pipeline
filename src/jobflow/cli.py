@@ -114,25 +114,42 @@ class _JobOutput:
         return getattr(self.stream, name)
 
 
-def for_jobs(status: str, kind: str, what: str, run_one) -> None:
-    """Run run_one(job_id) for each job with `status` and no recorded `kind` run,
+def for_jobs(status: str, kind: str, what: str, run_one, fixed_by_hand=None) -> None:
+    """Run run_one(job_id) for each job with `status` and no finished `kind` run,
     JOBS_AT_ONCE at a time.
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
-    twice, and a failed job is retried next time. One failure doesn't stop the rest,
-    unless the LLM provider refuses every request (no credit left, a bad key).
+    twice, and a failed job is retried next time. A run whose draft failed the fact check
+    (NEEDS-FIX) is done again, for a fresh draft, unless fixed_by_hand(job_id) says you
+    fixed that draft yourself: then it's recorded as FIXED-BY-HAND and kept. One failure
+    doesn't stop the rest, unless the LLM provider refuses every request (no credit left,
+    a bad key).
     """
     from .db import connect
     from .llm import LLMError
 
     with connect() as conn:
         rows = conn.execute(
-            "SELECT j.id, j.company, j.title, EXISTS (SELECT 1 FROM workflow_runs r "
-            "WHERE r.job_id=j.id AND r.kind=%s) FROM jobs j WHERE j.status=%s "
-            "ORDER BY j.id", (kind, status)).fetchall()
-    todo = [row for row in rows if not row[3]]
+            "SELECT j.id, j.company, j.title, "
+            "EXISTS (SELECT 1 FROM workflow_runs r WHERE r.job_id=j.id AND r.kind=%s "
+            "AND r.status<>'NEEDS-FIX'), "
+            "EXISTS (SELECT 1 FROM workflow_runs r WHERE r.job_id=j.id AND r.kind=%s) "
+            "FROM jobs j WHERE j.status=%s ORDER BY j.id", (kind, kind, status)).fetchall()
+        todo = []
+        for job_id, company, title, done, needs_fix in rows:
+            if done:
+                continue
+            if needs_fix and fixed_by_hand and fixed_by_hand(job_id):
+                conn.execute("INSERT INTO workflow_runs(job_id,kind,status,finished_at) "
+                             "VALUES (%s,%s,'FIXED-BY-HAND',now())", (job_id, kind))
+                print(f"#{job_id} {title} ({company or 'unknown employer'}): you fixed its "
+                      "draft yourself, so it's kept and not drafted again")
+                continue
+            todo.append((job_id, company, title, needs_fix))
+    redo = sum(1 for row in todo if row[3])
     print(f"{len(rows)} {status.capitalize()} job{'s' if len(rows) != 1 else ''}: "
-          f"{len(rows) - len(todo)} already have {what}, {len(todo)} to do")
+          f"{len(rows) - len(todo)} already have {what}, {len(todo)} to do"
+          + (f" ({redo} drafted again: the last draft failed the fact check)" if redo else ""))
     out, err = _JobOutput(sys.stdout), _JobOutput(sys.stderr)
     stop, lock = threading.Event(), threading.Lock()
     tried, failed = [], []
@@ -248,8 +265,9 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         migrate()
         serve(args.port)
     elif args.command == "tailor-cv":
-        from .candidate.tailoring import tailor_cv
-        from .db import migrate
+        from .candidate.paths import job_directory
+        from .candidate.tailoring import cv_fixed_by_hand, tailor_cv
+        from .db import fetch_job, migrate
         args.cv = check_variant(args.cv, yaml_only=True)
         migrate()
 
@@ -260,12 +278,21 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
                 print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)
             for message in warnings:
                 print(f"warning: {message}", file=sys.stderr)
-            print(f"Read {target.parent / 'CV_REVIEW.md'}, then the CV itself, before you send it.")
+            if errors:
+                print(f"Read {target.parent / 'CV_REVIEW.md'}. Fix {target.name} yourself and it's "
+                      "kept; otherwise the next tailor-cv drafts this job again.")
+            else:
+                print(f"Read {target.parent / 'CV_REVIEW.md'}, then the CV itself, before you "
+                      "send it.")
 
-        for_jobs("interested", "tailor", "a tailored CV", tailor_one)
+        def fixed(job_id: int) -> bool:
+            return cv_fixed_by_hand(job_directory(job_id, fetch_job(job_id)))
+
+        for_jobs("interested", "tailor", "a tailored CV", tailor_one, fixed)
     elif args.command == "cover-letter":
-        from .candidate.cover_letter import write_letter
-        from .db import migrate
+        from .candidate.cover_letter import letter_fixed_by_hand, write_letter
+        from .candidate.paths import job_directory
+        from .db import fetch_job, migrate
         args.cv = check_variant(args.cv, yaml_only=False)
         migrate()
 
@@ -277,12 +304,17 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
             for message in warnings:
                 print(f"warning: {message}", file=sys.stderr)
             if errors:
-                print(f"No cover-letter.docx: fix the letter in {target} first.")
+                print(f"No cover-letter.docx: the letter is in {target}. Fix it and save it as "
+                      "cover-letter.docx there and it's kept; otherwise the next cover-letter "
+                      "drafts this job again.")
             else:
                 print(f"Read {target}, and the notes in {target.parent / 'COVER_LETTER_REVIEW.md'}, "
                       "before you send it with your application.")
 
-        for_jobs("interested", "cover-letter", "a cover letter", letter_one)
+        def fixed(job_id: int) -> bool:
+            return letter_fixed_by_hand(job_directory(job_id, fetch_job(job_id)))
+
+        for_jobs("interested", "cover-letter", "a cover letter", letter_one, fixed)
     elif args.command == "interview-prep":
         from .candidate.cvs import chosen_sources
         from .candidate.interview import prepare

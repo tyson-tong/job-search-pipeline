@@ -180,7 +180,7 @@ def test_jobs_run_two_at_a_time_print_whole_and_stop_on_a_bad_key(monkeypatch, c
             return self
 
         def fetchall(self):
-            return [(i, "Acme", f"Role {i}", False) for i in range(1, 7)]
+            return [(i, "Acme", f"Role {i}", False, False) for i in range(1, 7)]
 
         def __enter__(self):
             return self

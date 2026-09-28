@@ -113,6 +113,12 @@ def _review(job: dict, cv: str, letter: str, sources: list[dict]) -> tuple[dict,
     return parse_json(content), model
 
 
+def letter_fixed_by_hand(directory: Path) -> bool:
+    """Whether you saved a fixed letter as cover-letter.docx, which a run whose letter
+    failed the fact check never writes, so drafting again would ignore your fix."""
+    return (directory / "cover-letter.docx").exists()
+
+
 def write_letter(job_id: int, variant: str | None = None,
                  output_dir: Path | None = None) -> tuple[Path, list[str], list[str]]:
     researching = research_soon(job_id)
@@ -147,7 +153,10 @@ def write_letter(job_id: int, variant: str | None = None,
     if not errors:
         documents.write_letter_docx(letter, source_cv, job, target)
     read_it = ("The letter is at the end of this file, not written as cover-letter.docx: read "
-               "it line by line and fix the errors before you send it with your application."
+               "it line by line and fix the errors before you send it with your application. "
+               "Save your fixed letter as cover-letter.docx in this folder and cover-letter "
+               "keeps it; otherwise the next cover-letter drafts this job again, replacing "
+               "this file."
                if errors else "Read cover-letter.docx line by line before you send it with your "
                "application.")
     report = [f"# Cover letter review: {job['company'] or 'Unknown employer'} — {job['title']} (job id {job_id})", "",

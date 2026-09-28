@@ -4,9 +4,9 @@ from concurrent.futures import Future
 
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
 from jobflow.candidate import cover_letter
-from jobflow.candidate.cover_letter import check_letter
+from jobflow.candidate.cover_letter import check_letter, letter_fixed_by_hand
 from jobflow.candidate.skill_gaps import rank_skills
-from jobflow.candidate.tailoring import bullets, cut_order, fact_check, without
+from jobflow.candidate.tailoring import bullets, cut_order, cv_fixed_by_hand, fact_check, without
 
 CV_TEXT = """cv:
   name: Alex Example
@@ -130,6 +130,23 @@ def test_fact_check_flags_a_removed_role_at_an_employer_still_listed():
     draft["sections"]["experiences"].pop()
     errors, _ = fact_check(source, draft)
     assert "Role removed at Example Corp: Junior Analyst 2019-06." in errors
+
+
+
+def test_a_draft_fixed_by_hand_is_not_drafted_again(tmp_path):
+    # A job whose draft failed the fact check is drafted again, which would overwrite a
+    # draft you fixed yourself.
+    import os
+    draft, review = tmp_path / "CV_dev_draft.yaml", tmp_path / "CV_REVIEW.md"
+    draft.write_text("cv: {}")
+    review.write_text("review")
+    os.utime(draft, ns=(1, 1))  # written by the run, before its review
+    assert not cv_fixed_by_hand(tmp_path)
+    os.utime(draft, ns=(2 * review.stat().st_mtime_ns,) * 2)  # edited since
+    assert cv_fixed_by_hand(tmp_path)
+    assert not letter_fixed_by_hand(tmp_path)
+    (tmp_path / "cover-letter.docx").write_bytes(b"")
+    assert letter_fixed_by_hand(tmp_path)
 
 
 JOB = {"title": "Data Analyst", "company": "Acme",

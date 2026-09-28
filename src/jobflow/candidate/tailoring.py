@@ -373,6 +373,16 @@ def _fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
     return cv, cut, Path(kept) if kept else None
 
 
+def cv_fixed_by_hand(directory: Path) -> bool:
+    """Whether you edited a draft in this job's folder after the run that wrote it (the
+    draft is written before its CV_REVIEW.md), so drafting again would overwrite your fix."""
+    review = directory / "CV_REVIEW.md"
+    if not review.exists():
+        return False
+    written = review.stat().st_mtime_ns
+    return any(draft.stat().st_mtime_ns > written for draft in directory.glob("CV_*_draft.yaml"))
+
+
 def tailor_cv(job_id: int, variant: str | None = None,
               output_dir: Path | None = None,
               max_pages: int = DEFAULT_MAX_PAGES,
@@ -435,7 +445,9 @@ def tailor_cv(job_id: int, variant: str | None = None,
         rendered = ("Not rendered as a PDF" + ("" if fmt == "pdf" else f" or written as {fmt}")
                     + f": fix the fact-check errors in the YAML draft first, then run {render_it}.")
         read_it = (f"Read {target.name} line by line against your source CV and fix the errors "
-                   "before you render it and send the CV with an application.")
+                   "before you render it and send the CV with an application. Once you've "
+                   "edited it, tailor-cv keeps your version; if you leave it, the next tailor-cv "
+                   "drafts this job again, replacing this draft.")
     else:
         try:
             draft_cv, cut, pdf = _fit(job, source_doc, draft_cv, target.name, max_pages,
