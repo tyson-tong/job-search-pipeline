@@ -500,8 +500,10 @@ function renderStatusMenu() {
 }
 function statusSelect(job) {
   const value = current(job, "status");
-  // A filtered job can only go back to the Inbox; a new one can only be triaged.
-  const choices = job.status === "filtered" ? ["new"] : job.status === "new" ? TRIAGE_STATUSES : state.summary.editable;
+  // A filtered job can only go back to the Inbox; a new one can only be triaged; a triaged
+  // one doesn't go back to New.
+  const choices = job.status === "filtered" ? ["new"] : job.status === "new" ? TRIAGE_STATUSES
+    : state.summary.editable.filter((s) => s !== "new");
   const options = choices.map((s) => el("option", { value: s, selected: s === value }, label(s)));
   if (value === "filtered") options.unshift(el("option", { value: "filtered", selected: true, disabled: true }, "Filtered"));
   return el("select", { "aria-label": "Status", onchange: (event) => setPending(job, "status", event.target.value) }, options);
