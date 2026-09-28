@@ -9,7 +9,7 @@ import pytest
 from psycopg.conninfo import make_conninfo
 
 from jobflow.db import connect, migrate, migration_files, set_job_state
-from jobflow.ingest.store import archive_old_jobs, prune_sightings, save_run
+from jobflow.ingest.store import archive_old_jobs, prune_archived_jobs, prune_sightings, save_run
 from jobflow.web.queries import Conflict, list_jobs, parse_filters, save_changes
 
 AD = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate reporting in "
@@ -221,3 +221,18 @@ def test_old_sightings_lose_only_their_scraped_record(database):
     assert _one("SELECT raw_json->>'id' FROM jobs")[0] == LINKEDIN["id"]   # the job keeps its record
     # A later sighting still merges by the site's ID.
     assert save_run("linkedin:a", "r3", "d3", [LINKEDIN], country="AU") == 0
+
+
+def test_jobs_archived_over_90_days_ago_lose_their_ad_but_are_still_recognised(database):
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN, {**SEEK, "title": "Quant"}], country="AU")
+    with connect() as conn:
+        conn.execute("UPDATE jobs SET status='archived', status_updated_at = now() - interval '91 days' "
+                     "WHERE source_job_id=%s", (LINKEDIN["id"],))
+        conn.execute("UPDATE jobs SET status='archived', status_updated_at = now() - interval '89 days' "
+                     "WHERE source_job_id=%s", (SEEK["id"],))
+    assert prune_archived_jobs() == 1
+    assert sorted(_rows("SELECT source_job_id, description IS NULL, raw_json IS NULL FROM jobs")) == [
+        (LINKEDIN["id"], True, True), (SEEK["id"], False, False)]
+    # Seen again, the cleared job is still the same job, and stays archived.
+    assert save_run("linkedin:a", "r2", "d2", [LINKEDIN], country="AU") == 0
+    assert _one("SELECT status FROM jobs WHERE source_job_id=%s", LINKEDIN["id"])[0] == "archived"

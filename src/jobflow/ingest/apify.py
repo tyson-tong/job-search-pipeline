@@ -125,7 +125,7 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
         thread.start()
     for thread in threads:
         thread.join()
-    from .store import archive_old_jobs, prune_sightings
+    from .store import archive_old_jobs, prune_archived_jobs, prune_sightings
     archived = archive_old_jobs()
     if archived:
         print(f"Archived {archived} filtered or not interested job{'s' if archived != 1 else ''}")
@@ -133,5 +133,8 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
     if pruned:
         print(f"Dropped the scraped records of {pruned} sighting{'s' if pruned != 1 else ''} "
               "over 30 days old")
+    cleared = prune_archived_jobs()
+    if cleared:
+        print(f"Cleared the ads of {cleared} job{'s' if cleared != 1 else ''} archived over 90 days ago")
     if failed:
         raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed")

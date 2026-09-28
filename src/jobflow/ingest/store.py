@@ -41,6 +41,11 @@ IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
 ARCHIVE_AFTER = timedelta(days=14)
 # How long each sighting keeps its full scraped record (see prune_sightings).
 KEEP_SIGHTING_RECORDS = timedelta(days=30)
+# How long an archived job keeps its description and scraped record (see
+# prune_archived_jobs). By then it is past the 90 days in which a repost with a new ID is
+# matched by its ad (FUZZY_WINDOW_DAYS), as it was archived at least 2 weeks after it was
+# first seen.
+KEEP_ARCHIVED_RECORDS = timedelta(days=90)
 # Ads at least this alike under the same title are the same job even when the sites spell
 # the employer or place differently, e.g. "Shenwan Hongyuan (H.K.)" on LinkedIn and
 # "Shenwan Hongyuan Securities (H.K.)" in Admiralty on Seek. The title must match exactly:
@@ -560,6 +565,20 @@ def prune_sightings() -> int:
             """UPDATE job_observations SET observed_json = NULL
                WHERE observed_json IS NOT NULL AND observed_at < now() - %s""",
             (KEEP_SIGHTING_RECORDS,)).rowcount
+
+
+def prune_archived_jobs() -> int:
+    """Clear the description and scraped record of jobs archived more than
+    KEEP_ARCHIVED_RECORDS ago. The job itself stays: its sites' IDs, its fingerprint, and
+    its title, so a repost is still recognised. Returns how many jobs were cleared."""
+    from ..db import connect
+
+    with connect() as conn:
+        return conn.execute(
+            """UPDATE jobs SET description = NULL, raw_json = NULL
+               WHERE status = 'archived' AND status_updated_at < now() - %s
+                 AND (description IS NOT NULL OR raw_json IS NOT NULL)""",
+            (KEEP_ARCHIVED_RECORDS,)).rowcount
 
 
 def backfill_countries(conn) -> int:
