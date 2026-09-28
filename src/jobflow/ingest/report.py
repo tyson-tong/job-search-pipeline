@@ -10,6 +10,14 @@ from .searches import (POSTED_WITHIN, WINDOW_NAMES, SearchConfigError, load_sear
                        local_filters, plan, search_warnings)
 
 
+def _run_max_results(run_input: dict) -> int:
+    """The most results one run can return, from the input the actor is actually sent
+    (Seek caps maxResults below what a search may ask for)."""
+    if "urls" in run_input:   # LinkedIn: a cap per search URL
+        return run_input["limitPerSource"] * len(run_input["urls"])
+    return run_input.get("maxResults") or run_input["count"]
+
+
 def describe_searches() -> dict:
     """Your searches and every planned Apify run, or why the config can't be used.
     Nothing is run and nothing is charged."""
@@ -32,7 +40,7 @@ def describe_searches() -> dict:
         sites = []
         for site, site_runs in groupby(search_runs, key=lambda r: r.site):
             site_runs = list(site_runs)
-            per_run = search.max_results * (len(site_runs[0].run_input.get("urls", [])) or 1)
+            per_run = _run_max_results(site_runs[0].run_input)
             total_results += per_run * len(site_runs)
             sites.append({"site": site, "actor": site_runs[0].actor, "max_results_per_run": per_run,
                           "local_filters": local_filters(site, search),
