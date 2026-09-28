@@ -244,7 +244,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
     <li>Uses each job's best-matching CV unless <code>--cv</code> is given (an unscored job is scored first).</li>
     <li>A hiring-manager reviewer revises the draft; the revision is kept only if it passes the fact check.</li>
     <li>Only the <code>cv</code> section goes to the LLM; design and settings are kept.</li>
-    <li>Errors (render skipped): a changed, added, or removed header field (the headline is checked like section text), new or altered employers, positions, dates, education; a removed employer, role, or education entry; new numbers.</li>
+    <li>Errors (render skipped): a changed, added, or removed header field (the headline is checked like section text), new or altered employers, positions, dates, education; an entry whose employer, position, dates, and education details don't match one original entry together (a date or title moved between entries); a removed employer, role, or education entry; new numbers. A draft with errors leaves no older PDF, .docx, or .tex beside it.</li>
     <li>Always the YAML draft and RenderCV's PDF of it (no PDF if the fact check found errors); <code>--format docx</code> or <code>latex</code> adds a .docx or a .tex.</li>
     <li>A PDF over 1 page (or <code>--max-pages N</code>): the least relevant bullets are cut, re-rendering each time, until it fits (never an entry's last bullet).</li>
     <li>Warnings: new tool or skill names, and a page left mostly empty by an entry moved whole to the next page. Written to <code>CV_REVIEW.md</code>.</li>

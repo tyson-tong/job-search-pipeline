@@ -133,6 +133,21 @@ def test_fact_check_flags_a_removed_role_at_an_employer_still_listed():
 
 
 
+def test_fact_check_flags_a_date_or_title_moved_between_entries():
+    # Each value exists somewhere in the source, so a field-by-field check passed both.
+    source = copy.deepcopy(SOURCE_CV)
+    source["sections"]["experiences"].append(
+        {"company": "Other Co", "position": "Senior Manager", "start_date": "2019-01",
+         "end_date": "2021-01", "highlights": ["Led a team"]})
+    longer = copy.deepcopy(source)
+    longer["sections"]["experiences"][1]["end_date"] = "present"   # tenure extended
+    assert any("doesn't match any one entry" in e for e in fact_check(source, longer)[0])
+    promoted = copy.deepcopy(source)
+    promoted["sections"]["experiences"].append(
+        {"company": "Example Corp", "position": "Senior Manager", "start_date": "2021-02"})
+    assert any("doesn't match any one entry" in e for e in fact_check(source, promoted)[0])
+
+
 def test_a_draft_fixed_by_hand_is_not_drafted_again(tmp_path):
     # A job whose draft failed the fact check is drafted again, which would overwrite a
     # draft you fixed yourself.

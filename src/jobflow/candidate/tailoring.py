@@ -85,6 +85,12 @@ def _role(entry: dict) -> tuple[str, str, str]:
     return tuple(normalise_text(entry.get(f)) for f in ("company", "position", "start_date"))
 
 
+def _facts(entry: dict) -> tuple[str | None, ...]:
+    """An entry's employer, position, dates, and education details together: a draft entry
+    must match one source entry on all of them, so no date or title moves between entries."""
+    return tuple(None if entry.get(f) is None else normalise_text(entry[f]) for f in FACT_FIELDS)
+
+
 def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
     """Compare a tailored draft with its source CV.
 
@@ -99,10 +105,20 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
             errors.append(f"Header field '{field}' was changed or removed.")
     source_facts = {(f, normalise_text(e[f])) for e in _entries(source_cv) for f in FACT_FIELDS
                     if e.get(f) is not None}
+    source_entries = {_facts(e) for e in _entries(source_cv)}
     for entry in _entries(draft_cv):
+        altered = False
         for field in FACT_FIELDS:
             if entry.get(field) is not None and (field, normalise_text(entry[field])) not in source_facts:
                 errors.append(f"New or altered {field}: {entry[field]!r} is not in the source CV.")
+                altered = True
+        # Each value may exist somewhere in the source, yet not together: an end date
+        # taken from a later job, or one employer's title given to another.
+        facts = _facts(entry)
+        if not altered and any(facts) and facts not in source_entries:
+            shown = ", ".join(f"{f} {entry[f]!r}" for f in FACT_FIELDS if entry.get(f) is not None)
+            errors.append(f"Entry doesn't match any one entry in the source CV ({shown}): a date, "
+                          "title, or detail was moved, added, or dropped.")
     draft_entries = [(normalise_text(e.get("institution")), normalise_text(e.get("area")), normalise_text(e.get("degree")))
                      for e in _entries(draft_cv)]
     draft_companies = {normalise_text(e.get("company")) for e in _entries(draft_cv)}

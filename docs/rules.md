@@ -25,6 +25,7 @@ The LLM lists the job's requirements, marks each required or preferred, and labe
 Only the CV's `cv` section goes to the LLM; design, locale, and settings are copied from your file. The draft is then compared with your original CV. These count as errors, and the CV is not rendered as a PDF or written as `--format`:
 - a changed, added, or removed header field (name, contact details, and so on; the headline may be reworded, but is checked for numbers and terms like the rest)
 - new or altered employers, positions, dates, or education
+- an entry whose employer, position, dates, and education details don't match one entry of the original together, such as an end date taken from a later job or one employer's title given to another
 - a removed employer, role (each position and start date at an employer), or education entry
 - numbers that aren't in the original
 
