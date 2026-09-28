@@ -5,12 +5,6 @@ import shutil
 import subprocess
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor
-
-# Jobs for_jobs works on at once. More would be faster, but each job makes several LLM
-# calls sending whole CVs and ads, and providers cap tokens per minute (rate-limited
-# calls are retried; see llm.complete).
-JOBS_AT_ONCE = 2
 
 
 def positive_int(text: str) -> int:
@@ -50,39 +44,43 @@ def check_keys(reviewer: bool = False, web_search: bool = False) -> None:
                            "Tavily company research")
 
 
-def main() -> None:
-    import psycopg
-    import requests
+DESCRIPTION = ("First time: init. Everyday: web (job tracker, including your searches), "
+               "tailor-cv, cover-letter (optional), interview-prep, and skill-gaps. After "
+               "editing config/searches.toml: update-searches. The daily GitHub Action runs "
+               "ingest; status shows what it uses.")
 
-    from .settings import load_env
-    load_env()
+
+def build_parser() -> argparse.ArgumentParser:
+    """The jobflow command line: each command's parser runs its function (args.func)."""
     from .ingest.options import SITES
 
-    parser = argparse.ArgumentParser(
-        prog="jobflow",
-        description="First time: init. Everyday: web (job tracker, including your searches), "
-        "tailor-cv, cover-letter (optional), interview-prep, and skill-gaps. After editing "
-        "config/searches.toml: update-searches. The daily GitHub Action runs ingest; status "
-        "shows what it uses.")
+    parser = argparse.ArgumentParser(prog="jobflow", description=DESCRIPTION)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("init", help="Create config/.env, config/profile.toml, and config/searches.toml from the "
-                   "templates (never overwrites existing files)")
-    ingest = sub.add_parser("ingest", help="Run the searches in config/searches.toml on Apify now and "
-                            "import the results (the daily Action runs this; costs Apify credits)")
+
+    def command(name: str, func, help: str) -> argparse.ArgumentParser:
+        # The description too, so each command's -h (and help) opens with what it does.
+        parser = sub.add_parser(name, help=help, description=help)
+        parser.set_defaults(func=func)
+        return parser
+
+    command("init", run_init, "Create config/.env, config/profile.toml, and config/searches.toml "
+            "from the templates (never overwrites existing files)")
+    ingest = command("ingest", run_ingest, "Run the searches in config/searches.toml on Apify now "
+                     "and import the results (the daily Action runs this; costs Apify credits)")
     ingest.add_argument("--search", help="Only this search name")
     ingest.add_argument("--site", choices=SITES, help="Only this job site")
-    update = sub.add_parser("update-searches", help="After editing config/searches.toml: check "
-                            "it, update the GitHub copy the daily import reads (with your timezone), and filter Inbox "
-                            "jobs from its exclude_companies or matching its "
-                            "exclude_title_terms (and none of its include_title_terms)")
+    update = command("update-searches", run_update_searches, "After editing config/searches.toml: "
+                     "check it, update the GitHub copy the daily import reads (with your "
+                     "timezone), and filter Inbox jobs from its exclude_companies or matching "
+                     "its exclude_title_terms (and none of its include_title_terms)")
     update.add_argument("--dry-run", action="store_true",
                         help="Check the file and list the jobs that would be filtered; publish and "
                         "filter nothing (the database tables are still brought up to date)")
-    web = sub.add_parser("web", help="Run the local job tracker web server")
+    web = command("web", run_web, "Run the local job tracker web server")
     web.add_argument("--port", type=int, default=8765,
                      help="Port to serve the tracker on (default: 8765)")
-    tailor = sub.add_parser("tailor-cv", help="Draft a tailored CV, reviewed and fact-checked, "
-                            "for every Interested job that doesn't have one yet")
+    tailor = command("tailor-cv", run_tailor_cv, "Draft a tailored CV, reviewed and "
+                     "fact-checked, for every Interested job that doesn't have one yet")
     tailor.add_argument("--cv", help="RenderCV YAML CV to use for every job, one of those cvs "
                         "in config/profile.toml names, by file name or short name (CV_dev.yaml "
                         "or dev); defaults to each job's best-matching YAML CV (an unscored "
@@ -94,33 +92,45 @@ def main() -> None:
                         help="The YAML draft and its PDF, rendered by RenderCV, are always "
                         "written; docx also writes a .docx, and latex a .tex to compile. "
                         "Default: pdf")
-    letter = sub.add_parser("cover-letter", help="Optional: draft a cover letter, reviewed and "
-                            "fact-checked, for every Interested job that doesn't have one yet")
+    letter = command("cover-letter", run_cover_letter, "Optional: draft a cover letter, "
+                     "reviewed and fact-checked, for every Interested job that doesn't have "
+                     "one yet")
     letter.add_argument("--cv", help="CV to write from, in any format, for every job, one of "
                         "those cvs in config/profile.toml names, by file name or short name; "
                         "defaults to each job's best-matching CV (an unscored job is scored "
                         "first)")
-    sub.add_parser("interview-prep", help="Generate an interview briefing HTML for every "
-                   "Interviewing job that doesn't have one yet")
-    sub.add_parser("skill-gaps", help="Report the skills your CVs don't show that scored "
-                   "Interested jobs ask for most, with how to close each gap")
-    sub.add_parser("clean-up", help="Delete the output folders of Not interested, Withdrawn, "
-                   "Declined, Rejected, and Archived jobs, after asking you to confirm (the "
-                   "jobs stay in the database)")
-    sub.add_parser("status", help="Show the daily GitHub import, read from GitHub: whether it's "
-                   "on, its last run, its secrets, whether its searches and timezone match "
-                   "yours, and which job sites it calls")
-    manual = sub.add_parser("help", help="Show every command, what it does, and its options "
-                            "(or just one command's)")
-    manual.add_argument("topic", nargs="?", metavar="COMMAND",
-                        choices=[name for name in sub.choices if name != "help"],
-                        help="Only this command")
-    # Each command's -h (and help) opens with what it does, not just its options.
-    for action in sub._choices_actions:
-        sub.choices[action.dest].description = action.help
-    args = parser.parse_args()
+    command("interview-prep", run_interview_prep, "Generate an interview briefing HTML for every "
+            "Interviewing job that doesn't have one yet")
+    command("skill-gaps", run_skill_gaps, "Report the skills your CVs don't show that scored "
+            "Interested jobs ask for most, with how to close each gap")
+    command("clean-up", run_clean_up, "Delete the output folders of Not interested, Withdrawn, "
+            "Declined, Rejected, and Archived jobs, after asking you to confirm (the jobs stay "
+            "in the database)")
+    command("status", lambda args: status(), "Show the daily GitHub import, read from GitHub: "
+            "whether it's on, its last run, its secrets, whether its searches and timezone match "
+            "yours, and which job sites it calls")
+    commands = dict(sub.choices)   # every command but help itself
+
+    def show_manual(args: argparse.Namespace) -> None:
+        import pydoc
+        pydoc.pager(manual(commands, args.topic))   # paged like man in a terminal
+
+    manual_parser = command("help", show_manual, "Show every command, what it does, and its "
+                            "options (or just one command's)")
+    manual_parser.add_argument("topic", nargs="?", metavar="COMMAND", choices=list(commands),
+                               help="Only this command")
+    return parser
+
+
+def main() -> None:
+    import psycopg
+    import requests
+
+    from .settings import load_env
+    load_env()
+    args = build_parser().parse_args()
     try:
-        run(args, parser)
+        args.func(args)
     except RuntimeError as exc:
         # Expected problems (missing settings, unknown job, bad CV) without a traceback.
         raise SystemExit(f"error: {exc}") from None
@@ -173,23 +183,20 @@ def for_jobs(status: str, kind: str, what: str, run_one, output_exists,
         _run_jobs(status, kind, what, run_one, output_exists, fixed_by_hand, done_one)
 
 
-def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
-              fixed_by_hand=None, done_one=None) -> None:
-    """Run run_one(job_id) for each job with `status` not yet done, JOBS_AT_ONCE at a time.
+def _plan_jobs(status: str, kind: str, output_exists, fixed_by_hand=None):
+    """The jobs with `status` still to do, and those done: (all jobs, to do, done as
+    (name, folder) pairs, how many are redrafted, how many are done again).
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
     twice, and a failed job is retried next time. A job counts as done only while
-    output_exists(its folder) too, which checks the command's own marker file (a CV_*_draft.yaml,
-    cover-letter.docx, or interview-prep.html): one whose marker was deleted (by clean-up,
-    say) is done again. Deleting only a tailored CV's PDF doesn't count. A run whose draft failed the fact check (NEEDS-FIX) is done again, for a
-    fresh draft, unless fixed_by_hand(its folder) says you fixed that draft yourself:
-    then it's recorded as FIXED-BY-HAND and kept. done_one(folder), if given, runs for
-    each job already done and returns a line to print, or None. One failure doesn't stop
-    the rest, unless the LLM provider refuses every request (no credit left, a bad key).
-    """
+    output_exists(its folder) too, which checks the command's own marker file (a
+    CV_*_draft.yaml, cover-letter.docx, or interview-prep.html): one whose marker was
+    deleted (by clean-up, say) is done again. Deleting only a tailored CV's PDF doesn't
+    count. A job whose latest draft failed the fact check (NEEDS-FIX) is done again, for a
+    fresh draft, unless fixed_by_hand(its folder) says you fixed that draft yourself: then
+    it's recorded as FIXED-BY-HAND and kept."""
     from .candidate.paths import job_directory
     from .db import connect
-    from .llm import LLMError
 
     with connect() as conn:
         # Done or not by the job's latest run: a draft that failed the fact check after an
@@ -221,6 +228,19 @@ def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
             elif tried:
                 redo += 1
             todo.append((job_id, company, title))
+    return rows, todo, done_jobs, redo, lost
+
+
+def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
+              fixed_by_hand=None, done_one=None) -> None:
+    """Run run_one(job_id) for each job with `status` not yet done (see _plan_jobs),
+    batch.JOBS_AT_ONCE at a time, printing each job's output in one piece when it
+    finishes. done_one(folder), if given, runs for each job already done and returns a
+    line to print, or None. One failure doesn't stop the rest, unless the LLM provider
+    refuses every request (no credit left, a bad key)."""
+    from .batch import run_each
+
+    rows, todo, done_jobs, redo, lost = _plan_jobs(status, kind, output_exists, fixed_by_hand)
     again = [f"{redo} drafted again: the last draft failed the fact check"] if redo else []
     again += [f"{lost} done again: their output was deleted"] if lost else []
     print(f"{len(rows)} {status.capitalize()} job{'s' if len(rows) != 1 else ''}: "
@@ -235,27 +255,20 @@ def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
             if line:
                 print(f"{name}: {line}")
     out, err = _JobOutput(sys.stdout), _JobOutput(sys.stderr)
-    stop, lock = threading.Event(), threading.Lock()
-    tried, failed = [], []
+    lock = threading.Lock()
 
     def one(row) -> None:
         job_id, company, title = row
-        if stop.is_set():
-            return
         out.held.lines = err.held.lines = lines = []
         print(f"\n#{job_id} {title} ({company or 'unknown employer'})")
         try:
             run_one(job_id)
         except Exception as exc:
             print(f"error: {exc}", file=sys.stderr)
-            with lock:
-                failed.append(job_id)
-            if isinstance(exc, LLMError) and exc.fatal:
-                stop.set()
+            raise
         finally:
             out.held.lines = err.held.lines = None
             with lock:
-                tried.append(job_id)
                 for stream, text in lines:  # flushed, so stdout and stderr stay in order
                     stream.write(text)
                     stream.flush()
@@ -263,14 +276,12 @@ def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
     sys.stdout.flush()
     sys.stdout, sys.stderr = out, err
     try:
-        with ThreadPoolExecutor(max_workers=JOBS_AT_ONCE) as pool:
-            list(pool.map(one, todo))
+        failed, skipped = run_each(todo, one)
     finally:
         sys.stdout, sys.stderr = out.stream, err.stream
-    if stop.is_set():
-        raise SystemExit(f"Stopped: the LLM provider will refuse the other "
-                         f"{len(todo) - len(tried)} job(s) too. Fix that, then run the "
-                         "command again")
+    if skipped:
+        raise SystemExit(f"Stopped: the LLM provider will refuse the other {len(skipped)} "
+                         "job(s) too. Fix that, then run the command again")
     if failed:
         raise SystemExit(f"{len(failed)} of {len(todo)} failed; run the command again to retry them")
 
@@ -485,15 +496,14 @@ Next:
   4. uv run jobflow web, then the Searches tab to check your searches""")
 
 
-def manual(parser: argparse.ArgumentParser, command: str | None = None) -> str:
+def manual(commands: dict[str, argparse.ArgumentParser], command: str | None = None) -> str:
     """Every command's usage, description, and options, laid out like a manual page; or
-    just command's. Made from the parser, so it always matches what the commands accept."""
+    just command's. Made from their parsers, so it always matches what they accept."""
     import re
     import textwrap
 
-    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
     if command:
-        return sub.choices[command].format_help()
+        return commands[command].format_help()
 
     def section(title: str, text: str) -> str:
         return f"{title}\n{textwrap.indent(text.strip(), '    ')}\n"
@@ -502,7 +512,7 @@ def manual(parser: argparse.ArgumentParser, command: str | None = None) -> str:
         return textwrap.fill(text, 76)
 
     def entry(name: str) -> str:
-        command = sub.choices[name]
+        command = commands[name]
         command.formatter_class = lambda prog: argparse.HelpFormatter(prog, width=72)
         usage, _, rest = command.format_help().strip().partition("\n\n")
         # Without "usage: " and -h, which every command has.
@@ -511,121 +521,133 @@ def manual(parser: argparse.ArgumentParser, command: str | None = None) -> str:
         rest = re.sub(r"\n\noptions:$", "", rest)   # a command with no options of its own
         return f"{name}\n{textwrap.indent(usage + chr(10) * 2 + rest, '    ')}"
 
-    commands = "\n\n".join(entry(name) for name in sub.choices if name != "help")
+    entries = "\n\n".join(entry(name) for name in commands)
     return "\n".join([
         section("NAME", para("jobflow - collect job ads, then triage, score, tailor CVs and "
                              "cover letters, and prepare for interviews")),
         section("SYNOPSIS", "uv run jobflow COMMAND [OPTIONS]\nuv run jobflow help [COMMAND]"),
-        section("DESCRIPTION", para(parser.description)),
-        section("COMMANDS", commands),
+        section("DESCRIPTION", para(DESCRIPTION)),
+        section("COMMANDS", entries),
         section("NOTES", para(
             "tailor-cv, cover-letter, and interview-prep work on two jobs at a time and skip "
             "jobs they've already done (a job that failed, whose draft failed the fact "
-            "check, or whose draft, letter, or briefing was deleted is tried again). Only one run of each can go at a time. Every command "
-            "except init, help, and status brings the database tables up to date when it starts.")),
+            "check, or whose draft, letter, or briefing was deleted is tried again). Only "
+            "one run of each can go at a time. Every command except init, help, and status "
+            "brings the database tables up to date when it starts.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
                 "docs/structure.html"),
     ])
 
 
-def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    if args.command == "help":
-        import pydoc
-        pydoc.pager(manual(parser, args.topic))   # paged like man in a terminal
-    elif args.command == "init":
-        init()
-    elif args.command == "ingest":
-        from .db import migrate
-        from .ingest.apify import ingest_searches
-        migrate()
-        ingest_searches(args.search, args.site)
-    elif args.command == "update-searches":
-        update_searches(dry_run=args.dry_run)
-    elif args.command == "web":
-        from .db import migrate
-        from .ingest.store import archive_old_jobs, prune_archived_jobs, prune_sightings
-        from .web.server import serve
-        migrate()
-        # The daily import does these too; this covers days it didn't run.
-        archive_old_jobs()
-        prune_sightings()
-        prune_archived_jobs()
-        serve(args.port)
-    elif args.command == "tailor-cv":
-        from .candidate.tailoring import add_format, cv_fixed_by_hand, tailor_cv
-        from .db import migrate
-        args.cv = check_variant(args.cv, yaml_only=True)
-        check_keys(reviewer=True)
-        migrate()
+def run_init(args: argparse.Namespace) -> None:
+    init()
 
-        def tailor_one(job_id: int) -> None:
-            target, errors, warnings = tailor_cv(job_id, args.cv, max_pages=args.max_pages, fmt=args.format)
-            print(target)
-            for message in errors:
-                print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)
-            for message in warnings:
-                print(f"warning: {message}", file=sys.stderr)
-            if errors:
-                print(f"Read {target.parent / 'CV_REVIEW.md'}. Fix {target.name} yourself and it's "
-                      "kept; otherwise the next tailor-cv drafts this job again.")
-            else:
-                print(f"Read {target.parent / 'CV_REVIEW.md'}, then the CV itself, before you "
-                      "send it.")
 
-        def add_requested_format(folder) -> str | None:
-            # A job tailored before gets --format's file from its checked draft, no LLM call.
-            written = add_format(folder, args.format)
-            return f"wrote {written}" if written else None
+def run_ingest(args: argparse.Namespace) -> None:
+    from .db import migrate
+    from .ingest.apify import ingest_searches
+    migrate()
+    ingest_searches(args.search, args.site)
 
-        for_jobs("interested", "tailor", "a tailored CV", tailor_one,
-                 lambda folder: any(folder.glob("CV_*_draft.yaml")), cv_fixed_by_hand,
-                 add_requested_format if args.format != "pdf" else None)
-    elif args.command == "cover-letter":
-        from .candidate.cover_letter import letter_fixed_by_hand, write_letter
-        from .db import migrate
-        args.cv = check_variant(args.cv, yaml_only=False)
-        check_keys(reviewer=True)
-        migrate()
 
-        def letter_one(job_id: int) -> None:
-            target, errors, warnings = write_letter(job_id, args.cv)
-            print(target)
-            for message in errors:
-                print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)
-            for message in warnings:
-                print(f"warning: {message}", file=sys.stderr)
-            if errors:
-                print(f"No cover-letter.docx: the letter is in {target}. Fix it and save it as "
-                      "cover-letter.docx there and it's kept; otherwise the next cover-letter "
-                      "drafts this job again.")
-            else:
-                print(f"Read {target}, and the notes in {target.parent / 'COVER_LETTER_REVIEW.md'}, "
-                      "before you send it with your application.")
+def run_update_searches(args: argparse.Namespace) -> None:
+    update_searches(dry_run=args.dry_run)
 
-        for_jobs("interested", "cover-letter", "a cover letter", letter_one,
-                 lambda folder: (folder / "cover-letter.docx").exists(), letter_fixed_by_hand)
-    elif args.command == "interview-prep":
-        from .candidate.cvs import chosen_sources
-        from .candidate.interview import prepare
-        from .db import migrate
-        chosen_sources()  # a problem with cvs in config/profile.toml stops it now
-        check_keys(web_search=True)
-        migrate()
-        for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)),
-                 lambda folder: (folder / "interview-prep.html").exists())
-    elif args.command == "status":
-        status()
-    elif args.command == "clean-up":
-        from .db import migrate
-        migrate()
-        clean_up()
-    elif args.command == "skill-gaps":
-        from .candidate.skill_gaps import report
-        from .db import migrate
-        check_keys()
-        migrate()
-        target, skills = report()
-        for rank, skill in enumerate(skills[:10], 1):
-            print(f"{rank:>2}. {skill['skill']}: {skill['jobs']} job{'s' if skill['jobs'] != 1 else ''}"
-                  f", weight {skill['weight']}")
-        print(target)
+
+def run_web(args: argparse.Namespace) -> None:
+    from .db import migrate
+    from .ingest.store import archive_old_jobs, prune_archived_jobs, prune_sightings
+    from .web.server import serve
+    migrate()
+    # The daily import does these too; this covers days it didn't run.
+    archive_old_jobs()
+    prune_sightings()
+    prune_archived_jobs()
+    serve(args.port)
+
+
+def _print_draft_result(target, errors: list[str], warnings: list[str], if_errors: str,
+                        if_checked: str) -> None:
+    """What tailor-cv or cover-letter wrote for one job, and what to do next."""
+    print(target)
+    for message in errors:
+        print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)
+    for message in warnings:
+        print(f"warning: {message}", file=sys.stderr)
+    print(if_errors if errors else if_checked)
+
+
+def run_tailor_cv(args: argparse.Namespace) -> None:
+    from .candidate.tailoring import add_format, cv_fixed_by_hand, tailor_cv
+    from .db import migrate
+    variant = check_variant(args.cv, yaml_only=True)
+    check_keys(reviewer=True)
+    migrate()
+
+    def tailor_one(job_id: int) -> None:
+        target, errors, warnings = tailor_cv(job_id, variant, max_pages=args.max_pages,
+                                             fmt=args.format)
+        review = target.parent / "CV_REVIEW.md"
+        _print_draft_result(target, errors, warnings,
+                            f"Read {review}. Fix {target.name} yourself and it's kept; otherwise "
+                            "the next tailor-cv drafts this job again.",
+                            f"Read {review}, then the CV itself, before you send it.")
+
+    def add_requested_format(folder) -> str | None:
+        # A job tailored before gets --format's file from its checked draft, no LLM call.
+        written = add_format(folder, args.format)
+        return f"wrote {written}" if written else None
+
+    for_jobs("interested", "tailor", "a tailored CV", tailor_one,
+             lambda folder: any(folder.glob("CV_*_draft.yaml")), cv_fixed_by_hand,
+             add_requested_format if args.format != "pdf" else None)
+
+
+def run_cover_letter(args: argparse.Namespace) -> None:
+    from .candidate.cover_letter import letter_fixed_by_hand, write_letter
+    from .db import migrate
+    variant = check_variant(args.cv, yaml_only=False)
+    check_keys(reviewer=True)
+    migrate()
+
+    def letter_one(job_id: int) -> None:
+        target, errors, warnings = write_letter(job_id, variant)
+        _print_draft_result(target, errors, warnings,
+                            f"No cover-letter.docx: the letter is in {target}. Fix it and save it "
+                            "as cover-letter.docx there and it's kept; otherwise the next "
+                            "cover-letter drafts this job again.",
+                            f"Read {target}, and the notes in "
+                            f"{target.parent / 'COVER_LETTER_REVIEW.md'}, before you send it "
+                            "with your application.")
+
+    for_jobs("interested", "cover-letter", "a cover letter", letter_one,
+             lambda folder: (folder / "cover-letter.docx").exists(), letter_fixed_by_hand)
+
+
+def run_interview_prep(args: argparse.Namespace) -> None:
+    from .candidate.cvs import chosen_sources
+    from .candidate.interview import prepare
+    from .db import migrate
+    chosen_sources()  # a problem with cvs in config/profile.toml stops it now
+    check_keys(web_search=True)
+    migrate()
+    for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)),
+             lambda folder: (folder / "interview-prep.html").exists())
+
+
+def run_clean_up(args: argparse.Namespace) -> None:
+    from .db import migrate
+    migrate()
+    clean_up()
+
+
+def run_skill_gaps(args: argparse.Namespace) -> None:
+    from .candidate.skill_gaps import report
+    from .db import migrate
+    check_keys()
+    migrate()
+    target, skills = report()
+    for rank, skill in enumerate(skills[:10], 1):
+        print(f"{rank:>2}. {skill['skill']}: {skill['jobs']} job{'s' if skill['jobs'] != 1 else ''}"
+              f", weight {skill['weight']}")
+    print(target)
