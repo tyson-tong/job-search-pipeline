@@ -378,7 +378,7 @@ def _csv_cell(value: object) -> str:
 
 def export_csv(filters: dict, ids: set[int] | None = None) -> str:
     """The jobs the filters find as CSV, or only those of them in ids (a page's rows)."""
-    jobs = list_jobs({**filters, "limit": 5000})
+    jobs = list_jobs({**filters, "limit": None})   # LIMIT NULL: every job, however many
     if ids is not None:
         jobs = [job for job in jobs if job["id"] in ids]
     with connect() as conn:
