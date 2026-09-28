@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import sys
 import threading
@@ -76,11 +77,25 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
         raise
 
 
+def wait_minutes() -> float:
+    """APIFY_MAX_WAIT_MINUTES, default 60: checked before any run, so a typo can't crash
+    the import part-way or wait a negative time."""
+    text = os.environ.get("APIFY_MAX_WAIT_MINUTES") or "60"
+    try:
+        minutes = float(text)
+    except ValueError:
+        minutes = math.nan
+    if not math.isfinite(minutes) or minutes <= 0:
+        raise RuntimeError(f"APIFY_MAX_WAIT_MINUTES must be a number of minutes above 0, "
+                           f"not {text!r}")
+    return minutes
+
+
 def ingest_searches(only_search: str | None = None, only_site: str | None = None) -> None:
     runs = plan(load_searches(), only_search, only_site)
     if not runs:
         raise RuntimeError("No runs to do: check the search's sites and countries")
-    max_wait = timedelta(minutes=float(os.environ.get("APIFY_MAX_WAIT_MINUTES") or 60))
+    max_wait = timedelta(minutes=wait_minutes())
     by_site: dict[str, list[PlannedRun]] = {}
     for planned in runs:
         by_site.setdefault(planned.site, []).append(planned)
