@@ -350,6 +350,8 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
     item = without_nul(item)
     posting = normalise(item)
     country = country or search_url_country(item) or country_from_location(posting.location)
+    if country:   # read again knowing the country, which decides what a bare salary means
+        posting = normalise(item, country)
     if posting.source == "seek" and not posting.url and posting.source_id:
         posting = replace(posting, url=seek_url(posting.source_id, country))
     key, url = identity(posting)

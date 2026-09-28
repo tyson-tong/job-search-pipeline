@@ -204,6 +204,12 @@ def test_parse_salary_formats():
     assert parse_salary("$120k package, flexible hours") == (120000, 120000)
     assert parse_salary("$100,000 - $120,000 per annum, 38 hours per week") == (100000, 120000)
     assert parse_salary("$5,000 per month, 38 hours per week") == (60000, 60000)
+    # With no period stated, Hong Kong and Singapore amounts are usually monthly: read as
+    # annual they were a tenth of the real pay, and filtered out by a salary minimum.
+    assert parse_salary("HK$35,000", "HK") == (420000, 420000)
+    assert parse_salary("$8,000 - $10,000", "SG") == (96000, 120000)
+    assert parse_salary("HK$600,000", "HK") == (600000, 600000)
+    assert parse_salary("$35,000") == (35000, 35000)   # elsewhere, still annual
     # Too large to be a salary: one such value once failed the import of a whole paid run.
     assert parse_salary("Up to $1,000,000,000 per month") is None
 

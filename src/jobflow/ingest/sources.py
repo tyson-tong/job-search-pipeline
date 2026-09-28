@@ -36,6 +36,10 @@ INDEED_PERIODS = {"HOUR": "hourly", "DAY": "daily", "WEEK": "weekly", "MONTH": "
 # its range is about something else, as in "$120k package, flexible hours".
 PLAUSIBLE = {"hourly": (5, 1_000), "daily": (50, 10_000), "weekly": (200, 50_000),
              "monthly": (500, 500_000), "annual": (1_000, math.inf)}
+# An amount with no period stated below this is monthly pay, and above it annual. Hong Kong
+# and Singapore salaries are usually quoted by the month, and in larger numbers.
+MONTHLY_BELOW = {"HK": 200_000, "SG": 30_000}
+MONTHLY_BELOW_ELSEWHERE = 20_000
 # An annual salary above this is a misread, never a real offer; the database's salary
 # columns also can't hold much more, and one value too big would fail a whole import.
 MAX_ANNUAL = 50_000_000
@@ -97,14 +101,14 @@ def to_date(value: object) -> date | None:
         return None
 
 
-def _period_from_amount(amount: float) -> str:
-    """The period of an amount with no period stated, from its size."""
+def _period_from_amount(amount: float, country: str | None = None) -> str:
+    """The period of an amount with no period stated, from its size and the job's country."""
     return "hourly" if amount < 300 else "daily" if amount < 3000 else \
-        "monthly" if amount < 20000 else "annual"
+        "monthly" if amount < MONTHLY_BELOW.get(country or "", MONTHLY_BELOW_ELSEWHERE) else "annual"
 
 
 def _period(text: str, amounts: tuple[int, int], amount: float,
-            ignore: list[tuple[int, int]]) -> str:
+            ignore: list[tuple[int, int]], country: str | None) -> str:
     """The period the salary text states for the amounts at text[amounts[0]:amounts[1]]:
     the period word nearest after them (then nearest before), skipping words inside
     `ignore` and any whose period is implausible for the amount. Else from the amount."""
@@ -119,7 +123,7 @@ def _period(text: str, amounts: tuple[int, int], amount: float,
         low, high = PLAUSIBLE[period]
         if low <= amount < high:
             return period
-    return _period_from_amount(amount)
+    return _period_from_amount(amount, country)
 
 
 def _annual(low: float, high: float, period: str) -> tuple[float, float] | None:
@@ -127,8 +131,9 @@ def _annual(low: float, high: float, period: str) -> tuple[float, float] | None:
     return None if high * factor > MAX_ANNUAL else (low * factor, high * factor)
 
 
-def parse_salary(value: object) -> tuple[float, float] | None:
-    """Annualised (min, max) from Indeed's salary object or free-text salary strings.
+def parse_salary(value: object, country: str | None = None) -> tuple[float, float] | None:
+    """Annualised (min, max) from Indeed's salary object or free-text salary strings, in
+    the job's country when known (it decides whether an amount with no period is monthly).
 
     Returns None when no amount can be found (for example "Competitive"), or when the
     amount is too large to be a real salary.
@@ -139,7 +144,7 @@ def parse_salary(value: object) -> tuple[float, float] | None:
         if not amounts:
             return None
         period = INDEED_PERIODS.get(str(value.get("type") or "").upper()) or \
-            _period_from_amount(max(amounts))
+            _period_from_amount(max(amounts), country)
         return _annual(min(amounts), max(amounts), period)
     if isinstance(value, list):
         value = " - ".join(str(v) for v in value)
@@ -169,7 +174,7 @@ def parse_salary(value: object) -> tuple[float, float] | None:
         return None
     # A skipped number takes its next word with it, so "2 weeks leave" doesn't read as weekly pay.
     ignore = [(m.start(), m.end() + len(re.match(r"\s*\w*", text[m.end():])[0])) for m in skipped]
-    period = _period(text, (spans[0][0], spans[-1][1]), max(amounts), ignore)
+    period = _period(text, (spans[0][0], spans[-1][1]), max(amounts), ignore, country)
     return _annual(min(amounts), max(amounts), period)
 
 
@@ -199,12 +204,12 @@ def detect_source(item: dict) -> str:
     return host.removeprefix("www.") or "unknown"
 
 
-def _salary(value: object) -> dict:
-    parsed = parse_salary(value)
+def _salary(value: object, country: str | None) -> dict:
+    parsed = parse_salary(value, country)
     return {"salary_min": parsed[0], "salary_max": parsed[1]} if parsed else {}
 
 
-def _linkedin(item: dict, source: str) -> Posting:
+def _linkedin(item: dict, source: str, country: str | None) -> Posting:
     return Posting(
         source=source,
         source_id=_text(_get(item, "id", "jobId")),
@@ -214,7 +219,7 @@ def _linkedin(item: dict, source: str) -> Posting:
         location=_text(_get(item, "location")) if isinstance(item.get("location"), str) else None,
         posted_at=to_date(_get(item, "postedAt", "postedDate", "datePosted")),
         description=html_to_text(_get(item, "descriptionText", "descriptionHtml", "description")),
-        **_salary(_get(item, "salaryInfo", "salary")),
+        **_salary(_get(item, "salaryInfo", "salary"), country),
         job_types=_vocab(_get(item, "employmentType", "jobType"), LINKEDIN_JOB_TYPES),
         work_arrangements=_vocab(_get(item, "workplaceTypes", "workplaceType"),
                                  LINKEDIN_WORK_ARRANGEMENTS)
@@ -222,12 +227,12 @@ def _linkedin(item: dict, source: str) -> Posting:
     )
 
 
-def _indeed(item: dict) -> Posting:
+def _indeed(item: dict, country: str | None) -> Posting:
     job_id = _text(_get(item, "id", "jobKey", "jobkey"))
-    country = str(_get(item, "location.countryCode", "country") or "").lower()
+    site = str(_get(item, "location.countryCode", "country") or "").lower()
     # Indeed's UK site is uk.indeed.com, not the ISO code's gb.
-    country = {"gb": "uk"}.get(country, country)
-    host = "www.indeed.com" if country in ("", "us") else f"{country}.indeed.com"
+    site = {"gb": "uk"}.get(site, site)
+    host = "www.indeed.com" if site in ("", "us") else f"{site}.indeed.com"
     link = _text(_get(item, "viewJobLink", "url", "link"))
     if job_id:
         url = f"https://{host}/viewjob?jk={job_id}"
@@ -247,7 +252,7 @@ def _indeed(item: dict) -> Posting:
         posted_at=to_date(_get(item, "pubDate", "datePublished", "postedAt")),
         description=html_to_text(_get(item, "jobDescription", "jobDescriptionHTML",
                                       "description")),
-        **_salary(item.get("salary")),
+        **_salary(item.get("salary"), country),
         job_types=_vocab(_as_list(item.get("jobTypes")) + _as_list(item.get("attributes")),
                          INDEED_JOB_TYPES),
         work_arrangements=_vocab(item.get("attributes"), INDEED_WORK_ARRANGEMENTS),
@@ -265,7 +270,7 @@ def seek_url(job_id: str, country: str | None) -> str | None:
     return f"https://{host}/job/{job_id}" if host else None
 
 
-def _seek(item: dict) -> Posting:
+def _seek(item: dict, country: str | None) -> Posting:
     job_id = _text(_get(item, "id", "jobId"))
     # Without a link, save_job makes one from the ID once it knows the country (seek_url).
     url = _text(_get(item, "jobLink", "url", "link"))
@@ -284,16 +289,18 @@ def _seek(item: dict) -> Posting:
         location=_text(location),
         posted_at=to_date(_get(item, "listedAt", "listingDate", "postedAt")),
         description=html_to_text(description),
-        **_salary(item.get("salary")),
+        **_salary(item.get("salary"), country),
         job_types=_vocab(item.get("workTypes") or item.get("workType"), SEEK_OUTPUT_JOB_TYPES),
         work_arrangements=_vocab(item.get("workArrangements"), SEEK_OUTPUT_WORK_ARRANGEMENTS),
     )
 
 
-def normalise(item: dict) -> Posting:
+def normalise(item: dict, country: str | None = None) -> Posting:
+    """The scraped record as a Posting; `country`, the job's ISO code when known, helps
+    read a salary with no period stated."""
     source = detect_source(item)
     if source == "seek":
-        return _seek(item)
+        return _seek(item, country)
     if source == "indeed":
-        return _indeed(item)
-    return _linkedin(item, source)
+        return _indeed(item, country)
+    return _linkedin(item, source, country)
