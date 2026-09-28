@@ -32,8 +32,11 @@ def connect():
     return conn
 
 
-def migration_files() -> list[tuple[str, str]]:
-    """Return (file-scoped migration key, SQL) pairs in file and local-ID order."""
+def migration_files() -> list[tuple[str, str, str | None]]:
+    """Return (file-scoped migration key, SQL, follow-up) triples in file and local-ID order.
+    A block's follow-up is the function in ingest/store.py its "-- Then: NAME" comment
+    names, run once after the block is first applied (to fill in a new table or column),
+    or None."""
     folder = resources.files("jobflow") / "migrations"
     migrations = []
     for entry in folder.iterdir():
@@ -52,12 +55,13 @@ def migration_files() -> list[tuple[str, str]]:
             statement = sql[header.end():end].strip()
             if not statement:
                 raise RuntimeError(f"Migration {entry.name}:{ids[index]} has no SQL")
-            migrations.append((f"{entry.name}:{ids[index]}", statement))
+            then = re.search(r"^-- Then: (\w+)\s*$", statement, re.MULTILINE)
+            migrations.append((f"{entry.name}:{ids[index]}", statement, then and then[1]))
     return sorted(migrations)
 
 
 def migrate() -> None:
-    from .ingest.store import backfill_countries, backfill_sources
+    from .ingest import store
 
     with connect() as conn:
         # Two commands starting at once (the daily import and yours) would otherwise both
@@ -67,23 +71,20 @@ def migrate() -> None:
                             name TEXT PRIMARY KEY,
                             applied_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
         applied = {row[0] for row in conn.execute("SELECT name FROM schema_migrations")}
-        newly_applied = []
-        for name, sql in migration_files():
+        follow_ups = []
+        for name, sql, then in migration_files():
             if name in applied:
                 continue
             with conn.transaction():
                 conn.execute(sql)
                 conn.execute("INSERT INTO schema_migrations(name) VALUES (%s)", (name,))
-            newly_applied.append(name)
             print(f"Applied migration {name}")
-        if "008_job_sources.sql:01" in newly_applied:
-            added = backfill_sources(conn)
-            if added:
-                print(f"Recorded {added} more site copies in job_sources")
-        if "002_jobs.sql:02" in newly_applied:
-            filled = backfill_countries(conn)
+            follow_ups += [then] if then else []
+        # Once every table exists: a follow-up may read tables created by later files.
+        for then in follow_ups:
+            filled = getattr(store, then)(conn)
             if filled:
-                print(f"Recorded the country of {filled} jobs")
+                print(f"{then}: filled in {filled} row{'s' if filled != 1 else ''}")
 
 
 def fetch_job(job_id: int) -> dict:

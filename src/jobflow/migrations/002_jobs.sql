@@ -32,6 +32,7 @@ CREATE INDEX IF NOT EXISTS jobs_description_fts_idx
 
 -- Migration ID: 02
 -- The country a job was found in, so one ad for offices in two countries stays two jobs.
+-- Then: backfill_countries
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS country TEXT;
 
 -- Migration ID: 03
