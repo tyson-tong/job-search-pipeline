@@ -370,8 +370,11 @@ def _csv_cell(value: object) -> str:
     return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
 
 
-def export_csv(filters: dict) -> str:
+def export_csv(filters: dict, ids: set[int] | None = None) -> str:
+    """The jobs the filters find as CSV, or only those of them in ids (a page's rows)."""
     jobs = list_jobs({**filters, "limit": 5000})
+    if ids is not None:
+        jobs = [job for job in jobs if job["id"] in ids]
     with connect() as conn:
         notes = dict(conn.execute("SELECT job_id, notes FROM applications WHERE job_id = ANY(%s)",
                                   ([j["id"] for j in jobs],)).fetchall())

@@ -188,7 +188,8 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
       <option value="added">Recently added</option><option value="follow_up">Follow-up date</option>
     </select>
     <button class="btn" id="score-btn" disabled>Score all jobs</button>
-    <a class="btn" id="export" href="#">Export CSV</a>
+    <a class="btn" id="export-all" href="#" title="Every job in this tab, whatever the filters">Export CSV (All)</a>
+    <a class="btn" id="export-view" href="#" title="Only the jobs on this page">Export CSV (Filtered)</a>
     <span class="meta" id="shown"></span>
     <span class="pager" id="pager">
       <select id="page-size" aria-label="Jobs per page">
@@ -568,6 +569,20 @@ function renderPager(starts) {
   document.getElementById("page-prev").disabled = state.page === 0;
   document.getElementById("page-next").disabled = state.page >= pages - 1;
 }
+// All: every job in the tab (for My jobs, with the chosen statuses), ignoring the other
+// filters. Filtered: just the rows on this page, in the same order.
+function renderExports(first, end) {
+  const link = (params) => "/api/export.csv?" + params + "&token=" + encodeURIComponent(TOKEN);
+  const all = statusParams();
+  all.set("sort", sortInput.value);
+  const view = filterParams();
+  state.jobs.slice(first, end).forEach((job) => view.append("id", job.id));
+  const exportAll = document.getElementById("export-all"), exportView = document.getElementById("export-view");
+  exportAll.href = link(all); exportView.href = link(view);
+  // With no statuses chosen, the server would export the default ones instead of none.
+  exportAll.hidden = noStatuses() || !tabTotal(state.view);
+  exportView.hidden = !state.jobs.length;
+}
 function goToPage(page) {
   state.page = page; state.lastPicked = null; renderRows();
 }
@@ -581,8 +596,6 @@ function renderRows() {
   document.getElementById("shown").textContent = n >= state.summary.max_rows
     ? `The first ${n} jobs: narrow the filters to see the rest`
     : n < total ? `${n} of ${total} jobs` : `${n} job${n === 1 ? "" : "s"}`;
-  document.getElementById("export").hidden = noStatuses();
-  document.getElementById("export").href = "/api/export.csv?" + filterParams() + "&token=" + encodeURIComponent(TOKEN);
   const inbox = state.view === "inbox", filtered = state.view === "filtered";
   const selectable = inbox || filtered;
   const loaded = new Set(state.jobs.map((job) => job.id));
@@ -592,6 +605,7 @@ function renderRows() {
   state.page = Math.min(state.page, starts.length - 1);
   const first = starts[state.page], end = starts[state.page + 1] ?? n;
   renderPager(starts);
+  renderExports(first, end);
   renderBulk();
   // Only My jobs holds jobs that are followed up or scored, so the Inbox and Filtered have
   // no Follow up or Match column.
