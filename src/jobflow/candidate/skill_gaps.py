@@ -15,7 +15,7 @@ from pathlib import Path
 from ..db import connect
 from ..llm import complete, parse_json
 from ..settings import matching_weights, output_directory, timezone
-from .cvs import chosen_sources
+from .cvs import chosen_files
 from .matching import _cached_assessments, _stored, best_variant
 
 # How much one unmet requirement counts towards a skill's rank.
@@ -27,7 +27,7 @@ MAX_GAPS_SENT = 600
 def collect_gaps() -> tuple[list[dict], int]:
     """Requirements not fully evidenced by each scored Interested job's best CV, among those
     cvs in config/profile.toml names, newest job first, and the job count."""
-    weights, chosen = matching_weights(), chosen_sources()
+    weights, chosen = matching_weights(), chosen_files()
     gaps: list[dict] = []
     with connect() as conn:
         jobs = conn.execute(

@@ -52,6 +52,7 @@ def check_keys(reviewer: bool = False, web_search: bool = False) -> None:
 
 def main() -> None:
     import psycopg
+    import requests
 
     from .settings import load_env
     load_env()
@@ -120,6 +121,8 @@ def main() -> None:
         raise SystemExit(f"error: {exc}") from None
     except psycopg.OperationalError as exc:
         raise SystemExit(f"error: can't use the database (check DATABASE_URL): {exc}") from None
+    except requests.RequestException as exc:
+        raise SystemExit(f"error: a web request failed (check your connection): {exc}") from None
 
 
 class _JobOutput:
@@ -319,18 +322,23 @@ def clean_up() -> None:
     from .settings import output_directory
 
     root = output_directory()
-    with connect() as conn:
-        jobs = conn.execute("SELECT id, status FROM jobs WHERE status = ANY(%s) ORDER BY id",
-                            (list(CLEAN_UP_STATUSES),)).fetchall()
+
+    def closed_jobs(ids: list[int] | None = None) -> list[tuple[int, str]]:
+        with connect() as conn:
+            return conn.execute(
+                "SELECT id, status FROM jobs WHERE status = ANY(%s) "
+                "AND (%s::bigint[] IS NULL OR id = ANY(%s)) ORDER BY id",
+                (list(CLEAN_UP_STATUSES), ids, ids)).fetchall()
+
     # A job's folder is output/<company>/<role>-<job id>, found by its id, so a folder is
     # still found if the company or title has changed since it was written.
-    folders = [(folder, status) for job_id, status in jobs
+    folders = [(folder, job_id, status) for job_id, status in closed_jobs()
                for folder in sorted(root.glob(f"*/*-{job_id}")) if folder.is_dir()]
     if not folders:
         print("Nothing to clean up: no Not interested, Withdrawn, Declined, or Rejected job has a "
               f"folder in {root}")
         return
-    for folder, status in folders:
+    for folder, _, status in folders:
         print(f"  {CLEAN_UP_STATUSES[status]:<14}  {folder.relative_to(root)}")
     try:
         answer = input(f"Delete these {len(folders)} folder{'s' if len(folders) != 1 else ''} "
@@ -340,11 +348,18 @@ def clean_up() -> None:
     if answer.strip().casefold() not in ("y", "yes"):
         print("Nothing deleted")
         return
-    for folder, _ in folders:
+    # A job may have moved on (in the tracker, say) while you were deciding: keep its folder.
+    still_closed = {job_id for job_id, _ in closed_jobs([job_id for _, job_id, _ in folders])}
+    deleted = 0
+    for folder, job_id, _ in folders:
+        if job_id not in still_closed:
+            print(f"  kept {folder.relative_to(root)}: its job's status has changed since")
+            continue
         shutil.rmtree(folder)
+        deleted += 1
         if not any(folder.parent.iterdir()):
             folder.parent.rmdir()   # the company's folder, now empty
-    print(f"Deleted {len(folders)} folder{'s' if len(folders) != 1 else ''}")
+    print(f"Deleted {deleted} folder{'s' if deleted != 1 else ''}")
 
 
 def init() -> None:

@@ -233,6 +233,10 @@ def load_searches() -> list[Search]:
     """From JOBFLOW_SEARCHES (the TOML text, as used in GitHub Actions), else the file
     named by paths.searches_file in config/profile.toml (default ./searches.toml relative to config/profile.toml)."""
     text = os.environ.get("JOBFLOW_SEARCHES")
+    if not text and os.environ.get("GITHUB_ACTIONS"):
+        # There is no config/profile.toml here, so the fallback below would only confuse.
+        raise SearchConfigError("The JOBFLOW_SEARCHES variable isn't set for this repository's "
+                                "Actions: run `uv run jobflow update-searches` on your machine")
     if not text:
         from ..settings import searches_file
         path = searches_file()

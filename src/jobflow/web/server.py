@@ -171,7 +171,11 @@ def make_handler(token: str, port: int):
 
 def serve(port: int = 8765) -> None:
     token = secrets.token_urlsafe(24)
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(token, port))
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(token, port))
+    except OSError as exc:
+        raise RuntimeError(f"Can't serve on port {port} ({exc.strerror}): is jobflow web "
+                           "already running? Otherwise choose another with --port") from None
     print(f"jobflow web is running at http://127.0.0.1:{port}/  (Ctrl+C to stop)")
     try:
         server.serve_forever()

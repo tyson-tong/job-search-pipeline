@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import tomllib
 from pathlib import Path
@@ -111,8 +112,10 @@ def matching_weights() -> tuple[float, float]:
     matching = profile().get("matching", {})
     required = float(matching.get("required_weight", 0.75))
     preferred = float(matching.get("preferred_weight", 0.25))
-    if required < 0 or preferred < 0 or required + preferred <= 0:
-        raise RuntimeError("matching weights must be non-negative and not both zero")
+    # TOML allows nan and inf, which would make every score nan.
+    if not (math.isfinite(required) and math.isfinite(preferred)) \
+            or required < 0 or preferred < 0 or required + preferred <= 0:
+        raise RuntimeError("matching weights must be finite, non-negative, and not both zero")
     return required, preferred
 
 

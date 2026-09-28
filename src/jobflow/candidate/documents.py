@@ -181,9 +181,11 @@ def write_docx(cv: dict, path: Path) -> None:
 
 
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-# Only numbers written like a phone number (starting with +, a bracket, or 0), so dates
-# and figures elsewhere in a CV are never taken for one.
+# Only numbers written like a phone number (starting with +, a bracket, or 0) with 9 to 15
+# digits, so dates and figures elsewhere in a CV, such as "(2019 - 2023)", are never taken
+# for one.
 PHONE = re.compile(r"(?<![\w+])[+(0][\d ()-]{6,}\d")
+PHONE_DIGITS = (9, 15)
 
 
 def letter_sender(cv: dict | str, letter: str) -> list[str]:
@@ -198,7 +200,7 @@ def letter_sender(cv: dict | str, letter: str) -> list[str]:
     name = lines[-1] if lines and len(lines[-1].split()) <= 5 \
         and not re.search(r"[\d,.:;!?]", lines[-1]) else ""
     phone = next((m[0].strip() for m in PHONE.finditer(cv)
-                  if 8 <= len(re.sub(r"\D", "", m[0])) <= 15), None)
+                  if PHONE_DIGITS[0] <= len(re.sub(r"\D", "", m[0])) <= PHONE_DIGITS[1]), None)
     email = EMAIL.search(cv)
     return [name] + [part for part in (email and email[0], phone) if part]
 

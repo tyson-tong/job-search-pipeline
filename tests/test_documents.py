@@ -80,6 +80,9 @@ def test_letter_from_a_non_yaml_cv_takes_its_header_only_from_the_cv(tmp_path):
     paragraphs = [p.text for p in Document(tmp_path / "l.docx").paragraphs]
     # Dates and figures are never taken for a phone number.
     assert paragraphs[0] == "José Example\njose@example.com\n+61 400 000 000"
+    write_letter_docx(letter, "José Example\njose@example.com\nAcme (2019 - 2023) analyst",
+                      {"title": "Analyst", "company": "Acme"}, tmp_path / "l.docx", date(2026, 9, 27))
+    assert Document(tmp_path / "l.docx").paragraphs[0].text == "José Example\njose@example.com"
 
 
 def test_only_the_one_or_two_cv_files_named_in_the_profile_are_used(tmp_path, monkeypatch):

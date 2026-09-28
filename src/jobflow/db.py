@@ -51,6 +51,9 @@ def migrate() -> None:
     from .ingest.store import backfill_countries, backfill_sources
 
     with connect() as conn:
+        # Two commands starting at once (the daily import and yours) would otherwise both
+        # apply a new migration; the second waits here until the first has committed.
+        conn.execute("SELECT pg_advisory_xact_lock(hashtext('jobflow migrate'))")
         conn.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
                             name TEXT PRIMARY KEY,
                             applied_at TIMESTAMPTZ NOT NULL DEFAULT now())""")

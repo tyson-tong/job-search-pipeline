@@ -14,7 +14,7 @@ import requests
 from ..db import connect, fetch_job
 from ..llm import complete
 from ..settings import timezone
-from .cvs import CV_CHAR_LIMIT, chosen_sources
+from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_sources
 from .paths import job_directory
 
 
@@ -67,7 +67,7 @@ def _agent(name: str, instruction: str, job: dict, cv_text: str,
            sources: list[dict]) -> tuple[str, str]:
     payload = {"job": {"title": job["title"], "company": job["company"],
                        "location": job["location"],
-                       "description": job["description"][:20000]},
+                       "description": job["description"][:JOB_CHAR_LIMIT]},
                "candidate_cv_sources": cv_text[:CV_CHAR_LIMIT],
                "web_sources": sources,
                "task": instruction + " Use source URLs as inline citations where useful. "
