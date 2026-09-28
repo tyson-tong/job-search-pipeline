@@ -396,6 +396,14 @@ function statusParams() {
   statuses.forEach((s) => params.append("status", s));
   return params;
 }
+// Filtered jobs are never scored or followed up, so those sorts (and Recently added) don't apply there.
+const NOT_FILTERED_SORTS = ["score", "added", "follow_up"];
+function fitSort() {
+  const filtered = state.view === "filtered";
+  [...sortInput.options].forEach((option) => {
+    option.hidden = option.disabled = filtered && NOT_FILTERED_SORTS.includes(option.value); });
+  if (sortInput.selectedOptions[0]?.disabled) { sortInput.value = "posted"; remember(); }
+}
 function noStatuses() { return state.view === "jobs" && !state.statuses.size; }
 function filterParams() {
   const params = statusParams();
@@ -417,6 +425,7 @@ async function refresh() {
       renderAll();
       return;
     }
+    fitSort();
     // With no statuses chosen My jobs shows nothing (the server would read none as the default).
     const none = noStatuses(), before = state.countryCounts;
     const [summary, jobs, countries] = await Promise.all([api("/api/summary"),
@@ -585,10 +594,10 @@ function renderRows() {
   renderBulk();
   // New jobs have no follow-up yet, so the Inbox has no Follow up column; only My jobs
   // holds scored jobs, so the others have no Match column.
-  document.querySelectorAll(".fu-col").forEach((cell) => { cell.hidden = inbox; });
+  document.querySelectorAll(".fu-col").forEach((cell) => { cell.hidden = selectable; });
   document.querySelectorAll(".match-col").forEach((cell) => { cell.hidden = selectable; });
   if (!n) {
-    fill(body, [el("tr", {}, el("td", { colspan: inbox ? 7 : 8, className: "empty" },
+    fill(body, [el("tr", {}, el("td", { colspan: selectable ? 7 : 8, className: "empty" },
       inbox ? "Inbox is empty: no new jobs to review."
         : filtered ? "No filtered jobs." : noStatuses() ? "No statuses chosen: pick some in the Status menu."
         : "No jobs match these filters."))]);
@@ -641,7 +650,7 @@ function renderRows() {
       el("td", { className: "hide-sm meta" }, fmtDate(job.posted_at) || fmtDate(job.first_seen_at)),
       el("td", { className: "hide-sm meta" }, fmtSalary(job.salary_min, job.salary_max, job.currency)),
       el("td", {}, statusCell),
-      inbox ? null : el("td", { className: "hide-sm" }, el("input", { type: "date", "aria-label": "Follow-up date",
+      selectable ? null : el("td", { className: "hide-sm" }, el("input", { type: "date", "aria-label": "Follow-up date",
         value: current(job, "follow_up_on") ? fmtDate(current(job, "follow_up_on")) : "",
         onchange: (event) => setPending(job, "follow_up_on", event.target.value) })));
   })]);
