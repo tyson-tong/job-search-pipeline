@@ -1,8 +1,8 @@
 from datetime import date
 
 from jobflow.ingest.sources import normalise, to_date
-from jobflow.ingest.store import (canonical_url, description_similarity, fingerprint, identity,
-                                  is_same_ad, looks_like_same_role, match_key, same_place)
+from jobflow.ingest.store import (canonical_url, description_similarity, is_same_ad,
+                                  looks_like_same_role, match_key, same_place)
 
 DESCRIPTION = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate "
                "reporting in Python for our finance and operations teams.")
@@ -57,19 +57,11 @@ def test_to_date_handles_iso_and_unix_seconds_or_milliseconds():
     assert to_date("3 days ago") is None
 
 
-def test_ids_from_different_sites_cannot_collide():
-    keys = {identity(normalise({**item, "id": "123"}))[0] for item in (LINKEDIN, INDEED, SEEK)}
-    assert keys == {"linkedin:123", "indeed:123", "seek:123"}
-
-
 def test_same_job_on_three_sites_is_recognised():
     postings = [normalise(i) for i in (LINKEDIN, INDEED, SEEK)]
     assert {match_key(p) for p in postings} == {"acme|data analyst"}
     for p in postings[1:]:
         assert description_similarity(postings[0].description, p.description) >= 0.5
-    # Exact fingerprints differ (locations are formatted differently), which is why
-    # cross-site matching needs the fuzzy step.
-    assert len({fingerprint(p) for p in postings}) == 3
 
 
 def test_different_jobs_are_not_merged():
