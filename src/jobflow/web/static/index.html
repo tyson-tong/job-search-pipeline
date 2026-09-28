@@ -592,8 +592,8 @@ function renderRows() {
   const first = starts[state.page], end = starts[state.page + 1] ?? n;
   renderPager(starts);
   renderBulk();
-  // New jobs have no follow-up yet, so the Inbox has no Follow up column; only My jobs
-  // holds scored jobs, so the others have no Match column.
+  // Only My jobs holds jobs that are followed up or scored, so the Inbox and Filtered have
+  // no Follow up or Match column.
   document.querySelectorAll(".fu-col").forEach((cell) => { cell.hidden = selectable; });
   document.querySelectorAll(".match-col").forEach((cell) => { cell.hidden = selectable; });
   if (!n) {
