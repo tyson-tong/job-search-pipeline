@@ -85,7 +85,7 @@ def test_api_requires_the_token_and_a_local_host(server):
 def scoring(monkeypatch):
     from jobflow.web import scoring
     monkeypatch.setattr(scoring, "credentials", lambda: ("key", "model"))
-    monkeypatch.setattr(scoring, "cv_sources", lambda: {"dev": "cv: {}"})
+    monkeypatch.setattr(scoring, "chosen_sources", lambda: {"dev": "cv: {}"})
     monkeypatch.setattr(scoring, "_state", {**scoring._state, "running": False})
     return scoring
 
@@ -118,8 +118,26 @@ def test_one_failed_job_does_not_stop_the_batch(scoring, monkeypatch):
     monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: [1, 2, 3])
     scoring.start()
     result = _wait_until_finished(scoring)
-    assert result["scored"] == [1, 3] and result["done"] == 3
+    assert sorted(result["scored"]) == [1, 3] and result["done"] == 3
     assert result["errors"] == [{"id": 2, "error": "LLM timed out"}]
+
+
+def test_a_bad_key_stops_the_batch_instead_of_failing_every_job(scoring, monkeypatch):
+    import time
+    from jobflow.llm import LLMError
+    tried = []
+
+    def match_job(job_id):
+        tried.append(job_id)
+        if job_id == 1:
+            raise LLMError("Invalid authentication credentials (LLM provider, HTTP 401)", fatal=True)
+        time.sleep(0.05)
+    monkeypatch.setattr(scoring, "match_job", match_job)
+    monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: [1, 2, 3, 4, 5])
+    scoring.start()
+    result = _wait_until_finished(scoring)
+    # Only job 2 may have started alongside job 1; nothing after it does.
+    assert set(tried) <= {1, 2} and result["done"] == len(tried) < result["total"]
 
 
 def test_only_one_run_at_a_time(scoring, monkeypatch):

@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 from ..db import connect, fetch_job
 from ..llm import complete, parse_json
-from ..settings import cv_directory, matching_weights
-from .cvs import CV_CHAR_LIMIT, CV_FORMATS, JOB_CHAR_LIMIT, cv_digest, cv_sources, normalise_text
+from ..settings import matching_weights
+from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_sources, cv_digest, normalise_text
 
 # Bump when the stored assessment shape changes.
 ASSESSMENT_FORMAT = 2
@@ -125,7 +126,7 @@ def _stored(cached: dict[str, dict], weights: tuple[float, float]) -> list[dict]
 
 
 def match_job(job_id: int) -> list[dict]:
-    """Assess one job against every CV variant.
+    """Assess one job against each CV cvs in config/profile.toml names, all at once.
 
     A job is scored once and never again, even after a CV changes: a scored job returns
     its stored assessments (recomputed with the current profile weights). Only an
@@ -147,12 +148,9 @@ def match_job(job_id: int) -> list[dict]:
         raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only interested jobs "
                            "are scored")
     job = fetch_job(job_id)
-    sources = cv_sources()
-    if not sources:
-        raise RuntimeError(f"No CV files found in {cv_directory()} (file names containing "
-                           f"\"cv\": {', '.join(CV_FORMATS)})")
-    results = []
-    for variant, source in sources.items():
+    sources = chosen_sources()
+
+    def assess(variant: str, source: str) -> dict:
         digest = cv_digest(source)
         if len(source) > CV_CHAR_LIMIT:
             print(f"warning: CV {variant!r} exceeds {CV_CHAR_LIMIT} characters; only the "
@@ -167,8 +165,11 @@ def match_job(job_id: int) -> list[dict]:
             json.dumps(prompt, ensure_ascii=False), json_mode=True)
         result = parse_json(content)
         items = normalise_requirements(result.get("requirements"), source[:CV_CHAR_LIMIT])
-        results.append(_record(variant, digest, items, str(result.get("rationale") or ""),
-                               model, weights))
+        return _record(variant, digest, items, str(result.get("rationale") or ""), model, weights)
+
+    # The CVs are independent, so their LLM calls run side by side.
+    with ThreadPoolExecutor(max_workers=len(sources)) as pool:
+        results = list(pool.map(assess, sources, sources.values()))
     # Saved together, only once every CV is assessed: a job counts as scored as soon as it
     # has any assessment and is never scored again, so a failure part-way must save none.
     with connect() as conn:

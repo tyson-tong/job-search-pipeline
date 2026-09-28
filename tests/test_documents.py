@@ -1,3 +1,4 @@
+import pytest
 import re
 from datetime import date
 
@@ -56,23 +57,17 @@ def test_latex_cv_text_can_never_run_commands(tmp_path):
     assert "{[}Confidential{]} project" in tex
 
 
-def test_every_cv_file_is_found_once_and_read_as_text(tmp_path, monkeypatch):
+def test_the_cv_files_named_in_the_profile_are_read_as_text(tmp_path, monkeypatch):
     from jobflow.candidate import cvs
 
-    write_docx(CV, tmp_path / "Resume_CV_2026.docx")
-    (tmp_path / "CV_dev.yaml").write_text("cv:\n  name: José Example\n")
-    (tmp_path / "CV_dev.pdf").write_bytes(b"an export of CV_dev.yaml")  # same CV: skipped
+    write_docx(CV, tmp_path / "Resume 2026.docx")
     (tmp_path / "strat-cv.tex").write_text(
         "\\documentclass{article}\n\\begin{document}\n\\textbf{Built} ETL 100\\% % note\n"
         "\\end{document}\n")
-    (tmp_path / "~$CV_dev.docx").write_bytes(b"Word lock file")
-    (tmp_path / "cover-letter.docx").write_bytes(b"not a CV")
-    (tmp_path / "CV_notes.txt").write_text("not a CV format")
     monkeypatch.setattr(cvs, "cv_directory", lambda: tmp_path)
-    assert {name: path.name for name, path in cvs.cv_files().items()} == {
-        "Resume_CV_2026": "Resume_CV_2026.docx", "dev": "CV_dev.yaml", "strat-cv": "strat-cv.tex"}
-    sources = cvs.cv_sources()
-    assert "Built Python ETL pipelines" in sources["Resume_CV_2026"]
+    monkeypatch.setattr(cvs, "chosen_cvs", lambda: ["Resume 2026.docx", "strat-cv.tex"])
+    sources = cvs.chosen_sources()
+    assert "Built Python ETL pipelines" in sources["Resume 2026"]
     assert _words(sources["strat-cv"]).strip() == "Built ETL 100%"
 
 
@@ -85,3 +80,29 @@ def test_letter_from_a_non_yaml_cv_takes_its_header_only_from_the_cv(tmp_path):
     paragraphs = [p.text for p in Document(tmp_path / "l.docx").paragraphs]
     # Dates and figures are never taken for a phone number.
     assert paragraphs[0] == "José Example\njose@example.com\n+61 400 000 000"
+
+
+def test_only_the_one_or_two_cv_files_named_in_the_profile_are_used(tmp_path, monkeypatch):
+    # Each CV is one LLM call per job, sending the whole CV and ad: more CVs multiply the
+    # bill, so the profile must name 1 or 2 files exactly, and nothing runs until it does.
+    from jobflow.candidate import cvs
+    for name in ("CV_dev.yaml", "CV_dev.pdf", "CV_harvard.yaml", "CV_strat.yaml"):
+        (tmp_path / name).write_text("cv:\n  name: " + name + "\n")
+    (tmp_path / "~$CV_dev.docx").write_bytes(b"Word lock file")
+    monkeypatch.setattr(cvs, "cv_directory", lambda: tmp_path)
+
+    def chosen(*names):
+        monkeypatch.setattr(cvs, "chosen_cvs", lambda: list(names))
+        return {variant: path.name for variant, path in cvs.chosen_files().items()}
+
+    with pytest.raises(RuntimeError, match='set cvs = \\["CV_dev.pdf", "CV_dev.yaml"\\]'):
+        chosen()
+    assert chosen("CV_strat.yaml", "CV_dev.pdf") == {"strat": "CV_strat.yaml", "dev": "CV_dev.pdf"}
+    with pytest.raises(RuntimeError, match="names 3 CVs"):
+        chosen("CV_dev.yaml", "CV_harvard.yaml", "CV_strat.yaml")
+    with pytest.raises(RuntimeError, match="names dev, which isn't a CV file"):
+        chosen("dev")
+    with pytest.raises(RuntimeError, match="names ~\\$CV_dev.docx, which isn't"):
+        chosen("~$CV_dev.docx")
+    with pytest.raises(RuntimeError, match="same CV in two formats"):
+        chosen("CV_dev.yaml", "CV_dev.pdf")

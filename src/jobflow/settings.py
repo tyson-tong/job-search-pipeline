@@ -116,6 +116,15 @@ def matching_weights() -> tuple[float, float]:
     return required, preferred
 
 
+def chosen_cvs() -> list[str]:
+    """The CV file names cvs, at the top of the profile, lists (empty when it isn't set)."""
+    cvs = profile().get("cvs", [])
+    if not isinstance(cvs, list) or not all(isinstance(c, str) and c.strip() for c in cvs):
+        raise RuntimeError('cvs in config/profile.toml must be a list of CV file names, such '
+                           'as cvs = ["CV_dev.yaml", "CV_strat.yaml"]')
+    return [c.strip() for c in cvs]
+
+
 def timezone() -> ZoneInfo | None:
     name = profile().get("locale", {}).get("timezone")
     if not name:

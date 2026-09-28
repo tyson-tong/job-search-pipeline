@@ -1,9 +1,15 @@
 # Copy to config/profile.toml (jobflow init does). It is ignored by Git. Never put API
 # credentials here.
+
+# The CVs to use, 1 or 2, by exact file name in cv_directory (below), such as
+# cvs = ["CV_dev.yaml", "CV_strat.pdf"]: RenderCV .yaml, .tex, .docx, or .pdf. Jobs are
+# scored against these (one LLM call per job per CV, each sending the whole CV and ad),
+# and tailor-cv, cover-letter, skill-gaps, and interview-prep use only these. Required.
+cvs = []
+
 [paths]
-# Your CVs: every file whose name contains "cv" (any case), as .yaml (RenderCV), .tex,
-# .docx, or .pdf. Relative paths are relative to this file, so the default is the cv
-# folder in this repository, which Git ignores.
+# The folder with your CVs. Relative paths are relative to this file, so the default is
+# the cv folder in this repository, which Git ignores.
 cv_directory = "../cv"
 output_directory = "../output"
 # Job searches to run on Apify (copy config/searches.example.toml).

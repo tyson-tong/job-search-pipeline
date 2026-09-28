@@ -15,6 +15,7 @@ from pathlib import Path
 from ..db import connect
 from ..llm import complete, parse_json
 from ..settings import matching_weights, output_directory, timezone
+from .cvs import chosen_sources
 from .matching import _cached_assessments, _stored, best_variant
 
 # How much one unmet requirement counts towards a skill's rank.
@@ -24,9 +25,9 @@ MAX_GAPS_SENT = 600
 
 
 def collect_gaps() -> tuple[list[dict], int]:
-    """Requirements not fully evidenced by each scored job's best CV, newest job first, and
-    the job count."""
-    weights = matching_weights()
+    """Requirements not fully evidenced by each scored job's best CV, among those cvs in
+    config/profile.toml names, newest job first, and the job count."""
+    weights, chosen = matching_weights(), chosen_sources()
     gaps: list[dict] = []
     with connect() as conn:
         jobs = conn.execute(
@@ -35,7 +36,8 @@ def collect_gaps() -> tuple[list[dict], int]:
                ORDER BY j.id DESC""").fetchall()
         scored = 0
         for job_id, title, company in jobs:
-            cached = _cached_assessments(conn, job_id)
+            cached = {variant: hit for variant, hit in _cached_assessments(conn, job_id).items()
+                      if variant in chosen}
             if not cached:
                 continue
             scored += 1
@@ -128,7 +130,7 @@ th{{background:#eef1f4}}.meta{{color:#52606d;font-size:.9em}}details{{margin-top
 </style></head><body>
 <h1>Skill gaps</h1>
 <p class=meta>Generated {generated} from {scored} scored job{'s' if scored != 1 else ''}, using each job's
-best-matching CV. Ranked by how often a skill is asked for and not shown: a required
+best-matching CV of those cvs in config/profile.toml names. Ranked by how often a skill is asked for and not shown: a required
 requirement counts 1, a preferred one 0.5, halved when your CV partly shows it. "Not shown"
 means your CV doesn't evidence it, not that you lack it: if you have the skill, add evidence
 of it to your CV.</p>{note}
@@ -141,7 +143,8 @@ of it to your CV.</p>{note}
 def report(output: Path | None = None) -> tuple[Path, list[dict]]:
     gaps, scored = collect_gaps()
     if not gaps:
-        raise RuntimeError("No skill gaps to report: score some Interested jobs in the tracker first")
+        raise RuntimeError("No skill gaps to report: score some Interested jobs in the tracker "
+                           "first (against the CVs cvs in config/profile.toml names)")
     groups, model = _group(gaps)
     skills, ungrouped = rank_skills(gaps[:MAX_GAPS_SENT], groups)
     tz = timezone()

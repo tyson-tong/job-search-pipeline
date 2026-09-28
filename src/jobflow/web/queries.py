@@ -244,10 +244,10 @@ def summary() -> dict:
                WHERE a.follow_up_on < %s AND NOT (j.status = ANY(%s))""",
             (date.today(), CLOSED_STATUSES)).fetchone()[0]
     # Scoring reads your CV files; a missing CV folder shouldn't break the rest of the page.
-    from ..candidate.cvs import cv_sources
+    from ..candidate.cvs import chosen_sources
     from ..candidate.matching import count_needing_match
     try:
-        cv_count, unscored, scoring_problem = len(cv_sources()), count_needing_match(), None
+        cv_count, unscored, scoring_problem = len(chosen_sources()), count_needing_match(), None
     except Exception as exc:
         cv_count, unscored, scoring_problem = 0, None, str(exc)
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,

@@ -13,15 +13,19 @@ def positive_int(text: str) -> int:
     return value
 
 
-def check_variant(variant: str | None, yaml_only: bool) -> None:
-    """Stop before any job is tried if --cv names no CV (for tailor-cv, no RenderCV YAML
-    CV)."""
-    from .candidate.cvs import cv_files, is_yaml
+def check_variant(variant: str | None, yaml_only: bool) -> str | None:
+    """--cv as a CV's short name, which it may also give as the exact file name. Stops
+    before any job is tried if cvs in config/profile.toml has a problem, or --cv names none
+    of its CVs (for tailor-cv, none that is a RenderCV YAML CV)."""
+    from .candidate.cvs import chosen_files, is_yaml
 
-    choices = [name for name, path in cv_files().items() if is_yaml(path) or not yaml_only]
-    if variant is not None and variant not in choices:
-        raise RuntimeError(f"No {'RenderCV YAML ' if yaml_only else ''}CV named {variant!r}; "
-                           f"choose from {', '.join(choices) or 'none found'}")
+    choices = {name: path for name, path in chosen_files().items() if is_yaml(path) or not yaml_only}
+    by_file = {path.name: name for name, path in choices.items()}
+    if variant is not None and variant not in choices and variant not in by_file:
+        raise RuntimeError(f"No {'RenderCV YAML ' if yaml_only else ''}CV {variant!r} among "
+                           f"those cvs in config/profile.toml names; choose from "
+                           f"{', '.join(by_file) or 'none'}")
+    return by_file.get(variant, variant)
 
 
 def main() -> None:
@@ -53,9 +57,10 @@ def main() -> None:
     web.add_argument("--port", type=int, default=8765)
     tailor = sub.add_parser("tailor-cv", help="Draft a tailored CV, reviewed and fact-checked, "
                             "for every Interested job that doesn't have one yet")
-    tailor.add_argument("--cv", help="RenderCV YAML CV to use for every job, by name (the file "
-                        "name without its extension and a leading CV_); defaults to each job's "
-                        "best-matching YAML CV (an unscored job is scored first)")
+    tailor.add_argument("--cv", help="RenderCV YAML CV to use for every job, one of those cvs "
+                        "in config/profile.toml names, by file name or short name (CV_dev.yaml "
+                        "or dev); defaults to each job's best-matching YAML CV (an unscored "
+                        "job is scored first)")
     tailor.add_argument("--max-pages", type=positive_int, default=1, metavar="N",
                         help="Longest the CV may be as RenderCV lays it out; longer ones have "
                         "their least relevant bullets cut until they fit (default: 1)")
@@ -65,8 +70,10 @@ def main() -> None:
                         "pdf (rendered by RenderCV). Default: yaml")
     letter = sub.add_parser("cover-letter", help="Optional: draft a cover letter, reviewed and "
                             "fact-checked, for every Interested job that doesn't have one yet")
-    letter.add_argument("--cv", help="CV to write from, in any format, for every job; defaults "
-                        "to each job's best-matching CV (an unscored job is scored first)")
+    letter.add_argument("--cv", help="CV to write from, in any format, for every job, one of "
+                        "those cvs in config/profile.toml names, by file name or short name; "
+                        "defaults to each job's best-matching CV (an unscored job is scored "
+                        "first)")
     sub.add_parser("interview-prep", help="Generate an interview briefing HTML for every "
                    "Interviewing job that doesn't have one yet")
     sub.add_parser("skill-gaps", help="Report the skills your CVs don't show that scored jobs "
@@ -191,7 +198,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     elif args.command == "tailor-cv":
         from .candidate.tailoring import tailor_cv
         from .db import migrate
-        check_variant(args.cv, yaml_only=True)
+        args.cv = check_variant(args.cv, yaml_only=True)
         migrate()
 
         def tailor_one(job_id: int) -> None:
@@ -207,7 +214,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     elif args.command == "cover-letter":
         from .candidate.cover_letter import write_letter
         from .db import migrate
-        check_variant(args.cv, yaml_only=False)
+        args.cv = check_variant(args.cv, yaml_only=False)
         migrate()
 
         def letter_one(job_id: int) -> None:
@@ -224,8 +231,10 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
 
         for_jobs("interested", "cover-letter", "a cover letter", letter_one)
     elif args.command == "interview-prep":
+        from .candidate.cvs import chosen_sources
         from .candidate.interview import prepare
         from .db import migrate
+        chosen_sources()  # a problem with cvs in config/profile.toml stops it now
         migrate()
         for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)))
     elif args.command == "skill-gaps":

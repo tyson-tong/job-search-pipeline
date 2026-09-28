@@ -14,7 +14,7 @@ import requests
 from ..db import connect, fetch_job
 from ..llm import complete
 from ..settings import timezone
-from .cvs import CV_CHAR_LIMIT, cv_sources
+from .cvs import CV_CHAR_LIMIT, chosen_sources
 from .paths import job_directory
 
 
@@ -138,7 +138,7 @@ def _safe_markup(text: str) -> str:
 def prepare(job_id: int, output: Path | None = None) -> Path:
     job = fetch_job(job_id)
     sources = web_search(job["company"] or "the company", job["title"])
-    cv_text = "\n\n".join(f"CV variant {name}:\n{text}" for name, text in cv_sources().items())
+    cv_text = "\n\n".join(f"CV variant {name}:\n{text}" for name, text in chosen_sources().items())
     if len(cv_text) > CV_CHAR_LIMIT:
         print(f"warning: combined CV text exceeds {CV_CHAR_LIMIT} characters; agents see only "
               "the start of it", file=sys.stderr)

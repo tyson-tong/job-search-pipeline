@@ -18,7 +18,7 @@ from pypdf import PdfReader
 from ..db import connect, fetch_job
 from ..llm import complete, parse_json
 from . import documents
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, cv_files, is_yaml, normalise_text
+from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, is_yaml, normalise_text
 from .interview import web_search
 from .matching import best_variant, match_job
 from .paths import job_directory
@@ -138,13 +138,14 @@ def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict,
     if needed), why it was chosen, and that CV's document and cv-section YAML.
 
     Every CV format is scored, but only a RenderCV YAML CV has the structure to tailor
-    and fact-check, so the best-matching YAML CV is used."""
+    and fact-check, so the best-matching YAML CV is used. Only the CVs cvs in
+    config/profile.toml names are offered."""
     job = fetch_job(job_id)
-    files = cv_files()
+    files = chosen_files()
     yaml_variants = [name for name, path in files.items() if is_yaml(path)]
     if not yaml_variants:
         raise RuntimeError("tailor-cv works from a RenderCV YAML CV (for example "
-                           "CV_main.yaml), and your CV folder has none")
+                           "CV_main.yaml), and none of the CVs cvs in config/profile.toml names is one")
     reason = f"CV variant {variant!r} chosen manually."
     if variant is None:
         results = match_job(job_id)

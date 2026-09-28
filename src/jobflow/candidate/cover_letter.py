@@ -9,7 +9,7 @@ from pathlib import Path
 from ..db import connect, fetch_job
 from ..llm import complete, parse_json
 from . import documents
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, cv_files, cv_sources, is_yaml, normalise_text
+from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, chosen_sources, is_yaml, normalise_text
 from .matching import best_variant, match_job
 from .paths import job_directory
 from .tailoring import _numbers, _strings, _terms, load_source, research
@@ -25,8 +25,9 @@ LETTER_WORDS = {"i", "i'd", "i'm", "i've", "i'll", "dear", "hiring", "manager", 
 def load_cv(job_id: int, variant: str | None) -> tuple[dict, str, str, dict | str, str]:
     """The job, the CV variant to write from (best-matching unless given, scoring the job
     first if needed), why it was chosen, the CV to check the letter against (a RenderCV
-    YAML CV's cv mapping, or another format's text), and the CV as the LLM gets it."""
-    files = cv_files()
+    YAML CV's cv mapping, or another format's text), and the CV as the LLM gets it. Only
+    the CVs cvs in config/profile.toml names are offered."""
+    files = chosen_files()
     reason = f"CV variant {variant!r} chosen manually."
     if variant is None:
         usable = [r for r in match_job(job_id) if r["variant"] in files]
@@ -42,9 +43,7 @@ def load_cv(job_id: int, variant: str | None) -> tuple[dict, str, str, dict | st
     if is_yaml(files[variant]):
         job, _, _, source_doc, source_yaml = load_source(job_id, variant)
         return job, variant, reason, source_doc["cv"], source_yaml
-    text = cv_sources().get(variant)
-    if not text:
-        raise RuntimeError(f"No text could be read from {files[variant].name}")
+    text = chosen_sources()[variant]
     if len(text) > CV_CHAR_LIMIT:
         raise RuntimeError(f"{files[variant].name} is {len(text)} characters; over "
                            f"{CV_CHAR_LIMIT} it would be truncated")

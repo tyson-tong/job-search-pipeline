@@ -3,54 +3,84 @@ from __future__ import annotations
 
 import hashlib
 import re
-import sys
 from functools import lru_cache
 from pathlib import Path
 
-from ..settings import cv_directory
+from ..settings import chosen_cvs, cv_directory
 
 JOB_CHAR_LIMIT = 24000
 CV_CHAR_LIMIT = 28000
-# The CV formats read, in order of preference: when one CV is there in several formats
-# (CV_dev.yaml and an exported CV_dev.pdf), the first is used and the others skipped.
+# The most CVs cvs in config/profile.toml may name: scoring makes one LLM call per job
+# per CV, each sending the whole CV and ad.
+MAX_CVS = 2
 CV_FORMATS = (".yaml", ".yml", ".tex", ".docx", ".pdf")
 YAML_FORMATS = (".yaml", ".yml")
 
 
 def variant_name(path: Path) -> str:
-    """The name --cv takes: the file name without its extension and a leading "CV_"."""
+    """A CV's short name, which scores are stored under and --cv also takes: the file name
+    without its extension and a leading "CV_"."""
     return re.sub(r"^cv[_\- ]+", "", path.stem, flags=re.I) or path.stem
-
-
-def cv_files() -> dict[str, Path]:
-    """{variant: file} for each file in cv_directory whose name contains "cv" (any case),
-    in one of CV_FORMATS. Hidden files and Word's "~$" lock files are ignored."""
-    directory = cv_directory()
-    if not directory.is_dir():
-        raise RuntimeError(f"CV folder {directory} not found; create it and put your CVs in "
-                           "it, or set paths.cv_directory in config/profile.toml")
-    candidates = [p for p in directory.iterdir()
-                  if p.is_file() and p.suffix.casefold() in CV_FORMATS
-                  and "cv" in p.stem.casefold() and not p.name.startswith((".", "~$"))]
-    files: dict[str, Path] = {}
-    for path in sorted(candidates, key=lambda p: (CV_FORMATS.index(p.suffix.casefold()), p.name)):
-        files.setdefault(variant_name(path), path)
-    return dict(sorted(files.items()))
 
 
 def is_yaml(path: Path) -> bool:
     return path.suffix.casefold() in YAML_FORMATS
 
 
-def cv_sources() -> dict[str, str]:
-    """{variant: CV text}. A file with no readable text (a scanned PDF, say) is skipped
-    with a warning."""
+def folder_cvs() -> list[str]:
+    """The file names in the CV folder in one of CV_FORMATS, for suggesting what cvs in
+    config/profile.toml can name. Hidden files and Word's "~$" lock files are left out."""
+    directory = cv_directory()
+    if not directory.is_dir():
+        raise RuntimeError(f"CV folder {directory} not found; create it and put your CVs in "
+                           "it, or set paths.cv_directory in config/profile.toml")
+    return sorted(p.name for p in directory.iterdir()
+                  if p.is_file() and p.suffix.casefold() in CV_FORMATS
+                  and not p.name.startswith((".", "~$")))
+
+
+def chosen_files() -> dict[str, Path]:
+    """{short name: file} for the CV files cvs in config/profile.toml names exactly: the
+    only CVs scoring, tailor-cv, cover-letter, skill-gaps, and interview-prep use.
+    Explains any problem with the setting."""
+    names, available = chosen_cvs(), folder_cvs()
+    found = ", ".join(available) or f"none found in {cv_directory()}"
+    if not names:
+        example = ", ".join(f'"{name}"' for name in available[:MAX_CVS]) or '"CV_main.yaml"'
+        raise RuntimeError(f"Choose which CVs to use: set cvs = [{example}] at the top of "
+                           f"config/profile.toml, naming 1 or {MAX_CVS} CV files exactly "
+                           f"(yours: {found})")
+    names = list(dict.fromkeys(names))
+    if len(names) > MAX_CVS:
+        raise RuntimeError(f"cvs in config/profile.toml names {len(names)} CVs "
+                           f"({', '.join(names)}); use at most {MAX_CVS}, since each CV is one "
+                           "LLM call per job")
+    unknown = [name for name in names if name not in available]
+    if unknown:
+        what = "which isn't a CV file" if len(unknown) == 1 else "which aren't CV files"
+        raise RuntimeError(f"cvs in config/profile.toml names {', '.join(unknown)}, {what} "
+                           f"in {cv_directory()} (give the exact file name, in one of "
+                           f"{', '.join(CV_FORMATS)}); your CV files are: {found}")
+    files = {}
+    for name in names:
+        path = cv_directory() / name
+        if variant_name(path) in files:
+            raise RuntimeError(f"cvs in config/profile.toml names {files[variant_name(path)].name} "
+                               f"and {name}, the same CV in two formats; name one of them")
+        files[variant_name(path)] = path
+    return files
+
+
+def chosen_sources() -> dict[str, str]:
+    """{short name: CV text} for the CVs cvs in config/profile.toml names."""
     sources = {}
-    for variant, path in cv_files().items():
+    for variant, path in chosen_files().items():
         stat = path.stat()
         text = cv_text(path, stat.st_mtime_ns, stat.st_size)
-        if text.strip():
-            sources[variant] = text
+        if not text.strip():
+            raise RuntimeError(f"No text could be read from {path.name} (a scanned PDF?); "
+                               "name another CV in cvs in config/profile.toml")
+        sources[variant] = text
     return sources
 
 
@@ -78,9 +108,6 @@ def cv_text(path: Path, mtime_ns: int = 0, size: int = 0) -> str:
         from pypdf import PdfReader
 
         text = "\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
-    if not text.strip():
-        print(f"warning: no text could be read from {path.name} (a scanned PDF?); skipped",
-              file=sys.stderr)
     return text
 
 

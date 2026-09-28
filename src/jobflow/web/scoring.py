@@ -1,18 +1,23 @@
 """Scoring jobs against your CVs from the web app, in a background thread.
 
 Scoring calls the LLM once per job per CV, so a batch can take minutes; the page
-starts a run and polls its progress. One run at a time.
+starts a run and polls its progress. One run at a time, scoring JOBS_AT_ONCE jobs at once
+(each job's CVs are also assessed at once).
 """
 from __future__ import annotations
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-from ..candidate.cvs import cv_sources
+from ..candidate.cvs import chosen_sources
 from ..candidate.matching import jobs_needing_match, match_job
 from ..llm import LLMError, credentials
 
 MAX_JOBS = 500
+# More at once would be faster, but each call sends a whole CV and ad, and providers cap
+# tokens per minute; rate-limited calls are retried (see llm.complete).
+JOBS_AT_ONCE = 2
 _lock = threading.Lock()
 _state: dict = {"running": False, "total": 0, "done": 0, "current": None, "errors": [],
                 "scored": [], "started_at": None, "finished_at": None}
@@ -32,9 +37,7 @@ def start(job_ids: list[int] | None = None) -> dict:
     that have never been scored are ever scored. Checks the LLM settings and CV files
     first, so a configuration problem fails now rather than on every job."""
     credentials()
-    if not cv_sources():
-        raise RuntimeError("No CV files found: put them in cv/ (or the folder "
-                           "cv_directory in config/profile.toml names)")
+    chosen_sources()
     with _lock:
         if _state["running"]:
             raise Busy("Scoring is already running")
@@ -52,7 +55,11 @@ def start(job_ids: list[int] | None = None) -> dict:
 
 
 def _run(ids: list[int]) -> None:
-    for job_id in ids:
+    stop = threading.Event()
+
+    def score(job_id: int) -> None:
+        if stop.is_set():
+            return  # not counted as done, so the page says how many were left
         with _lock:
             _state["current"] = job_id
         try:
@@ -62,12 +69,14 @@ def _run(ids: list[int]) -> None:
         except Exception as exc:  # one failure shouldn't stop the batch...
             with _lock:
                 _state["errors"].append({"id": job_id, "error": str(exc)[:300]})
-                _state["done"] += 1
             if isinstance(exc, LLMError) and exc.fatal:
-                break  # ...unless every other job would fail the same way
-            continue
-        with _lock:
-            _state["done"] += 1
+                stop.set()  # ...unless every other job would fail the same way
+        finally:
+            with _lock:
+                _state["done"] += 1
+
+    with ThreadPoolExecutor(max_workers=JOBS_AT_ONCE) as pool:
+        list(pool.map(score, ids))
     with _lock:
         _state.update(running=False, current=None, finished_at=datetime.now(timezone.utc))
 

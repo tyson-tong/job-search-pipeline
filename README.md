@@ -24,7 +24,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
 2. **Triage the Inbox.** Mark each new job **Interested** or **Not interested**, one at a time or by ticking several rows (shift-click selects a range). Changes are drafts until you click **Save** (or press Ctrl+S). Interested jobs move to **My jobs**; Not interested jobs leave the tracker (they stay in the database), so undo a misclick before saving.
 
-3. **Score your picks.** In **My jobs**, click **Score all jobs**: each Interested job not yet scored is compared with each of your CVs (every file in `cv` whose name contains "cv": .yaml, .tex, .docx, or .pdf) by the LLM. A job is scored once and keeps its scores even if a CV changes. Only Interested jobs are ever scored.
+3. **Score your picks.** In **My jobs**, click **Score all jobs**: each Interested job not yet scored is compared by the LLM with each CV that `cvs`, at the top of `config/profile.toml`, names by exact file name (1 or 2, such as `cvs = ["CV_dev.yaml", "CV_strat.yaml"]` for the files in `cv/`), a job's CVs and two jobs at a time. Each CV is one LLM call per job, hence the limit of 2. `tailor-cv`, `cover-letter`, `skill-gaps`, and `interview-prep` use only those CVs too, and until `cvs` is set right, the tracker says what's wrong and they stop. A job is scored once and keeps its scores even if a CV changes. Only Interested jobs are ever scored.
 
 4. **Track applications** in **My jobs**: status (applied, interviewing, offered, accepted, declined, rejected, withdrawn), follow-up date, and dated notes, all saved with **Save**. Rows flag overdue follow-ups and applications with no progress after three weeks.
 
@@ -32,7 +32,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
    ```
    uv run jobflow tailor-cv              # from each job's best-matching CV
-   uv run jobflow tailor-cv --cv dev     # or use one CV for all: cv/CV_dev.yaml is "dev"
+   uv run jobflow tailor-cv --cv CV_dev.yaml   # or use one of your cvs for all (or --cv dev)
    uv run jobflow tailor-cv --max-pages 2   # allow 2 pages (default 1)
    uv run jobflow tailor-cv --format pdf    # also write the CV: pdf, docx, or latex
    ```
