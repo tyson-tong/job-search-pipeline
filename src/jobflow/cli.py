@@ -85,8 +85,9 @@ def main() -> None:
                    "Interviewing job that doesn't have one yet")
     sub.add_parser("skill-gaps", help="Report the skills your CVs don't show that scored "
                    "Interested jobs ask for most, with how to close each gap")
-    sub.add_parser("clean-up", help="Delete the output folders of Withdrawn, Declined, and "
-                   "Rejected jobs, after asking you to confirm (the jobs stay in the database)")
+    sub.add_parser("clean-up", help="Delete the output folders of Not interested, Withdrawn, "
+                   "Declined, and Rejected jobs, after asking you to confirm (the jobs stay in "
+                   "the database)")
     args = parser.parse_args()
     try:
         run(args, parser)
@@ -256,13 +257,15 @@ def update_searches(dry_run: bool = False) -> None:
           f"{' (dry run: nothing changed)' if dry_run else ''}")
 
 
-# The statuses whose jobs' output folders clean-up deletes.
-CLEAN_UP_STATUSES = ("withdrawn", "declined", "rejected")
+# The statuses whose jobs' output folders clean-up deletes, with how it names them. Only a
+# job moved to Not interested from My jobs has a folder: Inbox jobs are never worked on.
+CLEAN_UP_STATUSES = {"not_interested": "Not interested", "withdrawn": "Withdrawn",
+                     "declined": "Declined", "rejected": "Rejected"}
 
 
 def clean_up() -> None:
     """Delete the output folders (CVs, letters, reviews, briefings) of jobs that are
-    Withdrawn, Declined, or Rejected, once you confirm. The jobs, their notes, and their
+    Not interested, Withdrawn, Declined, or Rejected, once you confirm. The jobs, their notes, and their
     history stay in the database."""
     from .db import connect
     from .settings import output_directory
@@ -276,10 +279,11 @@ def clean_up() -> None:
     folders = [(folder, status) for job_id, status in jobs
                for folder in sorted(root.glob(f"*/*-{job_id}")) if folder.is_dir()]
     if not folders:
-        print(f"Nothing to clean up: no Withdrawn, Declined, or Rejected job has a folder in {root}")
+        print("Nothing to clean up: no Not interested, Withdrawn, Declined, or Rejected job has a "
+              f"folder in {root}")
         return
     for folder, status in folders:
-        print(f"  {status.capitalize():<9}  {folder.relative_to(root)}")
+        print(f"  {CLEAN_UP_STATUSES[status]:<14}  {folder.relative_to(root)}")
     try:
         answer = input(f"Delete these {len(folders)} folder{'s' if len(folders) != 1 else ''} "
                        "and everything in them? This can't be undone. (Y/N) ")
