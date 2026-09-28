@@ -12,9 +12,18 @@ import psycopg
 import psycopg.types.json
 
 from .. import settings
-from .dedupe import (FUZZY_WINDOW_DAYS, SIMILAR_DESCRIPTION, description_similarity,
-                     fingerprint, identity, is_same_ad, match_key, same_place, simplify,
-                     title_patterns)
+from .dedupe import (
+    FUZZY_WINDOW_DAYS,
+    SIMILAR_DESCRIPTION,
+    description_similarity,
+    fingerprint,
+    identity,
+    is_same_ad,
+    match_key,
+    same_place,
+    simplify,
+    title_patterns,
+)
 from .searches import country_from_location, run_country, search_url_country
 from .sources import Posting, normalise, seek_url
 

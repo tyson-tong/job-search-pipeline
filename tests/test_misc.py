@@ -1,4 +1,5 @@
 import pytest
+
 from jobflow.candidate.interview import _safe_markup
 
 
@@ -102,6 +103,7 @@ def test_llm_retries_rate_limits_but_not_an_empty_balance(monkeypatch):
     # Both come back as HTTP 429 from OpenAI: a rate limit passes if you wait, an empty
     # balance never does and must stop a batch rather than fail every job in turn.
     import requests
+
     from jobflow import llm
 
     class Reply:
@@ -136,6 +138,7 @@ def test_llm_drops_settings_the_provider_rejects(monkeypatch):
     # Anthropic's OpenAI-compatible API rejects JSON mode, and newer Claude models reject
     # temperature, each with a 400 that failed every job in a scoring run.
     import requests
+
     from jobflow import llm
 
     class Reply:
@@ -167,6 +170,7 @@ def test_llm_drops_settings_the_provider_rejects(monkeypatch):
 def test_llm_retries_a_dropped_connection_and_rejects_an_empty_reply(monkeypatch):
     # A network blip failed the job outright; an empty reply crashed later, far from its cause.
     import requests
+
     from jobflow import llm
 
     class Reply:

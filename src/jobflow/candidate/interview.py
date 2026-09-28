@@ -7,14 +7,12 @@ import re
 import sys
 from pathlib import Path
 
-
 from ..db import connect, fetch_job
 from ..llm import complete
 from ..settings import now
 from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_sources
 from .paths import job_directory
 from .research import web_search
-
 
 AGENTS = {
     "company": "Company research analyst: summarize the employer's business, products, strategy, "

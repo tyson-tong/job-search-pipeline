@@ -5,8 +5,14 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from jobflow.ingest import apify
-from jobflow.ingest.searches import (SearchConfigError, country_from_location, filter_reason,
-                                     parse_config, plan, search_url_country)
+from jobflow.ingest.searches import (
+    SearchConfigError,
+    country_from_location,
+    filter_reason,
+    parse_config,
+    plan,
+    search_url_country,
+)
 from jobflow.ingest.sources import normalise, parse_salary
 
 CONFIG = """

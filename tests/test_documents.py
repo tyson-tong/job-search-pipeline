@@ -1,7 +1,7 @@
-import pytest
 import re
 from datetime import date
 
+import pytest
 from docx import Document
 
 from jobflow.candidate.documents import write_docx, write_latex, write_letter_docx

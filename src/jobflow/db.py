@@ -95,7 +95,7 @@ def fetch_job(job_id: int) -> dict:
     if not row:
         raise RuntimeError(f"No job with database id {job_id}")
     keys = ("id", "url", "title", "company", "location", "description", "raw_json")
-    job = dict(zip(keys, row))
+    job = dict(zip(keys, row, strict=True))
     job["description"] = job["description"] or ""
     return job
 

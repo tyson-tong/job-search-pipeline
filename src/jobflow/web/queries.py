@@ -148,7 +148,7 @@ def list_jobs(filters: dict) -> list[dict]:
         keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
                 "salary_min", "salary_max", "score", "cv_variant", "sites", "url",
                 "follow_up_on", "applied_at", "has_notes", "filter_reason", "country", "version")
-        jobs = [dict(zip(keys, row)) for row in rows]
+        jobs = [dict(zip(keys, row, strict=True)) for row in rows]
         for job in jobs:
             job["currency"] = CURRENCIES.get(job["country"])
         duplicates = possible_duplicate_map(conn, [job["id"] for job in jobs])
@@ -269,9 +269,9 @@ def job_detail(job_id: int) -> dict | None:
         keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
                 "salary_min", "salary_max", "description", "filter_reason", "notes",
                 "applied_at", "follow_up_on", "country", "version")
-        job = dict(zip(keys, row))
+        job = dict(zip(keys, row, strict=True))
         job["currency"] = CURRENCIES.get(job["country"])
-        job["sources"] = [dict(zip(("source", "url", "first_seen_at"), r)) for r in conn.execute(
+        job["sources"] = [dict(zip(("source", "url", "first_seen_at"), r, strict=True)) for r in conn.execute(
             """SELECT source, url, first_seen_at FROM job_sources WHERE job_id=%s
                ORDER BY first_seen_at""", (job_id,)).fetchall()]
         job["matches"] = [
@@ -284,7 +284,7 @@ def job_detail(job_id: int) -> dict | None:
                    FROM match_assessments WHERE job_id=%s
                    ORDER BY cv_variant, created_at DESC""", (job_id,)).fetchall()]
         job["matches"].sort(key=lambda m: m["score"], reverse=True)
-        job["history"] = [dict(zip(("from_status", "to_status", "via", "changed_at"), r))
+        job["history"] = [dict(zip(("from_status", "to_status", "via", "changed_at"), r, strict=True))
                           for r in conn.execute(
             """SELECT from_status, to_status, via, changed_at FROM status_history
                WHERE job_id=%s ORDER BY changed_at""", (job_id,)).fetchall()]

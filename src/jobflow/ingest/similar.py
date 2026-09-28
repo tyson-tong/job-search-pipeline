@@ -3,9 +3,17 @@
 Only reported, never merged."""
 from __future__ import annotations
 
-from .dedupe import (POSSIBLE_DESCRIPTION, POSSIBLE_TITLE, description_similarity,
-                     looks_like_same_role, same_country, similarity_level, simplify,
-                     title_patterns, title_similarity)
+from .dedupe import (
+    POSSIBLE_DESCRIPTION,
+    POSSIBLE_TITLE,
+    description_similarity,
+    looks_like_same_role,
+    same_country,
+    similarity_level,
+    simplify,
+    title_patterns,
+    title_similarity,
+)
 
 # Similar jobs are looked for among jobs first seen this recently.
 POSSIBLE_WINDOW_DAYS = 180

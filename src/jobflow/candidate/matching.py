@@ -192,7 +192,7 @@ def match_job(job_id: int) -> list[dict]:
                  json.dumps(record["matched"]), json.dumps(record["partial"]),
                  json.dumps(record["not_evidenced"]),
                  json.dumps({"format": ASSESSMENT_FORMAT, "rationale": record["rationale"],
-                             "weights": dict(zip(("required", "preferred"), weights)),
+                             "weights": dict(zip(("required", "preferred"), weights, strict=True)),
                              "breakdown": record["breakdown"]}),
                  record["model"]))
             conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "

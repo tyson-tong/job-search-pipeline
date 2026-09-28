@@ -96,6 +96,7 @@ Every command except `init`, `help`, and `status` brings the database tables up 
 ```
 uv sync --extra test
 uv run pytest
+uv run ruff check    # unused imports, likely bugs, import order
 ```
 
 The tests need no database or network. The ones in `tests/test_db.py` (merging, saving, migrations) run only when `TEST_DATABASE_URL` names a disposable PostgreSQL database; each run works in a schema of its own and drops it afterwards. For example, with Docker:
@@ -105,4 +106,4 @@ docker run -d --rm --name jobflow-test-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 
 TEST_DATABASE_URL=postgresql://postgres:pw@127.0.0.1:55432/postgres uv run pytest
 ```
 
-GitHub runs all of them, the database ones included, on every push (`.github/workflows/tests.yml`).
+GitHub runs ruff and all the tests, the database ones included, on every push (`.github/workflows/tests.yml`).

@@ -16,9 +16,14 @@ from html import unescape
 from urllib.parse import urlsplit
 
 from .. import settings
-from .options import (INDEED_JOB_TYPES, INDEED_WORK_ARRANGEMENTS, LINKEDIN_JOB_TYPES,
-                             LINKEDIN_WORK_ARRANGEMENTS, SEEK_OUTPUT_JOB_TYPES,
-                             SEEK_OUTPUT_WORK_ARRANGEMENTS)
+from .options import (
+    INDEED_JOB_TYPES,
+    INDEED_WORK_ARRANGEMENTS,
+    LINKEDIN_JOB_TYPES,
+    LINKEDIN_WORK_ARRANGEMENTS,
+    SEEK_OUTPUT_JOB_TYPES,
+    SEEK_OUTPUT_WORK_ARRANGEMENTS,
+)
 
 # Multipliers to an annual amount. Hourly assumes a 38-hour week, daily a 5-day week.
 ANNUAL_FACTOR = {"hourly": 38 * 52, "daily": 5 * 52, "weekly": 52, "monthly": 12,

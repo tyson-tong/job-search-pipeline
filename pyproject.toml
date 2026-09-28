@@ -21,7 +21,7 @@ documents = ["pypdf>=5,<7", "python-docx>=1.1,<2", "rendercv[full]==2.8"]
 default-groups = ["documents"]
 
 [project.optional-dependencies]
-test = ["pytest>=8"]
+test = ["pytest>=8", "ruff>=0.16,<0.17"]
 
 [project.scripts]
 jobflow = "jobflow.cli:main"
@@ -35,3 +35,18 @@ jobflow = ["migrations/*.sql", "web/static/*", "ingest/*.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+# The width the code is written to; it decides how the import sorter wraps long imports.
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Lint only; the code isn't reformatted. Unused imports and undefined names (F), syntax
+# errors (E9), likely bugs (B), and import order (I).
+select = ["F", "E9", "B", "I"]
+
+[tool.ruff.lint.isort]
+# Imports that fit on one line go on one line.
+split-on-trailing-comma = false

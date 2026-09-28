@@ -95,6 +95,7 @@ def _wait_until_finished(scoring):
 
 def test_a_bad_key_stops_the_batch_instead_of_failing_every_job(scoring, monkeypatch):
     import time
+
     from jobflow.llm import LLMError
     tried = []
 

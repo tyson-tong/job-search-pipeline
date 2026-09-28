@@ -1,13 +1,13 @@
 import copy
 import json
-
-import pytest
 from concurrent.futures import Future
 
-from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
+import pytest
+
 from jobflow.candidate import cover_letter, review
 from jobflow.candidate.cover_letter import letter_fixed_by_hand
 from jobflow.candidate.factcheck import check_letter, fact_check
+from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
 from jobflow.candidate.skill_gaps import rank_skills
 from jobflow.candidate.tailoring import bullets, cut_order, cv_fixed_by_hand, without
 
@@ -305,6 +305,7 @@ def test_a_failed_assessment_saves_no_score(monkeypatch, cvs, answer, message):
 
 def test_cutting_to_fit_cuts_the_fewest_least_relevant_bullets(tmp_path, monkeypatch):
     import yaml
+
     from jobflow.candidate import tailoring
 
     cv = copy.deepcopy(SOURCE_CV)
@@ -336,6 +337,7 @@ def test_a_failed_company_search_is_a_note_not_a_failed_job(monkeypatch):
 def test_format_for_a_job_already_tailored_comes_from_its_checked_draft(tmp_path, monkeypatch):
     # tailor-cv --format docx after a PDF-only run used to skip the job as done.
     import yaml
+
     from jobflow.candidate import tailoring
 
     source = tmp_path / "CV_dev.yaml"
@@ -359,6 +361,7 @@ def test_format_for_a_job_already_tailored_comes_from_its_checked_draft(tmp_path
 def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkeypatch):
     # A PDF, .docx, or .tex from an earlier run would look like this draft, checked.
     import yaml
+
     from jobflow.candidate import tailoring
 
     class Conn:
