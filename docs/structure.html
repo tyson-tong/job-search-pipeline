@@ -227,7 +227,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
     <li><span class="k">job_id</span> → jobs</li><li>status, notes <span class="muted">dated</span></li><li>applied_at, follow_up_on, updated_at</li></ul></div>
   <div class="tbl"><h3>status_history</h3><p>Every status change.</p><ul>
     <li>job_id → jobs</li><li>from_status, to_status</li><li>via, changed_at</li></ul></div>
-  <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, cover-letter, interview-prep; the last three skip jobs already logged, except a draft that failed the fact check (NEEDS-FIX), which is drafted again unless you fixed it by hand (FIXED-BY-HAND).</p><ul>
+  <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, cover-letter, interview-prep; the last three skip jobs already logged, except a draft that failed the fact check (NEEDS-FIX), which is drafted again unless you fixed it by hand (FIXED-BY-HAND). A logged job whose output files were deleted is done again.</p><ul>
     <li>job_id → jobs, kind, status</li><li>model_name, error, started_at, finished_at</li></ul></div>
 </div>
 <p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered. My jobs shows interested, applied, interviewing, offered, and accepted by default; not interested and filtered jobs never appear there. Only interested jobs are scored. Filtered is set by imports and <code>jobflow update-searches</code>; the tracker's Filtered tab moves a job back to the Inbox.</p>
@@ -240,7 +240,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
     <li>Score = matched 1, partial 0.5, averaged per group, weighted by <code>required_weight</code> / <code>preferred_weight</code>.</li>
     <li>Only Interested jobs, against the 1 or 2 CVs <code>cvs</code> names; each is scored once and never again, even if a CV changes.</li></ul></div>
   <div class="card"><h3>Tailoring</h3>
-    <ul><li>Runs for every Interested job without a draft; jobs already done are skipped. A draft that failed the fact check is drafted again, unless you've edited it.</li>
+    <ul><li>Runs for every Interested job without a draft; jobs already done are skipped, unless their folder was deleted. A draft that failed the fact check is drafted again, unless you've edited it. <code>--format docx</code> or <code>latex</code> for a job already done writes that file from its re-checked draft, with no LLM call.</li>
     <li>Uses each job's best-matching CV unless <code>--cv</code> is given (an unscored job is scored first).</li>
     <li>A hiring-manager reviewer revises the draft; the revision is kept only if it passes the fact check.</li>
     <li>Only the <code>cv</code> section goes to the LLM; design and settings are kept.</li>

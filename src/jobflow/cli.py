@@ -130,7 +130,8 @@ class _JobOutput:
 COMMANDS = {"tailor": "tailor-cv"}
 
 
-def for_jobs(status: str, kind: str, what: str, run_one, fixed_by_hand=None) -> None:
+def for_jobs(status: str, kind: str, what: str, run_one, output_exists,
+             fixed_by_hand=None, done_one=None) -> None:
     """_run_jobs, unless the same command is already running (in another terminal, say),
     which would draft the same jobs twice and write over its files.
 
@@ -146,20 +147,23 @@ def for_jobs(status: str, kind: str, what: str, run_one, fixed_by_hand=None) -> 
             raise SystemExit(f"{COMMANDS.get(kind, kind)} is already running (in another "
                              "terminal or window). Let it finish, then run it again for any "
                              "jobs it didn't do.")
-        _run_jobs(status, kind, what, run_one, fixed_by_hand)
+        _run_jobs(status, kind, what, run_one, output_exists, fixed_by_hand, done_one)
 
 
-def _run_jobs(status: str, kind: str, what: str, run_one, fixed_by_hand=None) -> None:
-    """Run run_one(job_id) for each job with `status` and no finished `kind` run,
-    JOBS_AT_ONCE at a time.
+def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
+              fixed_by_hand=None, done_one=None) -> None:
+    """Run run_one(job_id) for each job with `status` not yet done, JOBS_AT_ONCE at a time.
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
-    twice, and a failed job is retried next time. A run whose draft failed the fact check
-    (NEEDS-FIX) is done again, for a fresh draft, unless fixed_by_hand(job_id) says you
-    fixed that draft yourself: then it's recorded as FIXED-BY-HAND and kept. One failure
-    doesn't stop the rest, unless the LLM provider refuses every request (no credit left,
-    a bad key).
+    twice, and a failed job is retried next time. A job counts as done only while
+    output_exists(its folder) too: one whose files were deleted (by clean-up, say) is
+    done again. A run whose draft failed the fact check (NEEDS-FIX) is done again, for a
+    fresh draft, unless fixed_by_hand(its folder) says you fixed that draft yourself:
+    then it's recorded as FIXED-BY-HAND and kept. done_one(folder), if given, runs for
+    each job already done and returns a line to print, or None. One failure doesn't stop
+    the rest, unless the LLM provider refuses every request (no credit left, a bad key).
     """
+    from .candidate.paths import job_directory
     from .db import connect
     from .llm import LLMError
 
@@ -170,27 +174,43 @@ def _run_jobs(status: str, kind: str, what: str, run_one, fixed_by_hand=None) ->
             "AND r.status<>'NEEDS-FIX'), "
             "EXISTS (SELECT 1 FROM workflow_runs r WHERE r.job_id=j.id AND r.kind=%s) "
             "FROM jobs j WHERE j.status=%s ORDER BY j.id", (kind, kind, status)).fetchall()
-        todo = []
-        for job_id, company, title, done, needs_fix in rows:
-            if done:
+        todo, done_jobs, redo, lost = [], [], 0, 0
+        for job_id, company, title, done, tried in rows:
+            name = f"#{job_id} {title} ({company or 'unknown employer'})"
+            folder = job_directory(job_id, {"company": company, "title": title})
+            if done and output_exists(folder):
+                done_jobs.append((name, folder))
                 continue
-            if needs_fix and fixed_by_hand and fixed_by_hand(job_id):
+            if done:
+                lost += 1
+            elif tried and fixed_by_hand and fixed_by_hand(folder):
                 conn.execute("INSERT INTO workflow_runs(job_id,kind,status,finished_at) "
                              "VALUES (%s,%s,'FIXED-BY-HAND',now())", (job_id, kind))
-                print(f"#{job_id} {title} ({company or 'unknown employer'}): you fixed its "
-                      "draft yourself, so it's kept and not drafted again")
+                print(f"{name}: you fixed its draft yourself, so it's kept and not drafted again")
+                done_jobs.append((name, folder))
                 continue
-            todo.append((job_id, company, title, needs_fix))
-    redo = sum(1 for row in todo if row[3])
+            elif tried:
+                redo += 1
+            todo.append((job_id, company, title))
+    again = [f"{redo} drafted again: the last draft failed the fact check"] if redo else []
+    again += [f"{lost} done again: their files were deleted"] if lost else []
     print(f"{len(rows)} {status.capitalize()} job{'s' if len(rows) != 1 else ''}: "
           f"{len(rows) - len(todo)} already have {what}, {len(todo)} to do"
-          + (f" ({redo} drafted again: the last draft failed the fact check)" if redo else ""))
+          + (f" ({'; '.join(again)})" if again else ""))
+    for name, folder in done_jobs if done_one else []:
+        try:
+            line = done_one(folder)
+        except RuntimeError as exc:
+            print(f"{name}: warning: {exc}", file=sys.stderr)
+        else:
+            if line:
+                print(f"{name}: {line}")
     out, err = _JobOutput(sys.stdout), _JobOutput(sys.stderr)
     stop, lock = threading.Event(), threading.Lock()
     tried, failed = [], []
 
     def one(row) -> None:
-        job_id, company, title, _ = row
+        job_id, company, title = row
         if stop.is_set():
             return
         out.held.lines = err.held.lines = lines = []
@@ -361,8 +381,8 @@ def manual(parser: argparse.ArgumentParser, command: str | None = None) -> str:
         section("COMMANDS", commands),
         section("NOTES", para(
             "tailor-cv, cover-letter, and interview-prep work on two jobs at a time and skip "
-            "jobs they've already done (a job that failed, or whose draft failed the fact "
-            "check, is tried again). Only one run of each can go at a time. Every command "
+            "jobs they've already done (a job that failed, whose draft failed the fact "
+            "check, or whose folder was deleted is tried again). Only one run of each can go at a time. Every command "
             "except init and help brings the database tables up to date when it starts.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
                 "docs/structure.html"),
@@ -388,9 +408,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         migrate()
         serve(args.port)
     elif args.command == "tailor-cv":
-        from .candidate.paths import job_directory
-        from .candidate.tailoring import cv_fixed_by_hand, tailor_cv
-        from .db import fetch_job, migrate
+        from .candidate.tailoring import add_format, cv_fixed_by_hand, tailor_cv
+        from .db import migrate
         args.cv = check_variant(args.cv, yaml_only=True)
         migrate()
 
@@ -408,14 +427,17 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
                 print(f"Read {target.parent / 'CV_REVIEW.md'}, then the CV itself, before you "
                       "send it.")
 
-        def fixed(job_id: int) -> bool:
-            return cv_fixed_by_hand(job_directory(job_id, fetch_job(job_id)))
+        def add_requested_format(folder) -> str | None:
+            # A job tailored before gets --format's file from its checked draft, no LLM call.
+            written = add_format(folder, args.format)
+            return f"wrote {written}" if written else None
 
-        for_jobs("interested", "tailor", "a tailored CV", tailor_one, fixed)
+        for_jobs("interested", "tailor", "a tailored CV", tailor_one,
+                 lambda folder: any(folder.glob("CV_*_draft.yaml")), cv_fixed_by_hand,
+                 add_requested_format if args.format != "pdf" else None)
     elif args.command == "cover-letter":
         from .candidate.cover_letter import letter_fixed_by_hand, write_letter
-        from .candidate.paths import job_directory
-        from .db import fetch_job, migrate
+        from .db import migrate
         args.cv = check_variant(args.cv, yaml_only=False)
         migrate()
 
@@ -434,17 +456,16 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
                 print(f"Read {target}, and the notes in {target.parent / 'COVER_LETTER_REVIEW.md'}, "
                       "before you send it with your application.")
 
-        def fixed(job_id: int) -> bool:
-            return letter_fixed_by_hand(job_directory(job_id, fetch_job(job_id)))
-
-        for_jobs("interested", "cover-letter", "a cover letter", letter_one, fixed)
+        for_jobs("interested", "cover-letter", "a cover letter", letter_one,
+                 lambda folder: (folder / "cover-letter.docx").exists(), letter_fixed_by_hand)
     elif args.command == "interview-prep":
         from .candidate.cvs import chosen_sources
         from .candidate.interview import prepare
         from .db import migrate
         chosen_sources()  # a problem with cvs in config/profile.toml stops it now
         migrate()
-        for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)))
+        for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)),
+                 lambda folder: (folder / "interview-prep.html").exists())
     elif args.command == "clean-up":
         from .db import migrate
         migrate()

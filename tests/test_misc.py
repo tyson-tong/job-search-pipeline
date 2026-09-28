@@ -168,50 +168,68 @@ def test_llm_drops_settings_the_provider_rejects(monkeypatch):
     assert sent == [["response_format", "temperature"], ["temperature"], []]
 
 
-def test_jobs_run_two_at_a_time_print_whole_and_stop_on_a_bad_key(monkeypatch, capsys):
-    import re
-    import sys
-    import time
+class _Rows:
+    """A stand-in connection whose queries all return `rows`, recording what it runs."""
+
+    def __init__(self, rows):
+        self.rows, self.sql = rows, []
+
+    def __call__(self):
+        return self
+
+    def execute(self, sql, *args):
+        self.sql.append(sql)
+        return self
+
+    def fetchall(self):
+        return self.rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+
+def test_a_bad_key_stops_the_jobs_instead_of_failing_each(monkeypatch, tmp_path):
     from jobflow import cli, db
+    from jobflow.candidate import paths
     from jobflow.llm import LLMError
 
-    class Conn:
-        def execute(self, *args):
-            return self
-
-        def fetchall(self):
-            return [(i, "Acme", f"Role {i}", False, False) for i in range(1, 7)]
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    monkeypatch.setattr(db, "connect", Conn)
-    running, most = set(), []
+    monkeypatch.setattr(db, "connect", _Rows([(i, "Acme", f"Role {i}", False, False)
+                                              for i in range(1, 7)]))
+    monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
+    tried = []
 
     def run_one(job_id):
-        running.add(job_id)
-        most.append(len(running))
-        print(f"start {job_id}")
-        # Job 3 fails at once, so the stop is set while job 4 (started with it) still runs.
-        time.sleep(0 if job_id == 3 else 0.05)
-        print(f"warning {job_id}", file=sys.stderr)
-        print(f"end {job_id}")
-        running.discard(job_id)
-        if job_id == 3:
+        tried.append(job_id)
+        if job_id == 1:
             raise LLMError("Invalid key (LLM provider, HTTP 401)", fatal=True)
 
     with pytest.raises(SystemExit, match="Stopped"):
-        cli._run_jobs("interested", "tailor", "a tailored CV", run_one)
-    out = capsys.readouterr().out
-    assert max(most) == 2
-    # Each job's lines come out together, never interleaved with the other job's.
-    blocks = re.findall(r"#(\d) Role \1 \(Acme\)\n(.*?)(?=\n\n#|\Z)", out, re.S)
-    assert blocks and all(body.strip() == f"start {job}\nend {job}" for job, body in blocks)
-    # Job 4 may run alongside job 3; nothing after it starts.
-    assert {job for job, _ in blocks} <= {"1", "2", "3", "4"}
+        cli._run_jobs("interested", "tailor", "a tailored CV", run_one, lambda folder: True)
+    assert set(tried) <= {1, 2}  # only job 2 may have started alongside job 1
+
+
+def test_a_job_counts_as_done_only_while_its_files_exist(monkeypatch, tmp_path):
+    # clean-up deletes folders but not the runs that made them: a job moved back to
+    # Interested must be drafted again, not skipped as done.
+    from jobflow import cli, db
+    from jobflow.candidate import paths
+
+    conn = _Rows([(1, "Acme", "Analyst", True, True),     # done, folder deleted
+                  (2, "Acme", "Engineer", True, True),    # done, folder there
+                  (3, "Beta", "Quant", False, True)])     # draft failed, fixed by hand
+    monkeypatch.setattr(db, "connect", conn)
+    monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
+    (tmp_path / "acme" / "engineer-2").mkdir(parents=True)
+    ran, extra = [], []
+    cli._run_jobs("interested", "tailor", "a tailored CV", ran.append,
+                  lambda folder: folder.exists(), lambda folder: folder.name == "quant-3",
+                  lambda folder: extra.append(folder.name))
+    assert ran == [1]
+    assert any("FIXED-BY-HAND" in sql for sql in conn.sql)
+    assert extra == ["engineer-2", "quant-3"]  # --format's extra file, for the jobs already done
 
 
 def test_clean_up_deletes_only_closed_jobs_folders_and_only_on_yes(tmp_path, monkeypatch):

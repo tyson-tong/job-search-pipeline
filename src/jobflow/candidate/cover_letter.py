@@ -150,7 +150,10 @@ def write_letter(job_id: int, variant: str | None = None,
     # Like a CV, a letter that fails the fact check is not written as a finished document:
     # its text goes in the review, to fix before use.
     target = target_dir / ("COVER_LETTER_REVIEW.md" if errors else "cover-letter.docx")
-    if not errors:
+    if errors:
+        # One left by an earlier run isn't this letter, and would count as fixed by hand.
+        (target_dir / "cover-letter.docx").unlink(missing_ok=True)
+    else:
         documents.write_letter_docx(letter, source_cv, job, target)
     read_it = ("The letter is at the end of this file, not written as cover-letter.docx: read "
                "it line by line and fix the errors before you send it with your application. "

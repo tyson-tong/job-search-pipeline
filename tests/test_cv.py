@@ -200,6 +200,8 @@ def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypat
     monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
         json.dumps({"critique": [], "cover_letter": letter}) if kw.get("reviewer")
         else letter, "m"))
+    # A cover-letter.docx from an earlier run would look like this letter, checked.
+    (tmp_path / "cover-letter.docx").write_bytes(b"old")
     target, errors, _ = cover_letter.write_letter(1, output_dir=tmp_path)
     assert errors and target.name == "COVER_LETTER_REVIEW.md"
     assert not (tmp_path / "cover-letter.docx").exists()
@@ -273,3 +275,26 @@ def test_a_failed_company_search_is_a_note_not_a_failed_job(monkeypatch):
     monkeypatch.setattr(tailoring, "web_search", down)
     sources, notes = tailoring.research({"company": "Acme", "title": "Analyst"})
     assert sources == [] and "web search failed" in notes[0]
+
+
+def test_format_for_a_job_already_tailored_comes_from_its_checked_draft(tmp_path, monkeypatch):
+    # tailor-cv --format docx after a PDF-only run used to skip the job as done.
+    import yaml
+    from jobflow.candidate import tailoring
+
+    source = tmp_path / "CV_dev.yaml"
+    source.write_text(yaml.safe_dump({"cv": SOURCE_CV}))
+    monkeypatch.setattr(tailoring, "chosen_files", lambda: {"dev": source})
+    folder = tmp_path / "acme" / "analyst-1"
+    folder.mkdir(parents=True)
+    draft = folder / "CV_dev_draft.yaml"
+    draft.write_text(yaml.safe_dump({"cv": SOURCE_CV}))
+    assert tailoring.add_format(folder, "docx") == folder / "CV_dev_draft.docx"
+    assert tailoring.add_format(folder, "docx") is None   # already there
+    # A draft edited since into something the check fails never becomes a .tex.
+    edited = copy.deepcopy(SOURCE_CV)
+    edited["sections"]["experiences"][0]["position"] = "Head of Data"
+    draft.write_text(yaml.safe_dump({"cv": edited}))
+    with pytest.raises(RuntimeError, match="fails the fact check"):
+        tailoring.add_format(folder, "latex")
+    assert not (folder / "CV_dev_draft.tex").exists()
