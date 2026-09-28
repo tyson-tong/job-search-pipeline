@@ -242,11 +242,11 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="card"><h3>Tailoring</h3>
     <ul><li>Runs for every Interested job without a draft; jobs already done are skipped, unless their folder was deleted. A draft that failed the fact check is drafted again, unless you've edited it. <code>--format docx</code> or <code>latex</code> for a job already done writes that file from its re-checked draft, with no LLM call.</li>
     <li>Uses each job's best-matching CV unless <code>--cv</code> is given (an unscored job is scored first).</li>
-    <li>A hiring-manager reviewer revises the draft; the revision is kept only if it passes the fact check.</li>
+    <li>A hiring-manager reviewer revises the draft; the revision is kept only if it has no more fact-check errors than the first draft.</li>
     <li>Only the <code>cv</code> section goes to the LLM; design and settings are kept.</li>
     <li>Errors (render skipped): a changed, added, or removed header field (the headline is checked like section text), new or altered employers, positions, dates, education; an entry whose employer, position, dates, and education details don't match one original entry together (a date or title moved between entries); a removed employer, role, or education entry; new numbers. A draft with errors leaves no older PDF, .docx, or .tex beside it.</li>
     <li>Always the YAML draft and RenderCV's PDF of it (no PDF if the fact check found errors); <code>--format docx</code> or <code>latex</code> adds a .docx or a .tex.</li>
-    <li>A PDF over 1 page (or <code>--max-pages N</code>): the least relevant bullets are cut, re-rendering each time, until it fits (never an entry's last bullet).</li>
+    <li>A PDF over 1 page (or <code>--max-pages N</code>): the fewest of the least relevant bullets that make it fit are cut, found by re-rendering in a binary search (never an entry's last bullet).</li>
     <li>Warnings: new tool or skill names, and a page left mostly empty by an entry moved whole to the next page. Written to <code>CV_REVIEW.md</code>.</li>
     <li>Optional cover letter (<code>jobflow cover-letter</code>): reviewed the same way; numbers not in the CV, job ad, or research are errors; new terms and placeholders are warnings.</li></ul></div>
   <div class="card"><h3>Interview prep</h3>
@@ -287,6 +287,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><td><code>jobflow interview-prep</code></td><td>Interview briefing HTML for Interviewing jobs</td><td>candidate/interview.py</td></tr>
   <tr><td><code>jobflow clean-up</code></td><td>Delete output folders of Not interested, Withdrawn, Declined, and Rejected jobs, after you confirm</td><td>cli.py</td></tr>
   <tr><td><code>jobflow help [COMMAND]</code></td><td>Every command with its options, like a manual page (or one command's)</td><td>cli.py</td></tr>
+  <tr><td><code>jobflow init</code></td><td>Create config/.env, config/profile.toml, and config/searches.toml from the templates (first time only)</td><td>cli.py → settings.py</td></tr>
   <tr><td><code>jobflow skill-gaps</code></td><td>Skill-gap report HTML from scored Interested jobs</td><td>candidate/skill_gaps.py</td></tr>
 </table></div>
 

@@ -22,5 +22,5 @@ required_weight = 0.75
 preferred_weight = 0.25
 
 [locale]
-# Used for timestamps in generated interview briefings.
+# Used for timestamps in interview briefings and the skill-gaps report.
 timezone = "Australia/Sydney"

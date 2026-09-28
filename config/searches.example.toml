@@ -8,7 +8,9 @@ sites = [
     "seek",
 ]
 posted_within_days = 1
-max_results = 500
+max_results = 100
+# A hard cap on what each Apify run may cost; results past it are not scraped.
+max_cost_usd = 1.00
 exclude_title_terms = [
 ]
 include_title_terms = [

@@ -441,7 +441,7 @@ def record_failed_run(actor_id: str, run_id: str | None, dataset_id: str | None,
 
 def backfill_sources(conn) -> int:
     """Record every earlier sighting's site copy in job_sources (run once, when the
-    table is created; the migration itself only knows each job's first copy)."""
+    table is created: the migration only creates it)."""
     rows = conn.execute("SELECT job_id, observed_json FROM job_observations").fetchall()
     before = conn.execute("SELECT count(*) FROM job_sources").fetchone()[0]
     for job_pk, raw in rows:
