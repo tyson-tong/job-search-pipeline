@@ -489,15 +489,15 @@ def tailor_cv(job_id: int, variant: str | None = None,
     target_dir = output_dir or job_directory(job_id, job)
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"CV_{variant}_draft.yaml"
+    # A PDF, .docx, or .tex left by an earlier run is not this draft: remove it, so if this
+    # one fails the check or doesn't render, nothing beside it looks like a checked CV.
+    for suffix in (".pdf", ".docx", ".tex"):
+        target.with_suffix(suffix).unlink(missing_ok=True)
     _write(target, source_doc, draft_cv)
     render_it = f"`uv run rendercv render {target.name}` in its folder"
     rendered = ""
     cut: list[dict] = []
     if errors:
-        # A PDF, .docx, or .tex left by an earlier run is not this draft: remove it, so
-        # nothing beside this review looks like a checked CV.
-        for suffix in (".pdf", ".docx", ".tex"):
-            target.with_suffix(suffix).unlink(missing_ok=True)
         rendered = ("Not rendered as a PDF" + ("" if fmt == "pdf" else f" or written as {fmt}")
                     + f": fix the fact-check errors in the YAML draft first, then run {render_it}.")
         read_it = (f"Read {target.name} line by line against your source CV and fix the errors "
