@@ -120,6 +120,18 @@ def test_fact_check_flags_removed_employer_and_warns_on_new_terms():
     assert warnings and "Kubernetes" in warnings[0]
 
 
+
+def test_fact_check_flags_a_removed_role_at_an_employer_still_listed():
+    source = copy.deepcopy(SOURCE_CV)
+    source["sections"]["experiences"].append(
+        {"company": "Example Corp", "position": "Junior Analyst", "start_date": "2019-06",
+         "end_date": "2021-01", "highlights": ["Presented dashboards to executives"]})
+    draft = copy.deepcopy(source)
+    draft["sections"]["experiences"].pop()
+    errors, _ = fact_check(source, draft)
+    assert "Role removed at Example Corp: Junior Analyst 2019-06." in errors
+
+
 JOB = {"title": "Data Analyst", "company": "Acme",
        "description": "You will own 3 dashboards and work with Snowflake."}
 

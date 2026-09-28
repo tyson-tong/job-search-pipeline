@@ -81,6 +81,10 @@ def _terms(texts, skip_first: bool) -> set[str]:
     return terms
 
 
+def _role(entry: dict) -> tuple[str, str, str]:
+    return tuple(normalise_text(entry.get(f)) for f in ("company", "position", "start_date"))
+
+
 def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
     """Compare a tailored draft with its source CV.
 
@@ -102,6 +106,8 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
     draft_entries = [(normalise_text(e.get("institution")), normalise_text(e.get("area")), normalise_text(e.get("degree")))
                      for e in _entries(draft_cv)]
     draft_companies = {normalise_text(e.get("company")) for e in _entries(draft_cv)}
+    # Each role, not just each employer: two roles at one employer are two entries.
+    draft_roles = {_role(e) for e in _entries(draft_cv)}
     for entry in _entries(source_cv):
         if entry.get("institution") and (normalise_text(entry.get("institution")), normalise_text(entry.get("area")),
                                          normalise_text(entry.get("degree"))) not in draft_entries:
@@ -109,6 +115,9 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
                           f"{entry.get('degree') or ''} {entry.get('area') or ''}".rstrip() + ".")
         if entry.get("company") and normalise_text(entry["company"]) not in draft_companies:
             errors.append(f"Employer removed: {entry['company']}.")
+        elif entry.get("company") and _role(entry) not in draft_roles:
+            role = " ".join(str(entry.get(f) or "") for f in ("position", "start_date")).strip()
+            errors.append(f"Role removed at {entry['company']}: {role or 'an entry'}.")
     # The other header fields are compared exactly above, so only these are scanned here.
     source_sections = [source_cv.get("headline"), source_cv.get("sections")]
     draft_sections = [draft_cv.get("headline"), draft_cv.get("sections")]
