@@ -107,5 +107,6 @@ def test_only_filtered_jobs_over_two_weeks_past_posting_are_archived(database):
         statuses = dict(conn.execute("SELECT source_job_id, status FROM jobs").fetchall())
     assert statuses == {"1": "archived", "2": "filtered", "3": "new"}
     assert _one("SELECT via FROM status_history")[0] == "archive"
-    # Still a known job: seeing it again adds no new one.
+    # Still a known job: seeing it again adds no new one, and it stays archived.
     assert save_run("linkedin:a", "r4", "d4", [ad("1", "Intern", "2026-09-10", "old")]) == 0
+    assert _one("SELECT status FROM jobs WHERE source_job_id='1'")[0] == "archived"
