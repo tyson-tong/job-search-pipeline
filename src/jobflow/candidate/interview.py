@@ -6,14 +6,13 @@ import json
 import os
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import requests
 
 from ..db import connect, fetch_job
 from ..llm import complete
-from ..settings import timezone
+from ..settings import now
 from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_sources
 from .paths import job_directory
 
@@ -177,8 +176,7 @@ def prepare(job_id: int, output: Path | None = None) -> Path:
         for s in sources)
     posting_link = (f'<p><a href="{html.escape(_web_url(job["url"]), quote=True)}" rel="noreferrer">'
                     "Open job posting</a></p>" if _web_url(job["url"]) else "")
-    tz = timezone()
-    generated = datetime.now(tz).astimezone(tz).strftime("%Y-%m-%d %H:%M %Z")
+    generated = now().strftime("%Y-%m-%d %H:%M %Z")
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Interview preparation — {html.escape(job['company'] or '')} — {html.escape(job['title'])}</title>

@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 import os
 import tomllib
+from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -81,14 +83,23 @@ def profile_path() -> Path:
 
 
 def profile() -> dict:
+    """config/profile.toml's settings, read again only when the file changes."""
     path = profile_path()
     if not path.exists():
         raise RuntimeError(
             f"Profile not found at {path}. Run `uv run jobflow init` to create "
             "config/profile.toml (or set JOBFLOW_PROFILE), then put your CVs in cv/."
         )
-    with path.open("rb") as stream:
-        return tomllib.load(stream)
+    return _read_profile(path, path.stat().st_mtime_ns)
+
+
+@lru_cache(maxsize=4)
+def _read_profile(path: Path, mtime_ns: int) -> dict:
+    try:
+        with path.open("rb") as stream:
+            return tomllib.load(stream)
+    except tomllib.TOMLDecodeError as exc:
+        raise RuntimeError(f"{path} is not valid TOML: {exc}") from None
 
 
 def configured_path(section: str, name: str, default: str) -> Path:
@@ -131,11 +142,29 @@ def chosen_cvs() -> list[str]:
     return [c.strip() for c in cvs]
 
 
-def timezone() -> ZoneInfo | None:
-    name = profile().get("locale", {}).get("timezone")
+def timezone() -> ZoneInfo:
+    """The timezone of every date and time jobflow shows, stores, or compares:
+    JOBFLOW_TIMEZONE if set (the daily GitHub import's copy, published by update-searches),
+    else locale.timezone in config/profile.toml, else UTC."""
+    name, where = os.environ.get("JOBFLOW_TIMEZONE"), "JOBFLOW_TIMEZONE"
     if not name:
-        return None
+        where = "locale.timezone in config/profile.toml"
+        try:
+            name = profile().get("locale", {}).get("timezone")
+        except RuntimeError:   # no profile, as in GitHub Actions without the variable
+            name = None
     try:
-        return ZoneInfo(name)
-    except ZoneInfoNotFoundError as exc:
-        raise RuntimeError(f"Unknown locale.timezone {name!r} in profile") from exc
+        return ZoneInfo(name or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        raise RuntimeError(f"Unknown timezone {name!r} ({where}); use a name such as "
+                           '"Australia/Sydney"') from None
+
+
+def today() -> date:
+    """Today's date in timezone()."""
+    return datetime.now(timezone()).date()
+
+
+def now() -> datetime:
+    """The time now in timezone()."""
+    return datetime.now(timezone())

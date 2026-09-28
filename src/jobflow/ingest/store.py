@@ -11,6 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import psycopg
 import psycopg.types.json
 
+from .. import settings
 from .options import LINKEDIN_COUNTRIES
 from .searches import country_from_location, run_country, search_url_country
 from .sources import Posting, normalise, seek_url
@@ -537,7 +538,7 @@ def archive_old_jobs(today: date | None = None) -> int:
     tab. Returns how many were archived."""
     from ..db import connect
 
-    cutoff = (today or date.today()) - ARCHIVE_AFTER
+    cutoff = (today or settings.today()) - ARCHIVE_AFTER
     with connect() as conn:
         return conn.execute(
             """WITH moved AS (

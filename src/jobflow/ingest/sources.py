@@ -11,10 +11,11 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from html import unescape
 from urllib.parse import urlsplit
 
+from .. import settings
 from .options import (INDEED_JOB_TYPES, INDEED_WORK_ARRANGEMENTS, LINKEDIN_JOB_TYPES,
                              LINKEDIN_WORK_ARRANGEMENTS, SEEK_OUTPUT_JOB_TYPES,
                              SEEK_OUTPUT_WORK_ARRANGEMENTS)
@@ -88,15 +89,23 @@ def html_to_text(value: object) -> str:
 
 
 def to_date(value: object) -> date | None:
-    """ISO strings, ISO datetimes, or Unix timestamps in seconds or milliseconds."""
+    """ISO strings, ISO datetimes, or Unix timestamps in seconds or milliseconds. A moment
+    in time (a timestamp, or a datetime with its UTC offset) is dated in your timezone."""
     if value in (None, ""):
         return None
     if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()):
         number = float(value)
         return datetime.fromtimestamp(number / 1000 if number > 1e11 else number,
-                                      tz=timezone.utc).date()
+                                      tz=settings.timezone()).date()
+    text = str(value)
     try:
-        return date.fromisoformat(str(value)[:10])
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        moment = None
+    if moment is not None and moment.tzinfo is not None:
+        return moment.astimezone(settings.timezone()).date()
+    try:
+        return date.fromisoformat(text[:10])
     except ValueError:
         return None
 

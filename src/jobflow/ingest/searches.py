@@ -14,6 +14,7 @@ from datetime import date, timedelta
 from itertools import product
 from urllib.parse import parse_qs, urlencode, urlsplit
 
+from .. import settings
 from . import options as opt
 from .sources import ANNUAL_FACTOR, Posting
 
@@ -501,7 +502,7 @@ def filter_reason(posting: Posting, search: Search, site: str,
         return reason
     if "posted_date" in active and posting.posted_at is not None:
         # One day of slack: sites and time zones disagree on what "today" is.
-        oldest = (today or date.today()) - timedelta(days=search.posted_within_days + 1)
+        oldest = (today or settings.today()) - timedelta(days=search.posted_within_days + 1)
         if posting.posted_at < oldest:
             return (f"posted {posting.posted_at.isoformat()}, older than "
                     f"{WINDOW_NAMES[search.posted_within_days]}")

@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from ..db import CLOSED_STATUSES, STATUSES, connect, set_job_state
 from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
 from ..ingest.store import IN_PROGRESS, possible_duplicate_map, possible_duplicates
+from ..settings import today
 
 DEFAULT_STATUSES = ["interested", "applied", "interviewing", "offered", "accepted"]
 # Statuses a person can choose; "filtered" and "archived" are only set by jobflow itself.
@@ -139,9 +140,8 @@ def list_jobs(filters: dict) -> list[dict]:
                 LIMIT %(limit)s""",
             {**filters, "pattern": f"%{_like_escape(filters['q'])}%", "unknown": UNKNOWN_COUNTRY,
              "fx_codes": FX_CODES, "fx_rates": FX_RATES,
-             # This machine's date, as the rows' overdue flags use: the database's date is
-             # UTC, a day behind Sydney every morning.
-             "today": date.today(),
+             # Today in your timezone, as the rows' overdue flags use.
+             "today": today(),
              "within_days": POSTED_WITHIN.get(filters["posted"]),
              "older_than_days": POSTED_OLDER_THAN if filters["posted"] == "older" else None}
         ).fetchall()
@@ -152,7 +152,7 @@ def list_jobs(filters: dict) -> list[dict]:
         for job in jobs:
             job["currency"] = CURRENCIES.get(job["country"])
         duplicates = possible_duplicate_map(conn, [job["id"] for job in jobs])
-    today = date.today()
+    now_today = today()
     for job in jobs:
         similar = duplicates.get(job["id"], [])
         dups = [d for d in similar if d["same_country"]]
@@ -160,7 +160,7 @@ def list_jobs(filters: dict) -> list[dict]:
         # The same ad in another country: not a duplicate, but listed next to it.
         job["elsewhere"] = [d for d in similar if not d["same_country"]]
         job["duplicate_in_progress"] = next((d for d in dups if d["status"] in IN_PROGRESS), None)
-        job["overdue"] = bool(job["follow_up_on"] and job["follow_up_on"] < today
+        job["overdue"] = bool(job["follow_up_on"] and job["follow_up_on"] < now_today
                               and job["status"] not in CLOSED_STATUSES)
         job["stale"] = bool(job["status"] == "applied" and job["applied_at"]
                             and datetime.now(job["applied_at"].tzinfo) - job["applied_at"]
@@ -242,7 +242,7 @@ def summary() -> dict:
         overdue = conn.execute(
             """SELECT count(*) FROM applications a JOIN jobs j ON j.id = a.job_id
                WHERE a.follow_up_on < %s AND NOT (j.status = ANY(%s))""",
-            (date.today(), CLOSED_STATUSES)).fetchone()[0]
+            (today(), CLOSED_STATUSES)).fetchone()[0]
     # Scoring reads your CV files; a missing CV folder shouldn't break the rest of the page.
     from ..candidate.cvs import chosen_sources
     from ..candidate.matching import count_needing_match

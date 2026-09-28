@@ -17,6 +17,8 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
+from .. import settings
+
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 
@@ -215,7 +217,7 @@ def write_letter_docx(letter: str, cv: dict | str, job: dict, path: Path,
     greeting = re.match(r"\s*Dear\s+([^,\n]+),", letter)
     addressee = greeting[1].strip() if greeting else "Hiring Manager"
     recipient = [addressee] + [part for part in (job.get("company"), job.get("location")) if part]
-    today = today or date.today()
+    today = today or settings.today()
 
     def block(lines: list[str], bold_first: bool = False, space_after: float = 12) -> None:
         p = doc.add_paragraph()

@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import parse_qs, urlsplit
 
+from ..settings import today
 from . import queries, scoring
 
 MAX_BODY = 1_000_000
@@ -107,7 +108,7 @@ def make_handler(token: str, port: int):
                     # With id=..., only those jobs: the rows on the page being viewed.
                     ids = ({int(i) for i in query["id"] if i.isdigit()} if "id" in query else None)
                     body = queries.export_csv(queries.parse_filters(query), ids).encode()
-                    name = f"jobs-{'filtered-' if ids is not None else ''}{date.today()}.csv"
+                    name = f"jobs-{'filtered-' if ids is not None else ''}{today()}.csv"
                     return self._send(200, body, "text/csv; charset=utf-8",
                                       {"Content-Disposition": f'attachment; filename="{name}"'})
                 match = re.fullmatch(r"/api/jobs/(\d+)", url.path)

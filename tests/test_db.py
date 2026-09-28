@@ -236,3 +236,12 @@ def test_jobs_archived_over_90_days_ago_lose_their_ad_but_are_still_recognised(d
     # Seen again, the cleared job is still the same job, and stays archived.
     assert save_run("linkedin:a", "r2", "d2", [LINKEDIN], country="AU") == 0
     assert _one("SELECT status FROM jobs WHERE source_job_id=%s", LINKEDIN["id"])[0] == "archived"
+
+
+def test_dates_are_in_your_timezone_in_python_and_the_database(database, monkeypatch):
+    # The database's own dates were UTC: a day behind Sydney every morning, so the Posted
+    # column, the posted-within filter, and archiving disagreed with today's date.
+    from jobflow.settings import today
+
+    monkeypatch.setenv("JOBFLOW_TIMEZONE", "Pacific/Kiritimati")   # UTC+14
+    assert _one("SELECT current_setting('TimeZone'), now()::date") == ("Pacific/Kiritimati", today())

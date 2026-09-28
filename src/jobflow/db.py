@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import date
 from importlib import resources
 
 import psycopg
@@ -11,7 +10,7 @@ STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "o
             "accepted", "declined", "rejected", "withdrawn", "filtered", "archived")
 # Finished with, so no follow-up is due. "filtered" is set on import, or by
 # update-searches, when a job fails a search's local filters (see jobs.filter_reason);
-# "archived" when a filtered job is past ARCHIVE_FILTERED_AFTER (see ingest/store.py).
+# "archived" when a filtered or not interested job is past ARCHIVE_AFTER (see ingest/store.py).
 CLOSED_STATUSES = ["not_interested", "accepted", "declined", "rejected", "withdrawn", "filtered",
                    "archived"]
 # Statuses meaning you've applied; the first time a job reaches one sets applied_at.
@@ -19,10 +18,18 @@ APPLIED_STATUSES = ["applied", "interviewing", "offered", "accepted", "declined"
 
 
 def connect():
+    """A connection in settings.timezone(), so the dates the database works out (a
+    timestamp's day) and the timestamps it returns match the rest of jobflow's."""
+    from .settings import timezone
+
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL is required")
-    return psycopg.connect(url)
+    zone = timezone().key
+    conn = psycopg.connect(url)
+    conn.execute("SELECT set_config('TimeZone', %s, false)", (zone,))
+    conn.commit()
+    return conn
 
 
 def migration_files() -> list[tuple[str, str]]:
@@ -103,6 +110,8 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
     jobs.status is the single source of truth; the applications row mirrors it and
     holds the notes, follow-up date, and the first time the job was applied for.
     """
+    from .settings import today
+
     if status is not None and status not in STATUSES:
         raise RuntimeError(f"Unknown status {status!r}; choose from {', '.join(STATUSES)}")
     row = conn.execute("SELECT status FROM jobs WHERE id=%s FOR UPDATE", (job_id,)).fetchone()
@@ -113,7 +122,7 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
                      (status, job_id))
         conn.execute("""INSERT INTO status_history(job_id, from_status, to_status, via)
                         VALUES (%s,%s,%s,%s)""", (job_id, row[0], status, via))
-    note_line = f"{date.today().isoformat()}: {note.strip()}" if note and note.strip() else None
+    note_line = f"{today().isoformat()}: {note.strip()}" if note and note.strip() else None
     set_follow_up = follow_up_on is not _UNSET
     if status is None and not note_line and not set_follow_up:
         return

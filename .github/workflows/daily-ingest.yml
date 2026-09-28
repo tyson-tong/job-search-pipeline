@@ -30,3 +30,4 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           JOBFLOW_SEARCHES: ${{ vars.JOBFLOW_SEARCHES }}
+          JOBFLOW_TIMEZONE: ${{ vars.JOBFLOW_TIMEZONE }}

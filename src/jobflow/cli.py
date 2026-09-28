@@ -72,7 +72,7 @@ def main() -> None:
     ingest.add_argument("--search", help="Only this search name")
     ingest.add_argument("--site", choices=SITES, help="Only this job site")
     update = sub.add_parser("update-searches", help="After editing config/searches.toml: check "
-                            "it, update the GitHub copy the daily import reads, and filter Inbox "
+                            "it, update the GitHub copy the daily import reads (with your timezone), and filter Inbox "
                             "jobs from its exclude_companies or matching its "
                             "exclude_title_terms (and none of its include_title_terms)")
     update.add_argument("--dry-run", action="store_true",
@@ -108,8 +108,8 @@ def main() -> None:
                    "Declined, Rejected, and Archived jobs, after asking you to confirm (the "
                    "jobs stay in the database)")
     sub.add_parser("status", help="Show the daily GitHub import, read from GitHub: whether it's "
-                   "on, its last run, its secrets, whether its searches match "
-                   "config/searches.toml, and which job sites it calls")
+                   "on, its last run, its secrets, whether its searches and timezone match "
+                   "yours, and which job sites it calls")
     manual = sub.add_parser("help", help="Show every command, what it does, and its options "
                             "(or just one command's)")
     manual.add_argument("topic", nargs="?", metavar="COMMAND",
@@ -298,7 +298,7 @@ def update_searches(dry_run: bool = False) -> None:
     from .db import migrate
     from .ingest.searches import defaults_search, parse_config, search_warnings
     from .ingest.store import exclude_inbox_jobs
-    from .settings import searches_file
+    from .settings import searches_file, timezone
 
     path = searches_file()
     if not path.exists():
@@ -310,14 +310,21 @@ def update_searches(dry_run: bool = False) -> None:
     sys.stdout.flush()
     for warning in dict.fromkeys(w for s in searches for w in search_warnings(s)):
         print(f"warning: {warning}", file=sys.stderr)
+    # The daily import has no config/profile.toml, so it gets your timezone this way too.
+    zone = timezone().key
     if dry_run:
-        print("Would update the JOBFLOW_SEARCHES GitHub variable (dry run: not updated)")
+        print(f"Would update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE ({zone}) GitHub variables "
+              "(dry run: not updated)")
     else:
         _gh(["variable", "set", "JOBFLOW_SEARCHES"], "Updating the JOBFLOW_SEARCHES GitHub "
             "variable (nothing else was changed)", input=text,
             hint=", or set the variable by hand: gh variable set JOBFLOW_SEARCHES < "
             "config/searches.toml")
-        print("Updated the JOBFLOW_SEARCHES GitHub variable: the daily import uses this file now")
+        _gh(["variable", "set", "JOBFLOW_TIMEZONE", "--body", zone], "Updating the "
+            "JOBFLOW_TIMEZONE GitHub variable (JOBFLOW_SEARCHES was updated)",
+            hint=f", or set the variable by hand: gh variable set JOBFLOW_TIMEZONE --body {zone}")
+        print(f"Updated the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE ({zone}) GitHub variables: the "
+              "daily import uses them now")
     migrate()
     # A job found by a search since renamed or removed is judged by [defaults].
     matched, checked = exclude_inbox_jobs(searches, dry_run=dry_run, fallback=defaults_search(text))
@@ -346,7 +353,7 @@ def status() -> None:
 
     from .ingest.options import ACTORS, SITES
     from .ingest.searches import SearchConfigError, parse_config
-    from .settings import searches_file
+    from .settings import searches_file, timezone
 
     state = _gh(["api", f"repos/{{owner}}/{{repo}}/actions/workflows/{WORKFLOW}", "--jq", ".state"],
                 "Reading the daily import's workflow").strip()
@@ -359,7 +366,7 @@ def status() -> None:
     print(f"Daily import (.github/workflows/{WORKFLOW}): {WORKFLOW_STATES.get(state, state)}")
     if runs:
         run = runs[0]
-        started = datetime.fromisoformat(run["createdAt"]).astimezone()
+        started = datetime.fromisoformat(run["createdAt"]).astimezone(timezone())
         print(f"  Last run: {started:%Y-%m-%d %H:%M %Z} ({run['event']}), "
               f"{run['conclusion'] or run['status']}")
     else:
@@ -392,6 +399,12 @@ def status() -> None:
                   f"{'es' if len(searches) != 1 else ''}"
                   + ("" if same is None else " (same as config/searches.toml)" if same
                      else " (differs from config/searches.toml: run `uv run jobflow update-searches`)"))
+    published, zone = variables.get("JOBFLOW_TIMEZONE"), timezone().key
+    print(f"Timezone: JOBFLOW_TIMEZONE {published}"
+          + (" (same as yours)" if published == zone
+             else f" (yours is {zone}: run `uv run jobflow update-searches`)")
+          if published else "Timezone: JOBFLOW_TIMEZONE not set, so the daily import uses UTC: "
+          "run `uv run jobflow update-searches`")
     print("Sites (the Apify scrapers the import calls):")
     for site in SITES:
         print(f"  {site:<9} {'used' if site in used else 'not used':<9} {ACTORS[site]:<38} "

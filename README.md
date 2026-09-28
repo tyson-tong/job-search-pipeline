@@ -63,7 +63,7 @@ Edit `config/searches.toml` ([settings reference](docs/searches.md)), then run:
 uv run jobflow update-searches
 ```
 
-It checks the file (an invalid one stops everything, so a typo never reaches the daily import), updates the copy the daily GitHub import reads, and filters jobs already in your Inbox from your `exclude_companies` or whose titles match your `exclude_title_terms` (unless they match `include_title_terms`; a job you moved back from Filtered is left alone). Add `--dry-run` to check and preview without publishing or filtering anything (like every command, it still brings the database tables up to date). Filtered jobs go to the Filtered tab.
+It checks the file (an invalid one stops everything, so a typo never reaches the daily import), updates the copy the daily GitHub import reads (with your timezone, from `config/profile.toml`), and filters jobs already in your Inbox from your `exclude_companies` or whose titles match your `exclude_title_terms` (unless they match `include_title_terms`; a job you moved back from Filtered is left alone). Add `--dry-run` to check and preview without publishing or filtering anything (like every command, it still brings the database tables up to date). Filtered jobs go to the Filtered tab.
 
 ## Commands
 
@@ -77,7 +77,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | `jobflow clean-up` | Delete the output folders of Not interested, Withdrawn, Declined, Rejected, and Archived jobs, after you confirm (the jobs stay in the tracker) |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
 | `jobflow ingest [--search NAME] [--site SITE]` | Run the searches now (the daily import does this; uses Apify credits) |
-| `jobflow status` | The daily GitHub import, read from GitHub: whether it's on, its last run, its secrets, whether its searches match `config/searches.toml`, and which sites it calls |
+| `jobflow status` | The daily GitHub import, read from GitHub: whether it's on, its last run, its secrets, whether its searches and timezone match yours, and which sites it calls |
 | `jobflow init` | Create your settings files (first time only) |
 | `jobflow help [COMMAND]` | Every command with its options, like a manual page (or one command's; `COMMAND -h` works too) |
 

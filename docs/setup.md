@@ -116,7 +116,7 @@ Tavily receives the company name and job title, nothing from your CVs.
 
 ## 5. GitHub CLI
 
-The [GitHub CLI](https://cli.github.com), `gh`, sets the `JOBFLOW_SEARCHES` variable that the daily import reads; `jobflow update-searches` uses it after every edit to your searches.
+The [GitHub CLI](https://cli.github.com), `gh`, sets the `JOBFLOW_SEARCHES` and `JOBFLOW_TIMEZONE` variables that the daily import reads; `jobflow update-searches` uses it after every edit to your searches.
 
 1. Install it: see [cli.github.com](https://cli.github.com) for your system (on Ubuntu and WSL, the instructions there add GitHub's package repository).
 2. Log in: `gh auth login`, choose GitHub.com, and follow the browser prompt.
@@ -127,11 +127,11 @@ The [GitHub CLI](https://cli.github.com), `gh`, sets the `JOBFLOW_SEARCHES` vari
 The daily import runs in GitHub Actions, so it needs its own copy of two keys. In your repository on GitHub, open **Settings → Secrets and variables → Actions**:
 
 - **Secrets:** `DATABASE_URL` and `APIFY_TOKEN`, with the same values as in `config/.env`. Or from this folder: `gh secret set DATABASE_URL` and `gh secret set APIFY_TOKEN`, pasting each value when asked (it isn't echoed or saved in your shell history).
-- **Variable:** `JOBFLOW_SEARCHES`, your searches. Run `uv run jobflow update-searches` to set it.
+- **Variables:** `JOBFLOW_SEARCHES`, your searches, and `JOBFLOW_TIMEZONE`, the timezone in `config/profile.toml`. Run `uv run jobflow update-searches` to set both.
 
 The LLM and Tavily keys stay on your machine; GitHub never needs them.
 
-Then open **Actions → "Daily job ingestion" → Run workflow** to test it once. After that it runs every day at 00:30 Sydney time (01:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. If a run fails, GitHub emails you, and the error is recorded in the database (`scraper_runs`). GitHub may start a scheduled run a few hours late when it's busy. `uv run jobflow status` shows it all at a glance: whether the import is on, its last run, which secrets are set, whether the published searches match `config/searches.toml`, and which sites it calls.
+Then open **Actions → "Daily job ingestion" → Run workflow** to test it once. After that it runs every day at 00:30 Sydney time (01:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. If a run fails, GitHub emails you, and the error is recorded in the database (`scraper_runs`). GitHub may start a scheduled run a few hours late when it's busy. `uv run jobflow status` shows it all at a glance: whether the import is on, its last run, which secrets are set, whether the published searches and timezone match yours, and which sites it calls.
 
 ## If a key leaks
 

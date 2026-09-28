@@ -22,5 +22,7 @@ required_weight = 0.75
 preferred_weight = 0.25
 
 [locale]
-# Used for timestamps in interview briefings and the skill-gaps report.
+# The timezone of every date and time jobflow shows or compares: today, the day a job was
+# first seen, follow-ups, archiving, and the times on reports. update-searches publishes it
+# for the daily import. Left out, UTC.
 timezone = "Australia/Sydney"

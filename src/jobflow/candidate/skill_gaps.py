@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import html
 import json
-from datetime import datetime
 from pathlib import Path
 
 from ..db import connect
 from ..llm import complete, parse_json
-from ..settings import matching_weights, output_directory, timezone
+from ..settings import matching_weights, now, output_directory
 from .cvs import chosen_files
 from .matching import _cached_assessments, _stored, best_variant
 
@@ -149,10 +148,9 @@ def report(output: Path | None = None) -> tuple[Path, list[dict]]:
                            "config/profile.toml names)")
     groups, model = _group(gaps)
     skills, ungrouped = rank_skills(gaps[:MAX_GAPS_SENT], groups)
-    tz = timezone()
-    now = datetime.now(tz)
-    target = output or (output_directory() / f"skill-gaps-{now:%Y-%m-%d}.html")
+    generated = now()
+    target = output or (output_directory() / f"skill-gaps-{generated:%Y-%m-%d}.html")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(_page(skills, scored, ungrouped, model, now.strftime("%Y-%m-%d %H:%M %Z"),
+    target.write_text(_page(skills, scored, ungrouped, model, generated.strftime("%Y-%m-%d %H:%M %Z"),
                             left_out=max(0, len(gaps) - MAX_GAPS_SENT)))
     return target, skills

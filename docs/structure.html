@@ -264,7 +264,8 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <tr><td>Apify token</td><td><code>config/.env</code> APIFY_TOKEN</td><td>secret APIFY_TOKEN</td></tr>
   <tr><td>Searches</td><td><code>config/searches.toml</code></td><td>variable JOBFLOW_SEARCHES (same text; <code>jobflow update-searches</code> updates it)</td></tr>
   <tr><td>LLM and Tavily keys</td><td><code>config/.env</code></td><td>not needed</td></tr>
-  <tr><td>CV folder, output root, weights, timezone</td><td><code>config/profile.toml</code></td><td>not needed</td></tr>
+  <tr><td>Timezone</td><td><code>config/profile.toml</code> <code>[locale]</code></td><td>variable JOBFLOW_TIMEZONE (<code>jobflow update-searches</code> updates it)</td></tr>
+  <tr><td>CV folder, output root, weights</td><td><code>config/profile.toml</code></td><td>not needed</td></tr>
 </table></div>
 <p class="small muted" style="margin-top:8px"><code>jobflow init</code> creates <code>config/.env</code>, <code>config/profile.toml</code>, and <code>config/searches.toml</code> from the templates, never overwriting existing files.</p>
 <p class="small muted" style="margin-top:8px"><code>config/.env</code>, <code>config/profile.toml</code>, <code>config/searches.toml</code>, <code>output/</code>, and <code>cv/</code> are ignored by Git; the <code>.example</code> files show what goes in them.</p>
@@ -281,14 +282,14 @@ applications      42   applied   2026-09-25: Applied via referral</div>
 <div class="table-wrap"><table>
   <tr><th>Command</th><th>Does</th><th>Module</th></tr>
   <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
-  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES GitHub variable, filter Inbox jobs from excluded employers or matching excluded title terms</td><td>cli.py → ingest/store.py</td></tr>
+  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables, filter Inbox jobs from excluded employers or matching excluded title terms</td><td>cli.py → ingest/store.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv</code></td><td>Reviewed, fact-checked CVs for Interested jobs</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow cover-letter</code></td><td>Optional reviewed, fact-checked cover letters for Interested jobs</td><td>candidate/cover_letter.py</td></tr>
   <tr><td><code>jobflow interview-prep</code></td><td>Interview briefing HTML for Interviewing jobs</td><td>candidate/interview.py</td></tr>
   <tr><td><code>jobflow clean-up</code></td><td>Delete output folders of Not interested, Withdrawn, Declined, Rejected, and Archived jobs, after you confirm</td><td>cli.py</td></tr>
   <tr><td><code>jobflow help [COMMAND]</code></td><td>Every command with its options, like a manual page (or one command's)</td><td>cli.py</td></tr>
-  <tr><td><code>jobflow status</code></td><td>Show the daily import, read from GitHub: on or off, last run, secrets, whether its searches match, and the sites it calls</td><td>cli.py (gh)</td></tr>
+  <tr><td><code>jobflow status</code></td><td>Show the daily import, read from GitHub: on or off, last run, secrets, whether its searches and timezone match yours, and the sites it calls</td><td>cli.py (gh)</td></tr>
   <tr><td><code>jobflow init</code></td><td>Create config/.env, config/profile.toml, and config/searches.toml from the templates (first time only)</td><td>cli.py → settings.py</td></tr>
   <tr><td><code>jobflow skill-gaps</code></td><td>Skill-gap report HTML from scored Interested jobs</td><td>candidate/skill_gaps.py</td></tr>
 </table></div>
