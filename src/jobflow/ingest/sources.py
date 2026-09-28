@@ -8,6 +8,7 @@ Anything else is read with LinkedIn-style field names.
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -30,6 +31,14 @@ PERIOD_WORDS = (
 )
 INDEED_PERIODS = {"HOUR": "hourly", "DAY": "daily", "WEEK": "weekly", "MONTH": "monthly",
                   "YEAR": "annual"}
+# The amounts each period's pay can plausibly be, in any of the searched currencies (a
+# Hong Kong salary is often HK$100,000 a month). A period word next to an amount outside
+# its range is about something else, as in "$120k package, flexible hours".
+PLAUSIBLE = {"hourly": (5, 1_000), "daily": (50, 10_000), "weekly": (200, 50_000),
+             "monthly": (500, 500_000), "annual": (1_000, math.inf)}
+# An annual salary above this is a misread, never a real offer; the database's salary
+# columns also can't hold much more, and one value too big would fail a whole import.
+MAX_ANNUAL = 50_000_000
 
 
 @dataclass(frozen=True)
@@ -88,20 +97,41 @@ def to_date(value: object) -> date | None:
         return None
 
 
-def _period(text: str, amount: float) -> str:
-    lowered = text.casefold()
-    for period, pattern in PERIOD_WORDS:
-        if re.search(pattern, lowered):
-            return period
-    # No period stated: infer it from the size of the amount.
+def _period_from_amount(amount: float) -> str:
+    """The period of an amount with no period stated, from its size."""
     return "hourly" if amount < 300 else "daily" if amount < 3000 else \
         "monthly" if amount < 20000 else "annual"
+
+
+def _period(text: str, amounts: tuple[int, int], amount: float,
+            ignore: list[tuple[int, int]]) -> str:
+    """The period the salary text states for the amounts at text[amounts[0]:amounts[1]]:
+    the period word nearest after them (then nearest before), skipping words inside
+    `ignore` and any whose period is implausible for the amount. Else from the amount."""
+    start, end = amounts
+    found = []
+    for period, pattern in PERIOD_WORDS:
+        for word in re.finditer(pattern, text, re.I):
+            if not any(a <= word.start() < b for a, b in ignore):
+                after = word.start() >= end
+                found.append((not after, word.start() - end if after else start - word.end(), period))
+    for *_, period in sorted(found):
+        low, high = PLAUSIBLE[period]
+        if low <= amount < high:
+            return period
+    return _period_from_amount(amount)
+
+
+def _annual(low: float, high: float, period: str) -> tuple[float, float] | None:
+    factor = ANNUAL_FACTOR[period]
+    return None if high * factor > MAX_ANNUAL else (low * factor, high * factor)
 
 
 def parse_salary(value: object) -> tuple[float, float] | None:
     """Annualised (min, max) from Indeed's salary object or free-text salary strings.
 
-    Returns None when no amount can be found (for example "Competitive").
+    Returns None when no amount can be found (for example "Competitive"), or when the
+    amount is too large to be a real salary.
     """
     if isinstance(value, dict):
         low, high = value.get("min"), value.get("max")
@@ -109,9 +139,8 @@ def parse_salary(value: object) -> tuple[float, float] | None:
         if not amounts:
             return None
         period = INDEED_PERIODS.get(str(value.get("type") or "").upper()) or \
-            _period("", max(amounts))
-        factor = ANNUAL_FACTOR[period]
-        return min(amounts) * factor, max(amounts) * factor
+            _period_from_amount(max(amounts))
+        return _annual(min(amounts), max(amounts), period)
     if isinstance(value, list):
         value = " - ".join(str(v) for v in value)
     if not isinstance(value, str) or not value.strip():
@@ -119,7 +148,7 @@ def parse_salary(value: object) -> tuple[float, float] | None:
     text = value.replace("\u2013", "-").replace("\u2014", "-")
     matches = list(re.finditer(r"(?P<cur>[$£€]|\b(?:A|AU|NZ|S|US|HK)\$)?\s*"
                                r"(?P<num>\d[\d,]*(?:\.\d+)?)\s*(?P<k>[kK]\b)?(?P<pct>\s*%)?", text))
-    amounts, skipped = [], []
+    amounts, skipped, spans = [], [], []
     has_currency = any(m["cur"] for m in matches)
     kept = None
     for m in matches:
@@ -134,16 +163,14 @@ def parse_salary(value: object) -> tuple[float, float] | None:
         amount = float(m["num"].replace(",", "")) * (1000 if m["k"] else 1)
         if amount >= 5:
             amounts.append(amount)
+            spans.append(m.span())
         kept = m
     if not amounts:
         return None
     # A skipped number takes its next word with it, so "2 weeks leave" doesn't read as weekly pay.
-    period_text = text
-    for m in reversed(skipped):
-        end = m.end() + len(re.match(r"\s*\w*", text[m.end():])[0])
-        period_text = period_text[:m.start()] + " " + period_text[end:]
-    factor = ANNUAL_FACTOR[_period(period_text, max(amounts))]
-    return min(amounts) * factor, max(amounts) * factor
+    ignore = [(m.start(), m.end() + len(re.match(r"\s*\w*", text[m.end():])[0])) for m in skipped]
+    period = _period(text, (spans[0][0], spans[-1][1]), max(amounts), ignore)
+    return _annual(min(amounts), max(amounts), period)
 
 
 def _as_list(value: object) -> list:
