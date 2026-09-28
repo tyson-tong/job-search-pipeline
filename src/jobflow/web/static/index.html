@@ -843,7 +843,8 @@ function renderSearches() {
         el("button", { className: "btn small", onclick: () => copyCommand("uv run jobflow update-searches") }, "Copy")),
       el("div", { className: "cmd" }, el("code", {}, "uv run jobflow ingest --site seek"),
         el("button", { className: "btn small", onclick: () => copyCommand("uv run jobflow ingest --site seek") }, "Copy")),
-      el("p", { className: "meta", style: "margin:4px 0 0" }, "The last command runs the searches now (one site here) instead of waiting for the daily run; it costs Apify credits.")));
+      el("p", { className: "meta", style: "margin:4px 0 0" }, "The last command runs the searches now (one site here) instead of waiting for the daily run; ",
+        el("strong", {}, "IT COSTS APIFY CREDITS."))));
   fill(box, [header, data.searches.map(renderSearchCard), renderReference(data.reference)]);
 }
 function renderSearchCard(search) {
