@@ -15,6 +15,8 @@ from .searches import PlannedRun, filter_reason, load_searches, plan
 # Sites run at the same time, but imports take turns: two sites' copies of one job saved
 # at once would each miss the other and never merge.
 _save_lock = threading.Lock()
+# The longest APIFY_MAX_WAIT_MINUTES may be: the daily GitHub job itself stops at 180 minutes.
+MAX_WAIT_MINUTES = 180
 
 
 def make_client() -> ApifyClient:
@@ -78,16 +80,16 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
 
 
 def wait_minutes() -> float:
-    """APIFY_MAX_WAIT_MINUTES, default 60: checked before any run, so a typo can't crash
-    the import part-way or wait a negative time."""
+    """APIFY_MAX_WAIT_MINUTES, default 60, at most MAX_WAIT_MINUTES: checked before any run,
+    so a typo can't crash the import part-way or wait a negative time."""
     text = os.environ.get("APIFY_MAX_WAIT_MINUTES") or "60"
     try:
         minutes = float(text)
     except ValueError:
         minutes = math.nan
-    if not math.isfinite(minutes) or minutes <= 0:
-        raise RuntimeError(f"APIFY_MAX_WAIT_MINUTES must be a number of minutes above 0, "
-                           f"not {text!r}")
+    if not math.isfinite(minutes) or not 0 < minutes <= MAX_WAIT_MINUTES:
+        raise RuntimeError(f"APIFY_MAX_WAIT_MINUTES must be a number of minutes above 0 and at "
+                           f"most {MAX_WAIT_MINUTES}, not {text!r}")
     return minutes
 
 
