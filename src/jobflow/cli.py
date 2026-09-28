@@ -227,7 +227,7 @@ def init() -> None:
     print("""
 Next:
   1. config/.env           DATABASE_URL, APIFY_TOKEN, LLM_API_KEY, LLM_MODEL, WEB_SEARCH_API_KEY
-  2. cv/                   your CVs (names containing "cv": .yaml, .tex, .docx, or .pdf)
+  2. cv/                   your CVs (.yaml, .tex, .docx, or .pdf); name 1 or 2 with cvs in profile.toml
   3. config/searches.toml  your job searches (it starts with example searches: replace them)
   4. uv run jobflow web, then the Searches tab to check your searches""")
 
