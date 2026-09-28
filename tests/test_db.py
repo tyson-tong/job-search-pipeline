@@ -48,6 +48,12 @@ def _one(sql, *params):
         return conn.execute(sql, params).fetchone()
 
 
+
+def _rows(sql, *params):
+    with connect() as conn:
+        return conn.execute(sql, params).fetchall()
+
+
 def test_migrations_apply_once_on_an_empty_database(database, capsys):
     migrate()   # already applied by the fixture: nothing runs again
     assert "Applied migration" not in capsys.readouterr().out
@@ -133,3 +139,38 @@ def test_a_draft_failing_the_check_after_an_earlier_one_passed_is_drafted_again(
     cli._run_jobs("interested", "tailor", "a tailored CV", ran.append,
                   lambda folder: any(folder.glob("CV_*_draft.yaml")), lambda folder: False)
     assert ran == [job_id]
+
+
+def test_update_searches_filters_the_inbox_but_not_a_job_moved_back_from_filtered(database):
+    from jobflow.ingest.searches import parse_config
+    from jobflow.ingest.store import exclude_inbox_jobs
+
+    search = parse_config('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
+                          'exclude_title_terms = ["Intern"]\n')[0]
+
+    def ad(job_id, title):
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}", "title": title,
+                "companyName": f"Employer {job_id}", "descriptionText": f"ad {job_id}"}
+    save_run("linkedin:a", "r1", "d1", [ad("1", "Intern Analyst"), ad("2", "Intern Trader"),
+                                         ad("3", "Analyst")], search_name="s", country="AU")
+    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    with connect() as conn:   # filtered earlier, then moved back to the Inbox by hand
+        conn.execute("UPDATE jobs SET status='filtered' WHERE id=%s", (ids["2"],))
+        set_job_state(conn, ids["2"], status="new", via="web")
+    assert [job["id"] for job in exclude_inbox_jobs([search], dry_run=True)[0]] == [ids["1"]]
+    assert _one("SELECT count(*) FROM jobs WHERE status='filtered'")[0] == 0   # dry run
+    exclude_inbox_jobs([search])
+    assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {
+        "1": "filtered", "2": "new", "3": "new"}
+
+
+def test_a_job_whose_search_was_renamed_is_judged_by_the_defaults(database):
+    from jobflow.ingest.searches import defaults_search, parse_config
+    from jobflow.ingest.store import exclude_inbox_jobs
+
+    text = ('[defaults]\nexclude_title_terms = ["Intern"]\n'
+            '[[search]]\nname = "renamed"\nterms = ["a"]\nlocations = { AU = [] }\n')
+    save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "title": "Intern Analyst"}],
+             search_name="old-name", country="AU")
+    matched, _ = exclude_inbox_jobs(parse_config(text), fallback=defaults_search(text))
+    assert [job["reason"] for job in matched] == ["title contains 'Intern'"]

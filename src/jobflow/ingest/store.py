@@ -456,12 +456,15 @@ def backfill_sources(conn) -> int:
     return conn.execute("SELECT count(*) FROM job_sources").fetchone()[0] - before
 
 
-def exclude_inbox_jobs(searches: list, dry_run: bool = False) -> tuple[list[dict], int]:
+def exclude_inbox_jobs(searches: list, dry_run: bool = False,
+                       fallback=None) -> tuple[list[dict], int]:
     """Apply exclude_companies and exclude_title_terms to jobs already in the Inbox: each
     New job that the search which found it would keep out (see excluded_reason) becomes
     'filtered', with the reason an import would record, and the change is
-    recorded in status_history. Only New jobs are touched. Returns (the jobs matched, the
-    number of Inbox jobs checked); with dry_run, nothing is changed."""
+    recorded in status_history. Only New jobs are touched, and never one you moved back
+    to the Inbox from Filtered. A job whose search has since been renamed or removed is
+    judged by `fallback` (the [defaults] exclusions), if given. Returns (the jobs matched,
+    the number of Inbox jobs checked); with dry_run, nothing is changed."""
     from ..db import connect
     from .searches import excluded_reason
 
@@ -473,10 +476,13 @@ def exclude_inbox_jobs(searches: list, dry_run: bool = False) -> tuple[list[dict
                LEFT JOIN LATERAL (SELECT scraper_run_id FROM job_observations o
                                   WHERE o.job_id = j.id ORDER BY observed_at LIMIT 1) first ON true
                LEFT JOIN scraper_runs r ON r.id = first.scraper_run_id
-               WHERE j.status = 'new' ORDER BY j.id""").fetchall()
+               WHERE j.status = 'new'
+                 AND NOT EXISTS (SELECT 1 FROM status_history h WHERE h.job_id = j.id
+                                 AND h.from_status = 'filtered' AND h.to_status = 'new')
+               ORDER BY j.id""").fetchall()
         matched = []
         for job_id, title, company, search_name in rows:
-            search = by_name.get(search_name)
+            search = by_name.get(search_name, fallback)
             reason = search and excluded_reason(title, company, search)
             if reason:
                 matched.append({"id": job_id, "title": title, "company": company,

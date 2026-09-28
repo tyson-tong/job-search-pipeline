@@ -76,7 +76,8 @@ def main() -> None:
                             "jobs from its exclude_companies or matching its "
                             "exclude_title_terms (and none of its include_title_terms)")
     update.add_argument("--dry-run", action="store_true",
-                        help="Check the file and list the jobs that would be filtered; change nothing")
+                        help="Check the file and list the jobs that would be filtered; publish and "
+                        "filter nothing (the database tables are still brought up to date)")
     web = sub.add_parser("web", help="Run the local job tracker web server")
     web.add_argument("--port", type=int, default=8765,
                      help="Port to serve the tracker on (default: 8765)")
@@ -292,10 +293,10 @@ def _gh(args: list[str], doing: str, input: str | None = None, hint: str = "") -
 def update_searches(dry_run: bool = False) -> None:
     """Check config/searches.toml, publish it as the JOBFLOW_SEARCHES GitHub variable that
     the daily import reads, then filter Inbox jobs from its excluded employers or matching
-    its excluded title terms (imports only apply them to the jobs they bring in). An invalid file stops before
-    anything is published, so a typo never reaches the daily import."""
+    its excluded title terms (imports only apply them to the jobs they bring in). An invalid
+    file stops before anything is published, so a typo never reaches the daily import."""
     from .db import migrate
-    from .ingest.searches import parse_config, search_warnings
+    from .ingest.searches import defaults_search, parse_config, search_warnings
     from .ingest.store import exclude_inbox_jobs
     from .settings import searches_file
 
@@ -318,12 +319,13 @@ def update_searches(dry_run: bool = False) -> None:
             "config/searches.toml")
         print("Updated the JOBFLOW_SEARCHES GitHub variable: the daily import uses this file now")
     migrate()
-    matched, checked = exclude_inbox_jobs(searches, dry_run=dry_run)
+    # A job found by a search since renamed or removed is judged by [defaults].
+    matched, checked = exclude_inbox_jobs(searches, dry_run=dry_run, fallback=defaults_search(text))
     for job in matched:
         print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
               f"{job['reason']}")
     print(f"{'Would filter' if dry_run else 'Filtered'} {len(matched)} of {checked} Inbox jobs"
-          f"{' (dry run: nothing changed)' if dry_run else ''}")
+          f"{' (dry run: none filtered)' if dry_run else ''}")
 
 
 # The daily import's workflow file, the secrets it needs, and what GitHub's workflow states

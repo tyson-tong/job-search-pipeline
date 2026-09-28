@@ -246,6 +246,17 @@ def parse_config(text: str) -> list[Search]:
     return searches
 
 
+def defaults_search(text: str) -> Search:
+    """The exclusions under [defaults] as a search of their own, to judge jobs found by a
+    search that has since been renamed or removed. Call after parse_config(text)."""
+    raw = _current_names(tomllib.loads(text).get("defaults", {}), "[defaults]")
+    return Search(name="[defaults]", terms=(), locations={}, sites=(), posted_within_days=1,
+                  max_results=1,
+                  exclude_title_terms=_title_terms(raw, "exclude_title_terms", "[defaults]"),
+                  include_title_terms=_title_terms(raw, "include_title_terms", "[defaults]"),
+                  exclude_companies=_title_terms(raw, "exclude_companies", "[defaults]"))
+
+
 def load_searches() -> list[Search]:
     """From JOBFLOW_SEARCHES (the TOML text, as used in GitHub Actions), else the file
     named by paths.searches_file in config/profile.toml (default ./searches.toml relative to config/profile.toml)."""

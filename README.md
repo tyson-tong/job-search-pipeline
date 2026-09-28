@@ -63,7 +63,7 @@ Edit `config/searches.toml` ([settings reference](docs/searches.md)), then run:
 uv run jobflow update-searches
 ```
 
-It checks the file (an invalid one stops everything, so a typo never reaches the daily import), updates the copy the daily GitHub import reads, and filters jobs already in your Inbox from your `exclude_companies` or whose titles match your `exclude_title_terms` (unless they match `include_title_terms`). Add `--dry-run` to check and preview without changing anything. Filtered jobs go to the Filtered tab.
+It checks the file (an invalid one stops everything, so a typo never reaches the daily import), updates the copy the daily GitHub import reads, and filters jobs already in your Inbox from your `exclude_companies` or whose titles match your `exclude_title_terms` (unless they match `include_title_terms`; a job you moved back from Filtered is left alone). Add `--dry-run` to check and preview without publishing or filtering anything (like every command, it still brings the database tables up to date). Filtered jobs go to the Filtered tab.
 
 ## Commands
 
