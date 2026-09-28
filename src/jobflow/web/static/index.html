@@ -396,12 +396,13 @@ function statusParams() {
   statuses.forEach((s) => params.append("status", s));
   return params;
 }
-// Filtered jobs are never scored or followed up, so those sorts (and Recently added) don't apply there.
-const NOT_FILTERED_SORTS = ["score", "added", "follow_up"];
+// Jobs in the Inbox and Filtered are never scored or followed up, so those sorts (and, for
+// Filtered, Recently added) don't apply there.
+const HIDDEN_SORTS = { inbox: ["score", "follow_up"], filtered: ["score", "added", "follow_up"] };
 function fitSort() {
-  const filtered = state.view === "filtered";
+  const hidden = HIDDEN_SORTS[state.view] || [];
   [...sortInput.options].forEach((option) => {
-    option.hidden = option.disabled = filtered && NOT_FILTERED_SORTS.includes(option.value); });
+    option.hidden = option.disabled = hidden.includes(option.value); });
   if (sortInput.selectedOptions[0]?.disabled) { sortInput.value = "posted"; remember(); }
 }
 function noStatuses() { return state.view === "jobs" && !state.statuses.size; }
