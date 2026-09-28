@@ -204,7 +204,7 @@ def test_jobs_run_two_at_a_time_print_whole_and_stop_on_a_bad_key(monkeypatch, c
             raise LLMError("Invalid key (LLM provider, HTTP 401)", fatal=True)
 
     with pytest.raises(SystemExit, match="Stopped"):
-        cli.for_jobs("interested", "tailor", "a tailored CV", run_one)
+        cli._run_jobs("interested", "tailor", "a tailored CV", run_one)
     out = capsys.readouterr().out
     assert max(most) == 2
     # Each job's lines come out together, never interleaved with the other job's.

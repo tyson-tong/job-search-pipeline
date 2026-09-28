@@ -114,7 +114,30 @@ class _JobOutput:
         return getattr(self.stream, name)
 
 
+# The command each workflow_runs kind is run by, for messages.
+COMMANDS = {"tailor": "tailor-cv"}
+
+
 def for_jobs(status: str, kind: str, what: str, run_one, fixed_by_hand=None) -> None:
+    """_run_jobs, unless the same command is already running (in another terminal, say),
+    which would draft the same jobs twice and write over its files.
+
+    A Postgres advisory lock, held on its own connection, marks the command as running;
+    Postgres releases it when that connection closes, so even a killed run leaves none.
+    (It needs a direct database connection: a pooler in transaction mode would lose it.)"""
+    from .db import connect
+
+    with connect() as lock:
+        lock.autocommit = True
+        if not lock.execute("SELECT pg_try_advisory_lock(hashtext(%s))",
+                            (f"jobflow {kind}",)).fetchone()[0]:
+            raise SystemExit(f"{COMMANDS.get(kind, kind)} is already running (in another "
+                             "terminal or window). Let it finish, then run it again for any "
+                             "jobs it didn't do.")
+        _run_jobs(status, kind, what, run_one, fixed_by_hand)
+
+
+def _run_jobs(status: str, kind: str, what: str, run_one, fixed_by_hand=None) -> None:
     """Run run_one(job_id) for each job with `status` and no finished `kind` run,
     JOBS_AT_ONCE at a time.
 

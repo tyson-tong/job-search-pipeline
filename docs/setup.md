@@ -37,7 +37,7 @@ Optional: `APIFY_MAX_WAIT_MINUTES` in `config/.env` sets how long to wait for ea
 Any PostgreSQL database reachable from the internet works (Supabase, Amazon RDS, and others). These steps use [Neon](https://neon.tech), which has a free tier.
 
 1. Sign up at [neon.tech](https://neon.tech) and create a project. Choose the region nearest to you; the tracker talks to the database on every page load.
-2. Open the project's **Connect** (connection details) panel and copy the connection string. Use the **direct** connection, not the pooled one (the pooled host name contains `-pooler`): the direct one is the one this project is tested with.
+2. Open the project's **Connect** (connection details) panel and copy the connection string. Use the **direct** connection, not the pooled one (the pooled host name contains `-pooler`): the direct one is the one this project is tested with, and the pooled one would lose the lock that stops two runs of `tailor-cv` (or `cover-letter`, or `interview-prep`) from working on the same jobs at once.
 3. Make sure the string ends with `sslmode=require` (Neon's usually does), so the connection is encrypted.
 4. In `config/.env`:
 
