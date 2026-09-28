@@ -12,8 +12,10 @@ from apify_client import ApifyClient
 
 from .searches import PlannedRun, filter_reason, load_searches, plan
 
-# The longest APIFY_MAX_WAIT_MINUTES may be: the daily GitHub job itself stops at 180 minutes.
-MAX_WAIT_MINUTES = 180
+# The longest APIFY_MAX_WAIT_MINUTES may be, and its default. Each site's runs go one after
+# another in a daily GitHub job stopped at 180 minutes, where a run cut off keeps charging
+# on Apify: a short wait leaves room for several runs per site.
+MAX_WAIT_MINUTES = 30
 
 
 def make_client() -> ApifyClient:
@@ -81,9 +83,9 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
 
 
 def wait_minutes() -> float:
-    """APIFY_MAX_WAIT_MINUTES, default 60, at most MAX_WAIT_MINUTES: checked before any run,
+    """APIFY_MAX_WAIT_MINUTES, by default and at most MAX_WAIT_MINUTES: checked before any run,
     so a typo can't crash the import part-way or wait a negative time."""
-    text = os.environ.get("APIFY_MAX_WAIT_MINUTES") or "60"
+    text = os.environ.get("APIFY_MAX_WAIT_MINUTES") or str(MAX_WAIT_MINUTES)
     try:
         minutes = float(text)
     except ValueError:
