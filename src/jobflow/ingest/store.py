@@ -317,6 +317,18 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str 
     return None
 
 
+def without_nul(value: object) -> object:
+    """The scraped record without NUL characters, which PostgreSQL text and jsonb reject:
+    one in any posting would fail the import of its whole (already paid for) run."""
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {without_nul(k): without_nul(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [without_nul(v) for v in value]
+    return value
+
+
 def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
              country: str | None = None) -> bool:
     """Upsert one scraped job and record the observation. Returns True if new.
@@ -327,6 +339,7 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
     A new job failing job_filter is still stored, with status 'filtered' and the reason,
     so it stays out of the Inbox and scoring but remains a known duplicate.
     """
+    item = without_nul(item)
     posting = normalise(item)
     key, url = identity(posting)
     fp, mkey = fingerprint(posting), match_key(posting)
