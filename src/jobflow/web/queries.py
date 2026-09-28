@@ -77,8 +77,8 @@ def parse_filters(params: dict[str, list[str]]) -> dict:
     except ValueError:
         limit = MAX_ROWS
     return {"statuses": statuses, "q": (params.get("q") or [""])[0].strip(),
-            "site": (params.get("site") or [""])[0].strip(),
-            # Chosen countries; none chosen means all.
+            # Chosen sites and countries; none chosen means all.
+            "sites": [s for s in params.get("site", []) if 0 < len(s) <= 20][:10],
             "countries": [c for c in params.get("country", []) if 0 < len(c) <= 10][:50],
             "sort": sort if sort in SORTS else "score",
             # One filter per column of the job list.
@@ -123,8 +123,9 @@ def list_jobs(filters: dict) -> list[dict]:
                        OR j.location ILIKE %(pattern)s)
                   AND (cardinality(%(countries)s::text[]) = 0
                        OR coalesce(j.country, %(unknown)s) = ANY(%(countries)s::text[]))
-                  AND (%(site)s = '' OR EXISTS (SELECT 1 FROM job_sources s
-                                               WHERE s.job_id = j.id AND s.source = %(site)s))
+                  AND (cardinality(%(sites)s::text[]) = 0
+                       OR EXISTS (SELECT 1 FROM job_sources s
+                                  WHERE s.job_id = j.id AND s.source = ANY(%(sites)s::text[])))
                   -- Jobs without a salary, or without a known currency, are always kept.
                   AND (%(salary_min_usd)s::numeric IS NULL OR usd.salary_max IS NULL
                        OR usd.salary_max >= %(salary_min_usd)s::numeric)
@@ -221,13 +222,18 @@ def group_duplicates(jobs: list[dict]) -> list[dict]:
 
 def countries(filters: dict) -> dict:
     """The countries among jobs with the chosen statuses, with job counts, for the Country
-    filter to offer."""
+    filter to offer; and the number of those jobs on each site, for the Sites filter."""
+    params = {"statuses": filters["statuses"], "unknown": UNKNOWN_COUNTRY}
     with connect() as conn:
         rows = conn.execute(
             """SELECT coalesce(country, %(unknown)s), count(*) FROM jobs
-               WHERE status = ANY(%(statuses)s) GROUP BY 1 ORDER BY 1""",
-            {"statuses": filters["statuses"], "unknown": UNKNOWN_COUNTRY}).fetchall()
-    return {"counts": dict(rows), "names": LINKEDIN_COUNTRIES, "unknown": UNKNOWN_COUNTRY}
+               WHERE status = ANY(%(statuses)s) GROUP BY 1 ORDER BY 1""", params).fetchall()
+        sites = conn.execute(
+            """SELECT s.source, count(DISTINCT s.job_id) FROM job_sources s
+               JOIN jobs j ON j.id = s.job_id WHERE j.status = ANY(%(statuses)s)
+               GROUP BY 1""", params).fetchall()
+    return {"counts": dict(rows), "names": LINKEDIN_COUNTRIES, "unknown": UNKNOWN_COUNTRY,
+            "sites": dict(sites)}
 
 
 def summary() -> dict:

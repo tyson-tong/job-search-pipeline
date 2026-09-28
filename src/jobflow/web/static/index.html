@@ -211,8 +211,8 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
       <th><input type="search" id="q" placeholder="Title, company, location" aria-label="Search title, company, location"></th>
       <th class="hide-sm"><details class="multi" id="country-filter"><summary id="country-summary">All</summary>
         <div class="menu" id="country-menu"></div></details></th>
-      <th class="hide-sm"><select id="site" aria-label="Site"><option value="">All</option><option value="linkedin">LinkedIn</option>
-        <option value="indeed">Indeed</option><option value="seek">Seek</option></select></th>
+      <th class="hide-sm"><details class="multi" id="site-filter"><summary id="site-summary">All</summary>
+        <div class="menu" id="site-menu"></div></details></th>
       <th class="hide-sm"><select id="f-posted" aria-label="Posted" title="When the job was posted (or first seen, if the site gives no date)">
         <option value="">Any time</option><option value="1">Past day</option><option value="7">Past week</option>
         <option value="14">Past 2 weeks</option><option value="30">Past month</option><option value="older">Over a month ago</option></select></th>
@@ -240,8 +240,9 @@ const state = { view: "jobs", statuses: new Set(["interested", "applied", "inter
   pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null,
   // Rows ticked for a bulk change (Inbox triage, Filtered back to the Inbox); lastPicked anchors shift-click ranges.
   selected: new Set(), lastPicked: null,
-  // Country filter (empty = all), and the countries among this tab's jobs with counts.
-  countries: new Set(), countryCounts: null,
+  // Country and site filters: null for all, else the ticked ones (none ticked: no jobs); and
+  // the countries and sites among this tab's jobs, with counts.
+  countries: null, sites: null, countryCounts: null,
   // Paging splits the rows the filters returned (the filters themselves cover every job);
   // pageKey is the query they came from, so a new query starts again at page 1.
   page: 0, pageSize: 50, pageKey: null };
@@ -294,7 +295,7 @@ async function api(path, options = {}) {
 }
 function remember() {
   try { localStorage.setItem("jobflow.filters", JSON.stringify({ statuses: [...state.statuses],
-    sort: sortInput.value, site: siteInput.value, view: state.view, pageSize: state.pageSize })); } catch (e) { /* optional */ }
+    sort: sortInput.value, sites: state.sites && [...state.sites], view: state.view, pageSize: state.pageSize })); } catch (e) { /* optional */ }
 }
 function recall() {
   try {
@@ -303,7 +304,8 @@ function recall() {
     const statuses = Array.isArray(saved.statuses) ? saved.statuses.filter((s) => !NOT_MY_JOBS.includes(s)) : [];
     if (Array.isArray(saved.statuses)) state.statuses = new Set(statuses);
     if (saved.sort) sortInput.value = saved.sort;
-    if (saved.site !== undefined) siteInput.value = saved.site;
+    if (Array.isArray(saved.sites)) state.sites = new Set(saved.sites.filter((s) => s in SITE_NAMES));
+    else if (saved.site in SITE_NAMES) state.sites = new Set([saved.site]);  // saved when one site was picked
     if (saved.view) state.view = saved.view;
     if (PAGE_SIZES.includes(saved.pageSize)) state.pageSize = saved.pageSize;
   } catch (e) { /* optional */ }
@@ -387,7 +389,7 @@ window.addEventListener("beforeunload", (event) => {
 });
 
 // ---- Loading -------------------------------------------------------------------------
-const qInput = document.getElementById("q"), siteInput = document.getElementById("site"),
+const qInput = document.getElementById("q"),
   salaryInput = document.getElementById("salary"), sortInput = document.getElementById("sort");
 // Column filters beyond the search, site, and minimum salary: [input, query parameter].
 const COLUMN_FILTERS = [["f-score", "score_min"], ["f-posted", "posted"]].map(([id, param]) => [document.getElementById(id), param]);
@@ -407,11 +409,18 @@ function fitSort() {
   if (sortInput.selectedOptions[0]?.disabled) { sortInput.value = "posted"; remember(); }
 }
 function noStatuses() { return state.view === "jobs" && !state.statuses.size; }
+// The filter with nothing ticked, if any: then the tab shows no jobs. It isn't fetched, as the
+// server reads an empty list as all (or, for statuses, the default ones).
+const WHERE_CHOSEN = { statuses: "Status menu", countries: "Country filter", sites: "Sites filter" };
+function nothingChosen() {
+  return noStatuses() ? "statuses" : state.countries && !state.countries.size ? "countries"
+    : state.sites && !state.sites.size ? "sites" : null;
+}
 function filterParams() {
   const params = statusParams();
-  state.countries.forEach((c) => params.append("country", c));
+  (state.countries || []).forEach((c) => params.append("country", c));
+  (state.sites || []).forEach((s) => params.append("site", s));
   if (qInput.value.trim()) params.set("q", qInput.value.trim());
-  if (siteInput.value) params.set("site", siteInput.value);
   if (salaryInput.value) params.set("salary_min_usd", salaryInput.value);
   // Only My jobs has scored jobs; elsewhere a minimum match set there would hide every job.
   COLUMN_FILTERS.forEach(([input, param]) => {
@@ -428,11 +437,10 @@ async function refresh() {
       return;
     }
     fitSort();
-    // With no statuses chosen My jobs shows nothing (the server would read none as the default).
-    const none = noStatuses(), before = state.countryCounts;
+    const before = state.countryCounts;
     const [summary, jobs, countries] = await Promise.all([api("/api/summary"),
-      none ? [] : api("/api/jobs?" + filterParams()),
-      none ? { counts: {}, names: before ? before.names : {}, unknown: before && before.unknown }
+      nothingChosen() ? [] : api("/api/jobs?" + filterParams()),
+      noStatuses() ? { counts: {}, names: before ? before.names : {}, unknown: before && before.unknown, sites: {} }
         : api("/api/countries?" + statusParams())]);
     state.summary = summary;
     state.jobs = jobs;
@@ -591,6 +599,7 @@ function goToPage(page) {
 function renderRows() {
   renderSortHeads();
   renderCountryFilter();
+  renderSiteFilter();
   const body = document.getElementById("rows");
   // The summary and the rows load separately, so a job saved in between can make the
   // rows outnumber the total; then there is nothing hidden to report.
@@ -614,10 +623,11 @@ function renderRows() {
   document.querySelectorAll(".fu-col").forEach((cell) => { cell.hidden = selectable; });
   document.querySelectorAll(".match-col").forEach((cell) => { cell.hidden = selectable; });
   if (!n) {
+    const none = nothingChosen();
     fill(body, [el("tr", {}, el("td", { colspan: selectable ? 7 : 8, className: "empty" },
-      inbox ? "Inbox is empty: no new jobs to review."
-        : filtered ? "No filtered jobs." : noStatuses() ? "No statuses chosen: pick some in the Status menu."
-        : "No jobs match these filters."))]);
+      none ? `No ${none} chosen: pick some in the ${WHERE_CHOSEN[none]}.`
+        : inbox && !total ? "Inbox is empty: no new jobs to review."
+        : filtered && !total ? "No filtered jobs." : "No jobs match these filters."))]);
     return;
   }
   fill(body, [...state.jobs.slice(first, end).map((job, offset) => {
@@ -673,25 +683,39 @@ function renderRows() {
   })]);
 }
 
-// ---- Country filter ------------------------------------------------------------------------
+// ---- Country and site filters ----------------------------------------------------------------
+// A column filter that ticks several values. options: [value, name, job count]; chosen: null
+// for all (every box ticked), else the ticked values; set(next) applies a new choice.
+function renderMultiFilter(id, options, chosen, short, set) {
+  const values = options.map(([value]) => value);
+  fill(document.getElementById(`${id}-menu`), [
+    options.length ? options.map(([value, name, count]) => el("label", {},
+      el("input", { type: "checkbox", checked: !chosen || chosen.has(value), onchange: (event) => {
+        const next = new Set(chosen || values);
+        event.target.checked ? next.add(value) : next.delete(value);
+        set(values.every((v) => next.has(v)) ? null : next); } }),
+      name, el("span", { className: "meta" }, ` (${count})`)))
+      : el("div", { className: "meta" }, "No jobs"),
+    el("div", { className: "row" },
+      el("button", { className: "btn small", disabled: !chosen, onclick: () => set(null) }, "All"),
+      el("button", { className: "btn small", disabled: !!chosen && !chosen.size, onclick: () => set(new Set()) }, "None"))]);
+  const picked = [...(chosen || [])].map(short);
+  document.getElementById(`${id}-summary`).textContent = (!chosen ? "All" : !picked.length ? "None"
+    : picked.length > 3 ? `${picked.length} selected` : picked.join(", ")) + " ▾";
+}
 function renderCountryFilter() {
   const { counts, names, unknown } = state.countryCounts;
-  const chosen = state.countries;
   const name = (code) => code === unknown ? "Unknown" : `${names[code] || code} (${code})`;
   // A choice with no jobs on this tab stays listed, so it can be unticked.
-  const codes = [...new Set([...Object.keys(counts), ...chosen])]
+  const codes = [...new Set([...Object.keys(counts), ...(state.countries || [])])]
     .sort((a, b) => (a === unknown) - (b === unknown) || name(a).localeCompare(name(b)));
-  fill(document.getElementById("country-menu"), [
-    codes.length ? codes.map((code) => el("label", {},
-      el("input", { type: "checkbox", checked: chosen.has(code), onchange: (event) => {
-        event.target.checked ? chosen.add(code) : chosen.delete(code); refresh(); } }),
-      name(code), el("span", { className: "meta" }, ` (${counts[code] || 0})`)))
-      : el("div", { className: "meta" }, "No jobs"),
-    el("div", { className: "row" }, el("button", { className: "btn small", disabled: !chosen.size,
-      onclick: () => { chosen.clear(); refresh(); } }, "All"))]);
-  const picked = [...chosen].map((code) => code === unknown ? "Unknown" : code);
-  document.getElementById("country-summary").textContent =
-    (!picked.length ? "All" : picked.length > 3 ? `${picked.length} selected` : picked.join(", ")) + " ▾";
+  renderMultiFilter("country", codes.map((code) => [code, name(code), counts[code] || 0]), state.countries,
+    (code) => code === unknown ? "Unknown" : code, (next) => { state.countries = next; refresh(); });
+}
+function renderSiteFilter() {
+  const counts = state.countryCounts.sites || {};
+  renderMultiFilter("site", Object.entries(SITE_NAMES).map(([site, name]) => [site, name, counts[site] || 0]),
+    state.sites, (site) => SITE_NAMES[site], (next) => { state.sites = next; remember(); refresh(); });
 }
 
 // ---- Selecting rows (Inbox, Filtered) for bulk changes ------------------------------------
@@ -990,7 +1014,6 @@ let searchTimer;
 qInput.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(refresh, 250); });
 salaryInput.addEventListener("change", refresh);
 COLUMN_FILTERS.forEach(([input]) => input.addEventListener("change", refresh));
-siteInput.addEventListener("change", () => { remember(); refresh(); });
 sortInput.addEventListener("change", () => { remember(); refresh(); });
 document.getElementById("page-size").addEventListener("change", (event) => {
   // Keep the first row you were looking at on screen.
