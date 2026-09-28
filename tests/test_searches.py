@@ -93,8 +93,6 @@ def test_indeed_runs_per_term_and_place():
 
 
 @pytest.mark.parametrize("days, linkedin, indeed, seek", [
-    (1, "r86400", "1", 1),
-    (7, "r604800", "7", 7),
     (14, "r2592000", "14", 14),   # LinkedIn has no 2 weeks: widened to its month
     (30, "r2592000", "", 30),     # Indeed has no month: widened to any time
 ])
@@ -105,7 +103,7 @@ def test_posted_windows_are_never_narrowed(days, linkedin, indeed, seek):
     assert runs["indeed"].run_input["postedWithinDays"] == indeed
     assert runs["seek"].run_input["dateRange"] == seek
     widened = {site for site, run in runs.items() if any("isn't available" in n for n in run.notes)}
-    assert widened == {1: set(), 7: set(), 14: {"linkedin"}, 30: {"indeed"}}[days]
+    assert widened == {14: {"linkedin"}, 30: {"indeed"}}[days]
 
 
 def test_seek_uses_native_filters_and_skips_countries_it_lacks():

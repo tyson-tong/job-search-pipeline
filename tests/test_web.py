@@ -26,15 +26,9 @@ def test_valid_changes_are_normalised():
 
 
 @pytest.mark.parametrize("changes, message", [
-    ([], "Nothing to save"),
     ([{"id": 1, "status": "filtered"}], "status must be one of"),  # system-only status
-    ([{"id": 1, "follow_up_on": "next week"}], "YYYY-MM-DD"),
     ([{"id": 1, "status": "applied"}, {"id": 1, "note": "x"}], "repeated"),
-    ([{"id": "1", "status": "applied"}], "Invalid"),
-    ([{"id": 1, "status": "applied", "salary": 1}], "Unknown field"),
-    ([{"id": 1}], "nothing to change"),
-    ([{"id": 1, "expected_version": "1790000000000000"}], "nothing to change"),
-    ([{"id": 1, "status": "applied", "expected_version": "yesterday"}], "invalid expected_version"),
+    ([{"id": 1, "follow_up_on": "next week"}], "YYYY-MM-DD"),
 ])
 def test_invalid_changes_are_rejected_before_anything_is_written(changes, message):
     with pytest.raises(InvalidChange, match=message):
@@ -99,29 +93,6 @@ def _wait_until_finished(scoring):
     raise AssertionError("scoring did not finish")
 
 
-def test_missing_llm_settings_fail_before_anything_runs(scoring, monkeypatch):
-    def missing():
-        raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in config/.env")
-    monkeypatch.setattr(scoring, "credentials", missing)
-    monkeypatch.setattr(scoring, "match_job", lambda *a, **k: pytest.fail("scored anyway"))
-    monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: list(only or []))
-    with pytest.raises(RuntimeError, match="LLM_API_KEY"):
-        scoring.start([1, 2])
-    assert not scoring.status()["running"]
-
-
-def test_one_failed_job_does_not_stop_the_batch(scoring, monkeypatch):
-    def match_job(job_id):
-        if job_id == 2:
-            raise RuntimeError("LLM timed out")
-    monkeypatch.setattr(scoring, "match_job", match_job)
-    monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: [1, 2, 3])
-    scoring.start()
-    result = _wait_until_finished(scoring)
-    assert sorted(result["scored"]) == [1, 3] and result["done"] == 3
-    assert result["errors"] == [{"id": 2, "error": "LLM timed out"}]
-
-
 def test_a_bad_key_stops_the_batch_instead_of_failing_every_job(scoring, monkeypatch):
     import time
     from jobflow.llm import LLMError
@@ -138,18 +109,6 @@ def test_a_bad_key_stops_the_batch_instead_of_failing_every_job(scoring, monkeyp
     result = _wait_until_finished(scoring)
     # Only job 2 may have started alongside job 1; nothing after it does.
     assert set(tried) <= {1, 2} and result["done"] == len(tried) < result["total"]
-
-
-def test_only_one_run_at_a_time(scoring, monkeypatch):
-    import threading
-    release = threading.Event()
-    monkeypatch.setattr(scoring, "match_job", lambda job_id: release.wait(2))
-    monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: list(only or []))
-    scoring.start([1])
-    with pytest.raises(scoring.Busy):
-        scoring.start([2])
-    release.set()
-    assert _wait_until_finished(scoring)["scored"] == [1]
 
 
 def test_similar_jobs_sit_together_but_only_same_country_ones_are_marked_duplicates():

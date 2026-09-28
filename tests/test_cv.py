@@ -208,6 +208,29 @@ def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypat
     assert letter in target.read_text()
 
 
+def test_a_revision_with_more_fact_check_errors_is_discarded(tmp_path, monkeypatch):
+    class Conn:
+        def execute(self, *args): return self
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+
+    draft = "Dear Hiring Manager,\n\nAt Example Corp I built Python ETL pipelines.\n\nAlex Example"
+    revised = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
+    monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
+        JOB, "main", "CV variant main.", SOURCE_CV, ""))
+    researched = Future()
+    researched.set_result(([], []))
+    monkeypatch.setattr(cover_letter, "research_soon", lambda job_id: researched)
+    monkeypatch.setattr(cover_letter, "connect", Conn)
+    monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
+        json.dumps({"critique": ["Add a metric"], "cover_letter": revised}) if kw.get("reviewer")
+        else draft, "m"))
+    target, errors, _ = cover_letter.write_letter(1, output_dir=tmp_path)
+    assert not errors and target.name == "cover-letter.docx"
+    review = (tmp_path / "COVER_LETTER_REVIEW.md").read_text()
+    assert "failed the fact check, so the first draft is kept" in review
+
+
 def test_skill_ranking_counts_only_real_gaps_once():
     gaps = [{"id": 0, "job_id": 1, "job": "A", "requirement": "AWS", "importance": "required",
              "status": "not_evidenced"},
@@ -264,6 +287,25 @@ def test_an_empty_assessment_is_never_saved_as_a_score(monkeypatch):
     with pytest.raises(RuntimeError, match="no requirements"):
         matching.match_job(1)
     assert not any("INSERT" in sql for sql in Conn.sql)
+
+
+def test_cutting_to_fit_cuts_the_fewest_least_relevant_bullets(tmp_path, monkeypatch):
+    import yaml
+    from jobflow.candidate import tailoring
+
+    cv = copy.deepcopy(SOURCE_CV)
+    cv["sections"]["experiences"][0]["highlights"] += ["Third", "Fourth", "Fifth"]
+    cv["sections"]["experiences"].append({"company": "Other Co", "highlights": ["Only bullet"]})
+    # One page holds 4 bullets; there are 6. Least relevant first: 4, 3, 2, 1, 0, 5.
+    monkeypatch.setattr(tailoring, "_render", lambda source: source)
+    monkeypatch.setattr(tailoring, "_pdf_pages", lambda source: 1 + (len(bullets(
+        yaml.safe_load(source.read_text())["cv"])) > 4))
+    monkeypatch.setattr(tailoring, "_rank_bullets", lambda job, found: [4, 3, 2, 1, 0, 5])
+    monkeypatch.setattr(tailoring, "_page_gaps", lambda pdf: [])
+    warnings = []
+    fitted, cut, _ = tailoring._fit(JOB, {"cv": cv}, cv, "CV_dev_draft.yaml", 1, warnings)
+    assert [b["text"] for b in cut] == ["Fifth", "Fourth"] and not warnings
+    assert fitted["sections"]["experiences"][1]["highlights"] == ["Only bullet"]
 
 
 def test_a_failed_company_search_is_a_note_not_a_failed_job(monkeypatch):
