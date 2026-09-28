@@ -8,8 +8,8 @@ from urllib.parse import urlsplit
 import requests
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
-# A rate limit or a server error is retried this many times, waiting as long as the
-# provider asks (Retry-After) up to MAX_WAIT seconds, or 2, 4, 8... seconds otherwise.
+# A rate limit, a server error, or a network error is retried this many times, waiting as
+# long as the provider asks (Retry-After) up to MAX_WAIT seconds, or 2, 4, 8... seconds otherwise.
 RETRIES = 4
 MAX_WAIT = 60
 # Settings sent when the provider accepts them, and dropped when it rejects them.
@@ -65,10 +65,18 @@ def complete(system: str, user: str, *, json_mode: bool = False,
         body["response_format"] = {"type": "json_object"}
     attempt = 0
     while True:
-        response = requests.post(f"{base_url(reviewer)}/chat/completions", json=body,
-                                 headers={"Authorization": f"Bearer {key}"}, timeout=180)
+        try:
+            response = requests.post(f"{base_url(reviewer)}/chat/completions", json=body,
+                                     headers={"Authorization": f"Bearer {key}"}, timeout=180)
+        except (requests.ConnectionError, requests.Timeout):
+            # A dropped connection or a stalled provider may pass: retried like a rate limit.
+            if attempt == RETRIES:
+                raise
+            time.sleep(2.0 ** (attempt + 1))
+            attempt += 1
+            continue
         if response.ok:
-            return response.json()["choices"][0]["message"]["content"], model
+            return _content(response), model
         error = _error(response)
         # Some providers or models (Anthropic's OpenAI-compatible API) reject JSON mode or
         # temperature. Neither is needed: every prompt asks for JSON only, and parse_json
@@ -89,6 +97,17 @@ def complete(system: str, user: str, *, json_mode: bool = False,
     message = error.get("message") or response.reason or "request failed"
     raise LLMError(f"{message} (LLM provider, HTTP {response.status_code})",
                    fatal=quota or response.status_code in (401, 403, 404))
+
+
+def _content(response: requests.Response) -> str:
+    """The reply's text; LLMError if there is none (a refusal, or a reply cut off)."""
+    try:
+        content = response.json()["choices"][0]["message"]["content"]
+    except (ValueError, KeyError, IndexError, TypeError):
+        raise LLMError("The LLM provider's reply wasn't a chat completion") from None
+    if not isinstance(content, str) or not content.strip():
+        raise LLMError("The LLM provider returned no text (it may have refused the request)")
+    return content
 
 
 def _error(response: requests.Response) -> dict:

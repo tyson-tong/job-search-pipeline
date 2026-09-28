@@ -164,6 +164,39 @@ def test_llm_drops_settings_the_provider_rejects(monkeypatch):
     assert sent == [["response_format", "temperature"], ["temperature"], []]
 
 
+def test_llm_retries_a_dropped_connection_and_rejects_an_empty_reply(monkeypatch):
+    # A network blip failed the job outright; an empty reply crashed later, far from its cause.
+    import requests
+    from jobflow import llm
+
+    class Reply:
+        ok, status_code, headers = True, 200, {}
+
+        def __init__(self, content):
+            self.content = content
+
+        def json(self):
+            return {"choices": [{"message": {"content": self.content}}]}
+
+    replies, waits = [], []
+
+    def post(*args, **kwargs):
+        reply = replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setattr(llm.time, "sleep", waits.append)
+    monkeypatch.setenv("LLM_API_KEY", "key")
+    monkeypatch.setenv("LLM_MODEL", "model")
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    replies[:] = [requests.ConnectionError("reset"), Reply("ok")]
+    assert llm.complete("s", "u") == ("ok", "model") and waits == [2.0]
+    replies[:] = [Reply(None)]
+    with pytest.raises(llm.LLMError, match="no text"):
+        llm.complete("s", "u")
+
+
 class _Rows:
     """A stand-in connection whose queries all return `rows`, recording what it runs."""
 
