@@ -160,6 +160,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>ingest/sources.py</code></td><td>Converts LinkedIn, Indeed, and Seek records to one <code>Posting</code> shape.</td></tr>
   <tr><td><code>ingest/store.py</code></td><td>Duplicate detection, saving jobs and sightings, run records, similar-job search, excluding titles already in the Inbox.</td></tr>
   <tr><td><code>ingest/report.py</code></td><td>The tracker's Searches tab: your searches, their planned runs, and allowed values.</td></tr>
+  <tr><td><code>candidate/paths.py</code></td><td>Where a job's files go: <code>output/&lt;company&gt;/&lt;role&gt;-&lt;job id&gt;</code>.</td></tr>
   <tr><td><code>candidate/cvs.py</code></td><td>The 1 or 2 CV files <code>cvs</code> in config/profile.toml names (.yaml, .tex, .docx, .pdf), their text, and shared text helpers.</td></tr>
   <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring: Interested jobs only, each scored once.</td></tr>
   <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft, the reviewer pass, the fact check, and fitting to --max-pages with RenderCV.</td></tr>
@@ -205,7 +206,7 @@ job_observations  42 × run 118 (LinkedIn), 42 × run 119 (Seek)   original reco
 applications      42   applied   2026-09-25: Applied via referral</div>
 
 <h2 id="database">Database</h2>
-<p>Defined by the SQL files in <code>migrations/</code>; each file can hold ordered, file-scoped migration IDs (starting at <code>01</code>). Every command except <code>init</code> and <code>help</code> applies each file/ID once on start (one command at a time, under a lock), in filename and ID order, tracking it in <code>schema_migrations</code>.</p>
+<p>Defined by the SQL files in <code>migrations/</code>; each file can hold ordered, file-scoped migration IDs (starting at <code>01</code>). Every command except <code>init</code>, <code>help</code>, and <code>status</code> applies each file/ID once on start (one command at a time, under a lock), in filename and ID order, tracking it in <code>schema_migrations</code>.</p>
 <div class="db-grid">
   <div class="tbl"><h3>scraper_runs</h3><p>One per Apify run.</p><ul>
     <li><span class="k">id</span>, apify_run_id, dataset_id</li><li>actor_id <span class="muted">site:actor</span></li>
