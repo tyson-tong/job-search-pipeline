@@ -212,3 +212,28 @@ def test_jobs_run_two_at_a_time_print_whole_and_stop_on_a_bad_key(monkeypatch, c
     assert blocks and all(body.strip() == f"start {job}\nend {job}" for job, body in blocks)
     # Job 4 may run alongside job 3; nothing after it starts.
     assert {job for job, _ in blocks} <= {"1", "2", "3", "4"}
+
+
+def test_clean_up_deletes_only_closed_jobs_folders_and_only_on_yes(tmp_path, monkeypatch):
+    from jobflow import cli, db, settings
+
+    class Conn:
+        def execute(self, *args): return self
+        def fetchall(self): return [(4, "rejected")]
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+
+    monkeypatch.setattr(db, "connect", Conn)
+    monkeypatch.setattr(settings, "output_directory", lambda: tmp_path)
+    # Job 4's folder, then folders of jobs 14 and 12 whose names also contain "4".
+    closed, others = tmp_path / "acme" / "analyst-4", [tmp_path / "acme" / "analyst-14",
+                                                       tmp_path / "beta" / "dev-4-12"]
+    for folder in [closed, *others]:
+        folder.mkdir(parents=True)
+        (folder / "CV_REVIEW.md").write_text("x")
+    monkeypatch.setattr("builtins.input", lambda prompt: "n")
+    cli.clean_up()
+    assert closed.exists()
+    monkeypatch.setattr("builtins.input", lambda prompt: "Y")
+    cli.clean_up()
+    assert not closed.exists() and all(folder.exists() for folder in others)

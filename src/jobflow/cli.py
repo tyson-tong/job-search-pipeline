@@ -85,6 +85,8 @@ def main() -> None:
                    "Interviewing job that doesn't have one yet")
     sub.add_parser("skill-gaps", help="Report the skills your CVs don't show that scored "
                    "Interested jobs ask for most, with how to close each gap")
+    sub.add_parser("clean-up", help="Delete the output folders of Withdrawn, Declined, and "
+                   "Rejected jobs, after asking you to confirm (the jobs stay in the database)")
     args = parser.parse_args()
     try:
         run(args, parser)
@@ -254,6 +256,45 @@ def update_searches(dry_run: bool = False) -> None:
           f"{' (dry run: nothing changed)' if dry_run else ''}")
 
 
+# The statuses whose jobs' output folders clean-up deletes.
+CLEAN_UP_STATUSES = ("withdrawn", "declined", "rejected")
+
+
+def clean_up() -> None:
+    """Delete the output folders (CVs, letters, reviews, briefings) of jobs that are
+    Withdrawn, Declined, or Rejected, once you confirm. The jobs, their notes, and their
+    history stay in the database."""
+    from .db import connect
+    from .settings import output_directory
+
+    root = output_directory()
+    with connect() as conn:
+        jobs = conn.execute("SELECT id, status FROM jobs WHERE status = ANY(%s) ORDER BY id",
+                            (list(CLEAN_UP_STATUSES),)).fetchall()
+    # A job's folder is output/<company>/<role>-<job id>, found by its id, so a folder is
+    # still found if the company or title has changed since it was written.
+    folders = [(folder, status) for job_id, status in jobs
+               for folder in sorted(root.glob(f"*/*-{job_id}")) if folder.is_dir()]
+    if not folders:
+        print(f"Nothing to clean up: no Withdrawn, Declined, or Rejected job has a folder in {root}")
+        return
+    for folder, status in folders:
+        print(f"  {status.capitalize():<9}  {folder.relative_to(root)}")
+    try:
+        answer = input(f"Delete these {len(folders)} folder{'s' if len(folders) != 1 else ''} "
+                       "and everything in them? This can't be undone. (Y/N) ")
+    except EOFError:
+        answer = ""
+    if answer.strip().casefold() not in ("y", "yes"):
+        print("Nothing deleted")
+        return
+    for folder, _ in folders:
+        shutil.rmtree(folder)
+        if not any(folder.parent.iterdir()):
+            folder.parent.rmdir()   # the company's folder, now empty
+    print(f"Deleted {len(folders)} folder{'s' if len(folders) != 1 else ''}")
+
+
 def init() -> None:
     from .settings import CONFIG_DIR, init_files
 
@@ -345,6 +386,10 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         chosen_sources()  # a problem with cvs in config/profile.toml stops it now
         migrate()
         for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)))
+    elif args.command == "clean-up":
+        from .db import migrate
+        migrate()
+        clean_up()
     elif args.command == "skill-gaps":
         from .candidate.skill_gaps import report
         from .db import migrate

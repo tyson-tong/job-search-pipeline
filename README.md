@@ -74,6 +74,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | `jobflow cover-letter [--cv VARIANT]` | Optional: a reviewed, fact-checked cover letter for each Interested job without one |
 | `jobflow interview-prep` | An interview briefing for each Interviewing job without one |
 | `jobflow skill-gaps` | The skills your scored Interested jobs ask for that your CVs don't show |
+| `jobflow clean-up` | Delete the output folders of Withdrawn, Declined, and Rejected jobs, after you confirm (the jobs stay in the tracker) |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
 | `jobflow ingest [--search NAME] [--site SITE]` | Run the searches now (the daily import does this; uses Apify credits) |
 | `jobflow init` | Create your settings files (first time only) |
