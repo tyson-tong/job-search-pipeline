@@ -94,6 +94,12 @@ def test_reviewer_llm_settings_fall_back_but_never_leak_the_main_key(monkeypatch
     monkeypatch.setenv("LLM_REVIEW_API_KEY", "other-key")
     assert credentials(reviewer=True) == ("other-key", "review-model")
     assert base_url(reviewer=True) == "https://other.example/v1"
+    # Plain http would send the key unencrypted, except to a server on this machine.
+    monkeypatch.setenv("LLM_REVIEW_BASE_URL", "http://other.example/v1")
+    with pytest.raises(RuntimeError, match="LLM_REVIEW_BASE_URL must be an https"):
+        credentials(reviewer=True)
+    monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
+    assert base_url() == "http://localhost:11434/v1"
 
 
 def test_llm_retries_rate_limits_but_not_an_empty_balance(monkeypatch):

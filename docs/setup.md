@@ -84,7 +84,7 @@ Scoring, tailored CVs, cover letters, interview briefings, and the skill-gaps re
    LLM_BASE_URL=
    ```
 
-**Another provider** (for example a hosted open model, or a gateway): set `LLM_BASE_URL` to its OpenAI-compatible endpoint (usually ending in `/v1`), and `LLM_API_KEY` and `LLM_MODEL` to its key and model name. Use an `https://` address, so your key isn't sent unencrypted.
+**Another provider** (for example a hosted open model, or a gateway): set `LLM_BASE_URL` to its OpenAI-compatible endpoint (usually ending in `/v1`), and `LLM_API_KEY` and `LLM_MODEL` to its key and model name. Use an `https://` address, so your key isn't sent unencrypted: jobflow refuses `http://` except for a server on your own machine (`http://localhost`).
 
 **Optional: a different model as reviewer.** `tailor-cv` and `cover-letter` have a second model call review each draft as the hiring manager would. By default that's `LLM_MODEL`; a different model makes a better critic, since it doesn't share the drafting model's blind spots. In `config/.env`:
 

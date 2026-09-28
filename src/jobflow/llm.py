@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from urllib.parse import urlsplit
 
 import requests
 
@@ -13,6 +14,7 @@ RETRIES = 4
 MAX_WAIT = 60
 # Settings sent when the provider accepts them, and dropped when it rejects them.
 OPTIONAL = ("response_format", "temperature")
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 
 
 class LLMError(RuntimeError):
@@ -26,8 +28,14 @@ class LLMError(RuntimeError):
 
 def base_url(reviewer: bool = False) -> str:
     # An empty setting (as in config/.env.example) means "use the default".
-    url = (reviewer and os.environ.get("LLM_REVIEW_BASE_URL")) or os.environ.get("LLM_BASE_URL")
-    return (url or DEFAULT_BASE_URL).rstrip("/")
+    name = "LLM_REVIEW_BASE_URL" if reviewer and os.environ.get("LLM_REVIEW_BASE_URL") else "LLM_BASE_URL"
+    url = (os.environ.get(name) or DEFAULT_BASE_URL).rstrip("/")
+    # The API key goes with every request, so only a server on this machine may use plain http.
+    parts = urlsplit(url)
+    if not (parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in LOCAL_HOSTS)):
+        raise RuntimeError(f"{name} must be an https:// address (http:// only for a server on "
+                           f"this machine, such as http://localhost), not {url}")
+    return url
 
 
 def credentials(reviewer: bool = False) -> tuple[str, str]:
