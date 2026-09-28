@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sys
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -12,7 +13,7 @@ import psycopg.types.json
 
 from .options import LINKEDIN_COUNTRIES
 from .searches import country_from_location, run_country, search_url_country
-from .sources import Posting, normalise
+from .sources import Posting, normalise, seek_url
 
 JobFilter = Callable[[Posting], "str | None"]
 
@@ -345,11 +346,13 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
     """
     item = without_nul(item)
     posting = normalise(item)
+    country = country or search_url_country(item) or country_from_location(posting.location)
+    if posting.source == "seek" and not posting.url and posting.source_id:
+        posting = replace(posting, url=seek_url(posting.source_id, country))
     key, url = identity(posting)
     fp, mkey = fingerprint(posting), match_key(posting)
     description = posting.description or None
     raw = psycopg.types.json.Jsonb(item)
-    country = country or search_url_country(item) or country_from_location(posting.location)
     found = find_duplicate(conn, key, fp, mkey, posting.title, description, posting.location,
                            country)
     if found is None:

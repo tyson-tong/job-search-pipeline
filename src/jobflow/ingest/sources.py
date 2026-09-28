@@ -225,6 +225,8 @@ def _linkedin(item: dict, source: str) -> Posting:
 def _indeed(item: dict) -> Posting:
     job_id = _text(_get(item, "id", "jobKey", "jobkey"))
     country = str(_get(item, "location.countryCode", "country") or "").lower()
+    # Indeed's UK site is uk.indeed.com, not the ISO code's gb.
+    country = {"gb": "uk"}.get(country, country)
     host = "www.indeed.com" if country in ("", "us") else f"{country}.indeed.com"
     link = _text(_get(item, "viewJobLink", "url", "link"))
     if job_id:
@@ -252,11 +254,21 @@ def _indeed(item: dict) -> Posting:
     )
 
 
+# Seek's site for each country it covers under its own name; Singapore and Hong Kong
+# listings are on other sites, so no link is made up for them.
+SEEK_HOSTS = {"AU": "www.seek.com.au", "NZ": "www.seek.co.nz"}
+
+
+def seek_url(job_id: str, country: str | None) -> str | None:
+    """The link to a Seek job with this ID in this country, if known."""
+    host = SEEK_HOSTS.get(country or "")
+    return f"https://{host}/job/{job_id}" if host else None
+
+
 def _seek(item: dict) -> Posting:
     job_id = _text(_get(item, "id", "jobId"))
+    # Without a link, save_job makes one from the ID once it knows the country (seek_url).
     url = _text(_get(item, "jobLink", "url", "link"))
-    if not url and job_id:
-        url = f"https://www.seek.com.au/job/{job_id}"
     location = _get(item, "joblocationInfo.displayLocation", "joblocationInfo.location")
     if location is None and isinstance(item.get("location"), str):
         location = item["location"]
