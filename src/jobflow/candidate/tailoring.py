@@ -152,11 +152,16 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
 
 
 def research(job: dict) -> tuple[list[dict], list[str]]:
-    """Company web research for a reviewer or cover letter; optional."""
+    """Company web research for a reviewer or cover letter; optional, so a failed search
+    (Tavily down, or out of credits) is a note, not a failed job."""
     if not os.environ.get("WEB_SEARCH_API_KEY"):
         return [], ["No company research: WEB_SEARCH_API_KEY is not set, so only the job ad "
                     "is used."]
-    return web_search(job["company"] or "the company", job["title"]), []
+    try:
+        return web_search(job["company"] or "the company", job["title"]), []
+    except Exception as exc:
+        return [], [f"No company research: the web search failed ({exc}), so only the job ad "
+                    "is used."]
 
 
 def research_soon(job_id: int) -> Future:

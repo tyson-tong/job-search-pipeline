@@ -262,3 +262,14 @@ def test_an_empty_assessment_is_never_saved_as_a_score(monkeypatch):
     with pytest.raises(RuntimeError, match="no requirements"):
         matching.match_job(1)
     assert not any("INSERT" in sql for sql in Conn.sql)
+
+
+def test_a_failed_company_search_is_a_note_not_a_failed_job(monkeypatch):
+    from jobflow.candidate import tailoring
+
+    def down(company, title):
+        raise RuntimeError("432 Client Error: usage limit exceeded")
+    monkeypatch.setenv("WEB_SEARCH_API_KEY", "k")
+    monkeypatch.setattr(tailoring, "web_search", down)
+    sources, notes = tailoring.research({"company": "Acme", "title": "Analyst"})
+    assert sources == [] and "web search failed" in notes[0]
