@@ -135,6 +135,7 @@ td.sel { cursor: pointer; user-select: none; }
 .sv-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
 .sv-card h2 { font-size: 1.05rem; margin: 0 0 6px; }
 .sv-card h3 { font-size: 0.92rem; margin: 12px 0 4px; }
+.toc ol { margin: 0; padding-left: 20px; font-size: 0.9rem; } .toc li { margin: 2px 0; }
 .ok { color: var(--good); font-weight: 600; } .err { color: var(--bad); font-weight: 600; }
 .err-box { background: var(--warn-soft); color: var(--bad); border-radius: 8px; padding: 10px 12px; margin-top: 8px; white-space: pre-wrap; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; font-size: 0.9rem; }
@@ -826,7 +827,7 @@ async function copyCommand(text) {
 const siteName = (s) => SITE_NAMES[s] || s;
 function renderSearches() {
   const data = state.searches, box = document.getElementById("searches-view");
-  const header = el("div", { className: "sv-card" },
+  const header = el("div", { className: "sv-card", id: "sv-top" },
     el("h2", {}, "Your searches"),
     el("div", {}, data.ok ? el("span", { className: "ok" }, "✓ Valid") : el("span", { className: "err" }, "✗ Can't be used"),
       el("span", { className: "meta" }, `  ·  from ${data.source || "(no config/profile.toml)"}`), "  ",
@@ -845,13 +846,34 @@ function renderSearches() {
         el("button", { className: "btn small", onclick: () => copyCommand("uv run jobflow ingest --site seek") }, "Copy")),
       el("p", { className: "meta", style: "margin:4px 0 0" }, "The last command runs the searches now (one site here) instead of waiting for the daily run; ",
         el("strong", {}, "IT COSTS APIFY CREDITS."))));
-  fill(box, [header, data.searches.map(renderSearchCard), renderReference(data.reference)]);
+  fill(box, [renderContents(data), header, data.searches.map(renderSearchCard), renderReference(data.reference)]);
 }
-function renderSearchCard(search) {
+// Links to each card below. The header is sticky, so scroll to just under it.
+function renderContents(data) {
+  const link = (id, text) => el("a", { href: `#${id}`, onclick: (event) => {
+    event.preventDefault();
+    const target = document.getElementById(id);
+    if (target.tagName === "DETAILS") target.open = true;
+    const top = target.getBoundingClientRect().top + window.scrollY - document.querySelector("header").offsetHeight - 8;
+    window.scrollTo({ top, behavior: "smooth" });
+  } }, text);
+  return el("nav", { className: "sv-card toc", "aria-label": "Contents" },
+    el("h2", {}, "Contents"),
+    el("ol", {},
+      el("li", {}, link("sv-top", "Your searches"),
+        data.searches.length ? el("ol", {}, data.searches.map((search, i) => el("li", {}, link(`sv-search-${i}`, search.name)))) : null),
+      el("li", {}, link("sv-ref", "Allowed values"),
+        el("ol", {},
+          el("li", {}, link("sv-ref-posted", "posted_within_days")),
+          el("li", {}, link("sv-ref-support", "How each site applies each setting")),
+          el("li", {}, link("sv-ref-locations", "locations: countries and cities")),
+          el("li", {}, link("sv-ref-classes", "seek_classifications (Seek only)"))))));
+}
+function renderSearchCard(search, index) {
   const salary = search.salary_min != null || search.salary_max != null
     ? `${search.salary_min ?? "any"} – ${search.salary_max ?? "any"} (${search.salary_period}); jobs without a salary are kept` : "any";
   const item = (label, value) => [el("dt", {}, label), el("dd", {}, value)];
-  return el("div", { className: "sv-card" },
+  return el("div", { className: "sv-card", id: `sv-search-${index}` },
     el("h2", {}, search.name),
     search.warnings.length ? el("div", { className: "flags" },
       search.warnings.map((w) => el("span", { className: "flag warn" }, w))) : null,
@@ -900,23 +922,23 @@ function renderReference(ref) {
         el("tr", { className: "sub" }, el("td", {}, el("code", {}, sc.key)), el("td", {}, sc.name)))];
   }));
   drawClasses("");
-  return el("div", { className: "sv-card ref" },
+  return el("div", { className: "sv-card ref", id: "sv-ref" },
     el("h2", {}, "Allowed values"),
     el("dl", { className: "kv" },
       [["sites", ref.sites], ["job_types", ref.job_types], ["work_arrangements", ref.work_arrangements],
        ["salary_period", ref.salary_periods]].map(([k, v]) => [el("dt", {}, el("code", {}, k)), el("dd", {}, v.join(", "))])),
-    el("h3", {}, "posted_within_days"),
+    el("h3", { id: "sv-ref-posted" }, "posted_within_days"),
     table(["Value", ...ref.sites.map(siteName)], ref.posted_within.map((w) =>
       [`${w.days} (${w.name})`, ...ref.sites.map((s) => w.sites[s] ? "✓" : "wider, then filtered")])),
-    el("h3", {}, "How each site applies each setting"),
+    el("h3", { id: "sv-ref-support" }, "How each site applies each setting"),
     el("p", { className: "meta", style: "margin:0 0 4px" }, "search: the site filters before you pay · local: filtered after import, only when the job's value is known · unsupported: not available"),
     table(["Setting", ...ref.sites.map(siteName)], filterNames.map((f) =>
       [f.replace(/_/g, " "), ...ref.sites.map((s) => ref.filter_support[s][f])])),
-    el("h3", {}, "locations: countries and cities"),
+    el("h3", { id: "sv-ref-locations" }, "locations: countries and cities"),
     el("p", { className: "meta", style: "margin:0 0 4px" }, "Use [] for the whole country. UK also works for GB."),
     table(["Code", "Country", "Cities", "Sites"], ref.countries.map((c) =>
       [el("code", {}, c.code), c.name, c.cities.join(", "), c.sites.map(siteName).join(", ")])),
-    el("details", {}, el("summary", {}, el("strong", {}, "seek_classifications (Seek only)")),
+    el("details", { id: "sv-ref-classes" }, el("summary", {}, el("strong", {}, "seek_classifications (Seek only)")),
       el("input", { type: "search", placeholder: "Filter classifications", oninput: (e) => drawClasses(e.target.value.toLowerCase()) }),
       el("div", { className: "scroll" }, el("table", { className: "classes" },
         el("thead", {}, el("tr", {}, el("th", {}, "Key (in searches.toml)"), el("th", {}, "Name on Seek"))),
