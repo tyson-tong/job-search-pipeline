@@ -146,16 +146,24 @@ def write_letter(job_id: int, variant: str | None = None,
     target = target_dir / ("COVER_LETTER_REVIEW.md" if errors else "cover-letter.docx")
     if not errors:
         documents.write_letter_docx(letter, source_cv, job, target)
+    read_it = ("The letter is at the end of this file, not written as cover-letter.docx: read "
+               "it line by line and fix the errors before you send it with your application."
+               if errors else "Read cover-letter.docx line by line before you send it with your "
+               "application.")
     report = [f"# Cover letter review: {job['company'] or 'Unknown employer'} — {job['title']} (job id {job_id})", "",
               reason.replace("CV variant", "Written from CV variant"), "",
-              "Read the letter line by line before sending it. The automated check below "
-              "catches invented numbers and names but is not exhaustive.", ""]
+              read_it + " The automated check below catches invented numbers and names but is "
+              "not exhaustive.", ""]
     report += [f"- {n}" for n in notes] + ([""] if notes else [])
     report += [f"## Fact-check errors ({len(errors)})", ""]
     report += [f"- {e}" for e in errors] or ["- None found."]
     report += ["", f"## Warnings ({len(warnings)})", ""]
     report += [f"- {w}" for w in warnings] or ["- None."]
-    report += ["", "## Reviewer's critique", ""]
+    report += ["", "## Reviewer's critique of the first draft", ""]
+    if critique:
+        report += ["The reviewer then revised the letter; that revision is the letter written, "
+                   "unless a note above says the first draft was kept. Some points may already "
+                   "be addressed.", ""]
     report += [f"- {c}" for c in critique] or ["- None."]
     if errors:
         report += ["", "## The letter (not written as cover-letter.docx until the errors are "

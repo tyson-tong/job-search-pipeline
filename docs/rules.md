@@ -22,7 +22,7 @@ The LLM lists the job's requirements, marks each required or preferred, and labe
 
 ## Tailored CVs
 
-Only the CV's `cv` section goes to the LLM; design, locale, and settings are copied from your file. The draft is then compared with your original CV. These count as errors, and the CV is not rendered or written as `--format`:
+Only the CV's `cv` section goes to the LLM; design, locale, and settings are copied from your file. The draft is then compared with your original CV. These count as errors, and the CV is not rendered as a PDF or written as `--format`:
 - a changed, added, or removed header field (name, contact details, and so on; the headline may be reworded, but is checked for numbers and terms like the rest)
 - new or altered employers, positions, dates, or education
 - a removed employer or education entry
@@ -32,7 +32,7 @@ New capitalised or technical terms, such as a tool name, are warnings. The check
 
 With `--format docx` or `latex`, the CV file is laid out in code from the checked YAML (`candidate/documents.py`), never by the LLM, so it says exactly what passed the check. Like RenderCV, these layouts never split an entry across pages.
 
-The length is always measured on RenderCV's PDF, whatever `--format` is, so a `.docx` or `.tex` is fitted to RenderCV's layout and its own page count may differ. If that PDF runs past 1 page, or the `--max-pages N` given to `tailor-cv`, the LLM ranks the bullets from least to most relevant to the job, and the fewest of the least relevant that makes it fit are cut, found by re-rendering with different numbers cut, in a temporary folder (a binary search, so about 7 renders even for 50 bullets). If it can't fit even with every entry down to one bullet, all those cuts are kept and you get a warning. The LLM only ranks; the cutting is done in code, so nothing is rewritten and every entry keeps at least one bullet. `CV_REVIEW.md` lists what was cut.
+The length is always measured on RenderCV's PDF, which is written beside the YAML draft, so a `.docx` or `.tex` is fitted to RenderCV's layout and its own page count may differ. If that PDF runs past 1 page, or the `--max-pages N` given to `tailor-cv`, the LLM ranks the bullets from least to most relevant to the job, and the fewest of the least relevant that makes it fit are cut, found by re-rendering with different numbers cut, in a temporary folder (a binary search, so about 7 renders even for 50 bullets). If it can't fit even with every entry down to one bullet, all those cuts are kept and you get a warning. The LLM only ranks; the cutting is done in code, so nothing is rewritten and every entry keeps at least one bullet. `CV_REVIEW.md` lists what was cut.
 
 Since an entry is never split, one too long for the space left moves whole to the next page. A page other than the last that is at least 30% empty at the bottom because of this gets a warning (for RenderCV's layout); cutting a few of that entry's bullets pulls it up.
 

@@ -71,10 +71,10 @@ def main() -> None:
     tailor.add_argument("--max-pages", type=positive_int, default=1, metavar="N",
                         help="Longest the CV may be as RenderCV lays it out; longer ones have "
                         "their least relevant bullets cut until they fit (default: 1)")
-    tailor.add_argument("--format", choices=("yaml", "latex", "docx", "pdf"), default="yaml",
-                        help="What to write besides the review: yaml (only the RenderCV YAML "
-                        "draft, to render yourself), latex (also a .tex to compile), docx, or "
-                        "pdf (rendered by RenderCV). Default: yaml")
+    tailor.add_argument("--format", choices=("pdf", "docx", "latex"), default="pdf",
+                        help="The YAML draft and its PDF, rendered by RenderCV, are always "
+                        "written; docx also writes a .docx, and latex a .tex to compile. "
+                        "Default: pdf")
     letter = sub.add_parser("cover-letter", help="Optional: draft a cover letter, reviewed and "
                             "fact-checked, for every Interested job that doesn't have one yet")
     letter.add_argument("--cv", help="CV to write from, in any format, for every job, one of "
@@ -260,7 +260,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
                 print(f"FACT-CHECK ERROR: {message}", file=sys.stderr)
             for message in warnings:
                 print(f"warning: {message}", file=sys.stderr)
-            print(f"Review {target.parent / 'CV_REVIEW.md'} before using this draft.")
+            print(f"Read {target.parent / 'CV_REVIEW.md'}, then the CV itself, before you send it.")
 
         for_jobs("interested", "tailor", "a tailored CV", tailor_one)
     elif args.command == "cover-letter":
@@ -279,7 +279,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
             if errors:
                 print(f"No cover-letter.docx: fix the letter in {target} first.")
             else:
-                print(f"Review {target.parent / 'COVER_LETTER_REVIEW.md'} before sending it.")
+                print(f"Read {target}, and the notes in {target.parent / 'COVER_LETTER_REVIEW.md'}, "
+                      "before you send it with your application.")
 
         for_jobs("interested", "cover-letter", "a cover letter", letter_one)
     elif args.command == "interview-prep":

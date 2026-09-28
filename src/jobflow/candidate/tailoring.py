@@ -27,9 +27,9 @@ from .paths import job_directory
 # A rendered CV longer than this (unless tailor-cv --max-pages says otherwise) is
 # shortened by cutting its least relevant bullets.
 DEFAULT_MAX_PAGES = 1
-# What tailor-cv writes besides the review: the YAML draft alone (to render yourself), or
-# also a .tex, a .docx, or RenderCV's PDF.
-FORMATS = ("yaml", "latex", "docx", "pdf")
+# What tailor-cv writes besides the review and the YAML draft: RenderCV's PDF always, and
+# with docx or latex also a .docx or a .tex.
+FORMATS = ("pdf", "docx", "latex")
 # A page (other than the last) this empty at the bottom gets a warning: RenderCV never
 # splits an entry, so one too long for the space left moves whole to the next page.
 GAP_WARNING = 0.3
@@ -369,10 +369,10 @@ def tailor_cv(job_id: int, variant: str | None = None,
               max_pages: int = DEFAULT_MAX_PAGES,
               fmt: str | None = None) -> tuple[Path, list[str], list[str]]:
     """Draft, review, and check a tailored CV, cut it to `max_pages` as RenderCV lays it
-    out, and write the YAML draft, plus the CV as `fmt` unless that is "yaml"."""
+    out, and write the YAML draft and RenderCV's PDF, plus a .docx or .tex for `fmt`."""
     if max_pages < 1:
         raise RuntimeError("--max-pages must be at least 1")
-    fmt = fmt or "yaml"
+    fmt = fmt or "pdf"
     if fmt not in FORMATS:
         raise RuntimeError(f"Unknown format {fmt!r}; choose from {', '.join(FORMATS)}")
     fit = f"{max_pages} page{'s' if max_pages != 1 else ''}"
@@ -423,41 +423,48 @@ def tailor_cv(job_id: int, variant: str | None = None,
     rendered = ""
     cut: list[dict] = []
     if errors:
-        rendered = ("Not rendered" if fmt == "yaml" else f"Not written as {fmt}") + \
-            f": fix the fact-check errors in the YAML draft first, then run {render_it}."
+        rendered = ("Not rendered as a PDF" + ("" if fmt == "pdf" else f" or written as {fmt}")
+                    + f": fix the fact-check errors in the YAML draft first, then run {render_it}.")
+        read_it = (f"Read {target.name} line by line against your source CV and fix the errors "
+                   "before you render it and send the CV with an application.")
     else:
         try:
             draft_cv, cut, pdf = _fit(job, source_doc, draft_cv, target.name, max_pages,
-                                      warnings, keep_pdf=target_dir if fmt == "pdf" else None)
+                                      warnings, keep_pdf=target_dir)
         except RenderFailed as exc:
             pdf = None
             warnings.append(f"RenderCV couldn't render the draft, so its length wasn't checked: "
                             f"{exc}")
         _write(target, source_doc, draft_cv)
-        if fmt == "yaml":
-            rendered = f"Render it with {render_it}."
-        elif fmt == "pdf":
-            rendered = f"Rendered as {pdf.name}." if pdf else "Not rendered (see the warnings)."
-        elif fmt == "docx":
+        rendered = (f"Rendered by RenderCV as {pdf.name}." if pdf
+                    else "Not rendered as a PDF (see the warnings).")
+        if fmt == "docx":
             documents.write_docx(draft_cv, target.with_suffix(".docx"))
-            rendered = (f"Written as {target.with_suffix('.docx').name}; it was fitted to {fit} "
-                        "as RenderCV lays it out, so check the page count in your word processor.")
-        else:
+            rendered += (f" Also written as {target.with_suffix('.docx').name}; it was fitted to "
+                         f"{fit} as RenderCV lays it out, so check the page count in your word "
+                         "processor.")
+        elif fmt == "latex":
             documents.write_latex(draft_cv, target.with_suffix(".tex"))
-            rendered = (f"Written as {target.with_suffix('.tex').name}; compile it with lualatex "
-                        f"(or pdflatex for plain Western text). It was fitted to {fit} as RenderCV "
-                        "lays it out, so check the page count of yours.")
+            rendered += (f" Also written as {target.with_suffix('.tex').name}; compile it with "
+                         f"lualatex (or pdflatex for plain Western text). It was fitted to {fit} "
+                         "as RenderCV lays it out, so check the page count of yours.")
+        shown = pdf.name if pdf else target.name
+        read_it = (f"Read {shown} line by line against your source CV before you send it with an "
+                   f"application. If you edit {target.name}, render it again with {render_it}.")
     report = [f"# CV review: {job['company'] or 'Unknown employer'} — {job['title']} (job id {job_id})", "",
               reason, f"Draft: {target.name}. {rendered}", "",
-              "Review every line against your private source CV before rendering or submitting. "
-              "The automated check below catches common factual changes but is not "
+              read_it + " The automated check below catches common factual changes but is not "
               "exhaustive.", ""]
     report += [f"- {n}" for n in notes] + ([""] if notes else [])
     report += [f"## Fact-check errors ({len(errors)})", ""]
     report += [f"- {e}" for e in errors] or ["- None found."]
     report += ["", f"## Warnings ({len(warnings)})", ""]
     report += [f"- {w}" for w in warnings] or ["- None."]
-    report += ["", "## Reviewer's critique", ""]
+    report += ["", "## Reviewer's critique of the first draft", ""]
+    if critique:
+        report += ["The reviewer then revised the draft; that revision is the CV written, "
+                   "unless a note above says the first draft was kept. Some points may already "
+                   "be addressed.", ""]
     report += [f"- {c}" for c in critique] or ["- None."]
     if cut:
         report += ["", f"## Bullets cut to fit {fit} ({len(cut)})", "",
