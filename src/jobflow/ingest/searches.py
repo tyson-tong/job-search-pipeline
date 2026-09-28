@@ -81,7 +81,12 @@ class SearchConfigError(RuntimeError):
 
 
 def _choices(name: str, values, allowed) -> tuple[str, ...]:
-    values = tuple(values or ())
+    """A list of allowed strings (one string counts as a list of one)."""
+    values = [values] if isinstance(values, str) else values or []
+    if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+        raise SearchConfigError(f"{name}: must be a list of values from {sorted(allowed)}, "
+                                f"not {values!r}")
+    values = tuple(values)
     bad = [v for v in values if v not in allowed]
     if bad:
         raise SearchConfigError(f"{name}: unknown value(s) {bad}; choose from {sorted(allowed)}")
@@ -119,7 +124,8 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     terms = merged.get("terms")
     if isinstance(terms, str):
         terms = [terms]
-    if not terms or not all(isinstance(t, str) and t.strip() for t in terms):
+    if not isinstance(terms, list) or not terms \
+            or not all(isinstance(t, str) and t.strip() for t in terms):
         raise SearchConfigError(f"{where}: terms must be a non-empty list of strings")
     raw_locations = merged.get("locations")
     if not isinstance(raw_locations, dict) or not raw_locations:
@@ -146,7 +152,8 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     if not sites:
         raise SearchConfigError(f"{where}: sites must list at least one of {list(opt.SITES)}")
     days = merged.get("posted_within_days")
-    if days not in opt.POSTED_WITHIN_DAYS:
+    # true == 1 in Python, so a boolean would otherwise pass as 1 day.
+    if isinstance(days, bool) or days not in opt.POSTED_WITHIN_DAYS:
         raise SearchConfigError(f"{where}: posted_within_days must be one of "
                                 f"{list(opt.POSTED_WITHIN_DAYS)} (24 hours, 1 week, 2 weeks, "
                                 f"1 month), not {days!r}")
@@ -214,12 +221,22 @@ def parse_config(text: str) -> list[Search]:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise SearchConfigError(f"searches config is not valid TOML: {exc}") from exc
+    unknown = set(data) - {"defaults", "search"}
+    if unknown:
+        raise SearchConfigError(f"unknown section(s) {sorted(unknown)}: use [defaults] and "
+                                "[[search]] only")
+    if not isinstance(data.get("defaults", {}), dict):
+        raise SearchConfigError("defaults must be a [defaults] section of settings")
+    raw_searches = data.get("search", [])
+    if not isinstance(raw_searches, list) or not all(isinstance(s, dict) for s in raw_searches):
+        raise SearchConfigError("each search must be a [[search]] section (with double "
+                                "brackets), one per search")
     given_defaults = _current_names(data.get("defaults", {}), "[defaults]")
     defaults = {**DEFAULTS, **given_defaults}
     unknown = set(given_defaults) - SEARCH_KEYS
     if unknown:
         raise SearchConfigError(f"[defaults]: unknown setting(s) {sorted(unknown)}")
-    searches = [parse_search(raw, defaults) for raw in data.get("search", [])]
+    searches = [parse_search(raw, defaults) for raw in raw_searches]
     if not searches:
         raise SearchConfigError("no [[search]] entries found")
     names = [s.name for s in searches]

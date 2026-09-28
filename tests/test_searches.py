@@ -71,6 +71,23 @@ def test_invalid_config_is_rejected(bad, message):
         parse_config(text + "\n")
 
 
+SEARCH = 'name = "x"\nterms = ["a"]\nlocations = { AU = [] }\n'
+
+
+@pytest.mark.parametrize("text, message", [
+    # Each crashed with a traceback (or a 500 in the Searches tab) instead of saying why.
+    ("[search]\n" + SEARCH, "double brackets"),
+    ("defaults = 3\n[[search]]\n" + SEARCH, "defaults must be"),
+    ("[default]\nmax_results = 5\n[[search]]\n" + SEARCH, "unknown section"),
+    ('[[search]]\nname = "x"\nterms = 5\nlocations = { AU = [] }\n', "terms must be"),
+    ("[[search]]\n" + SEARCH + 'seek_classifications = [["a"]]\n', "must be a list"),
+    ("[[search]]\n" + SEARCH + "posted_within_days = true\n", "posted_within_days must be"),
+])
+def test_a_malformed_file_is_rejected_with_a_reason(text, message):
+    with pytest.raises(SearchConfigError, match=message):
+        parse_config(text)
+
+
 # --- Translation to each actor's input ---------------------------------------------------
 
 def test_linkedin_is_one_run_with_a_url_per_term_and_place():
