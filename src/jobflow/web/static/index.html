@@ -300,7 +300,7 @@ function recall() {
     const saved = JSON.parse(localStorage.getItem("jobflow.filters") || "null");
     if (!saved) return;
     const statuses = Array.isArray(saved.statuses) ? saved.statuses.filter((s) => !NOT_MY_JOBS.includes(s)) : [];
-    if (statuses.length) state.statuses = new Set(statuses);
+    if (Array.isArray(saved.statuses)) state.statuses = new Set(statuses);
     if (saved.sort) sortInput.value = saved.sort;
     if (saved.site !== undefined) siteInput.value = saved.site;
     if (saved.view) state.view = saved.view;
@@ -396,6 +396,7 @@ function statusParams() {
   statuses.forEach((s) => params.append("status", s));
   return params;
 }
+function noStatuses() { return state.view === "jobs" && !state.statuses.size; }
 function filterParams() {
   const params = statusParams();
   state.countries.forEach((c) => params.append("country", c));
@@ -416,8 +417,12 @@ async function refresh() {
       renderAll();
       return;
     }
-    const [summary, jobs, countries] = await Promise.all([api("/api/summary"), api("/api/jobs?" + filterParams()),
-      api("/api/countries?" + statusParams())]);
+    // With no statuses chosen My jobs shows nothing (the server would read none as the default).
+    const none = noStatuses(), before = state.countryCounts;
+    const [summary, jobs, countries] = await Promise.all([api("/api/summary"),
+      none ? [] : api("/api/jobs?" + filterParams()),
+      none ? { counts: {}, names: before ? before.names : {}, unknown: before && before.unknown }
+        : api("/api/countries?" + statusParams())]);
     state.summary = summary;
     state.jobs = jobs;
     state.countryCounts = countries;
@@ -469,17 +474,18 @@ function renderStatusMenu() {
     ...all.map((s) => el("label", {},
       el("input", { type: "checkbox", checked: state.statuses.has(s), onchange: (event) => {
         event.target.checked ? state.statuses.add(s) : state.statuses.delete(s);
-        if (!state.statuses.size) state.statuses.add("interested");
         remember(); refresh(); } }),
       label(s), el("span", { className: "meta" }, ` (${state.summary.counts[s] || 0})`))),
     el("div", { className: "row" },
       el("button", { className: "btn small", onclick: () => {
         state.statuses = new Set(state.summary.default_statuses); remember(); refresh(); } }, "Default"),
       el("button", { className: "btn small", onclick: () => {
-        state.statuses = new Set(all); remember(); refresh(); } }, "All"))]);
+        state.statuses = new Set(all); remember(); refresh(); } }, "All"),
+      el("button", { className: "btn small", onclick: () => {
+        state.statuses = new Set(); remember(); refresh(); } }, "None"))]);
   const chosen = [...state.statuses].map(label);
   document.getElementById("status-summary").textContent =
-    "Status: " + (chosen.length > 3 ? `${chosen.length} selected` : chosen.join(", ")) + " ▾";
+    "Status: " + (!chosen.length ? "none" : chosen.length > 3 ? `${chosen.length} selected` : chosen.join(", ")) + " ▾";
 }
 function statusSelect(job) {
   const value = current(job, "status");
@@ -565,6 +571,7 @@ function renderRows() {
   document.getElementById("shown").textContent = n >= state.summary.max_rows
     ? `The first ${n} jobs: narrow the filters to see the rest`
     : n < total ? `${n} of ${total} jobs` : `${n} job${n === 1 ? "" : "s"}`;
+  document.getElementById("export").hidden = noStatuses();
   document.getElementById("export").href = "/api/export.csv?" + filterParams() + "&token=" + encodeURIComponent(TOKEN);
   const inbox = state.view === "inbox", filtered = state.view === "filtered";
   const selectable = inbox || filtered;
@@ -583,7 +590,8 @@ function renderRows() {
   if (!n) {
     fill(body, [el("tr", {}, el("td", { colspan: inbox ? 7 : 8, className: "empty" },
       inbox ? "Inbox is empty: no new jobs to review."
-        : filtered ? "No filtered jobs." : "No jobs match these filters."))]);
+        : filtered ? "No filtered jobs." : noStatuses() ? "No statuses chosen: pick some in the Status menu."
+        : "No jobs match these filters."))]);
     return;
   }
   fill(body, [...state.jobs.slice(first, end).map((job, offset) => {
