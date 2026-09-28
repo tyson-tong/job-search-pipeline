@@ -195,7 +195,8 @@ def test_jobs_run_two_at_a_time_print_whole_and_stop_on_a_bad_key(monkeypatch, c
         running.add(job_id)
         most.append(len(running))
         print(f"start {job_id}")
-        time.sleep(0.05)
+        # Job 3 fails at once, so the stop is set while job 4 (started with it) still runs.
+        time.sleep(0 if job_id == 3 else 0.05)
         print(f"warning {job_id}", file=sys.stderr)
         print(f"end {job_id}")
         running.discard(job_id)
