@@ -234,7 +234,7 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 const TOKEN = "__JOBFLOW_TOKEN__";
 const LABELS = { new: "New", interested: "Interested", not_interested: "Not interested", applied: "Applied",
   interviewing: "Interviewing", offered: "Offered", accepted: "Accepted", declined: "Declined",
-  rejected: "Rejected", withdrawn: "Withdrawn", filtered: "Filtered" };
+  rejected: "Rejected", withdrawn: "Withdrawn", filtered: "Filtered", archived: "Archived" };
 const SITE_NAMES = { linkedin: "LinkedIn", indeed: "Indeed", seek: "Seek" };
 const AUTO_REFRESH_MS = 3 * 60 * 1000;
 // versions: each edited job's tracking version when you started editing it, sent with
@@ -252,7 +252,7 @@ const state = { view: "jobs", statuses: new Set(["interested", "applied", "inter
 // A job still in the Inbox can only be triaged; the other statuses come after Interested.
 const TRIAGE_STATUSES = ["new", "interested", "not_interested"];
 // My jobs holds only jobs you picked as Interested and what followed; these never show there.
-const NOT_MY_JOBS = ["new", "not_interested", "filtered"];
+const NOT_MY_JOBS = ["new", "not_interested", "filtered", "archived"];
 const PAGE_SIZES = [5, 10, 20, 50, 100];
 
 // ---- Helpers -------------------------------------------------------------------------
@@ -548,9 +548,9 @@ function duplicateFlag(job) {
 function similarPlace(similar) {
   if (state.jobs.some((job) => job.id === similar.id)) return null;
   const tab = similar.status === "new" ? "inbox" : similar.status === "filtered" ? "filtered"
-    : similar.status === "not_interested" ? null : "jobs";
+    : ["not_interested", "archived"].includes(similar.status) ? null : "jobs";
   if (tab === state.view) return "hidden by your filters";
-  return { inbox: "Inbox", filtered: "Filtered", jobs: "My jobs" }[tab] || "Not interested";
+  return { inbox: "Inbox", filtered: "Filtered", jobs: "My jobs" }[tab] || label(similar.status);
 }
 function renderSortHeads() {
   document.querySelectorAll(".sort-head").forEach((head) => {

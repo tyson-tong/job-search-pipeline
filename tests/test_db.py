@@ -9,7 +9,7 @@ import pytest
 from psycopg.conninfo import make_conninfo
 
 from jobflow.db import connect, migrate, set_job_state
-from jobflow.ingest.store import save_run
+from jobflow.ingest.store import archive_filtered, save_run
 from jobflow.web.queries import Conflict, list_jobs, parse_filters, save_changes
 
 AD = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate reporting in "
@@ -88,3 +88,24 @@ def test_a_save_over_a_change_made_elsewhere_writes_nothing(database):
         save_changes([{"id": job["id"], "status": "not_interested",
                        "expected_version": job["version"]}])
     assert _one("SELECT status FROM jobs")[0] == "interested"
+
+
+def test_only_filtered_jobs_over_two_weeks_past_posting_are_archived(database):
+    from datetime import date
+
+    def ad(job_id, title, posted, words):
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
+                "title": title, "companyName": f"Employer {job_id}", "postedAt": posted,
+                "descriptionText": " ".join(f"{words}{i}" for i in range(40))}
+    filtered = lambda posting: "title contains 'Intern'"
+    save_run("linkedin:a", "r1", "d1", [ad("1", "Intern", "2026-09-10", "old")], job_filter=filtered)
+    save_run("linkedin:a", "r2", "d2", [ad("2", "Intern", "2026-09-18", "recent")], job_filter=filtered)
+    save_run("linkedin:a", "r3", "d3", [ad("3", "Analyst", "2026-09-01", "inbox")])
+    # 2026-09-28: job 1 is 18 days past posting; job 2 is 10; job 3 is old but not filtered.
+    assert archive_filtered(date(2026, 9, 28)) == 1
+    with connect() as conn:
+        statuses = dict(conn.execute("SELECT source_job_id, status FROM jobs").fetchall())
+    assert statuses == {"1": "archived", "2": "filtered", "3": "new"}
+    assert _one("SELECT via FROM status_history")[0] == "archive"
+    # Still a known job: seeing it again adds no new one.
+    assert save_run("linkedin:a", "r4", "d4", [ad("1", "Intern", "2026-09-10", "old")]) == 0

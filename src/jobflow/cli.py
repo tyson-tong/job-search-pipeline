@@ -438,8 +438,11 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         update_searches(dry_run=args.dry_run)
     elif args.command == "web":
         from .db import migrate
+        from .ingest.store import archive_filtered
         from .web.server import serve
         migrate()
+        # The daily import archives them too; this covers days it didn't run.
+        archive_filtered()
         serve(args.port)
     elif args.command == "tailor-cv":
         from .candidate.tailoring import add_format, cv_fixed_by_hand, tailor_cv

@@ -11,8 +11,8 @@ from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
 from ..ingest.store import IN_PROGRESS, possible_duplicate_map, possible_duplicates
 
 DEFAULT_STATUSES = ["interested", "applied", "interviewing", "offered", "accepted"]
-# Statuses a person can choose; "filtered" is only set by imports.
-EDITABLE_STATUSES = [s for s in STATUSES if s != "filtered"]
+# Statuses a person can choose; "filtered" and "archived" are only set by jobflow itself.
+EDITABLE_STATUSES = [s for s in STATUSES if s not in ("filtered", "archived")]
 # The date the Posted column shows: the posted date, else the date first seen.
 POSTED_DATE = "coalesce(j.posted_at, j.first_seen_at::date)"
 SORTS = {

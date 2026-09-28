@@ -265,6 +265,8 @@ def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
             raise RuntimeError("boom")
 
     monkeypatch.setattr(apify, "run_search", fake_run)
+    import jobflow.ingest.store as store
+    monkeypatch.setattr(store, "archive_filtered", lambda: 0)
     with pytest.raises(SystemExit, match="1 of 20 Apify runs failed"):
         apify.ingest_searches()
     assert seen.count("indeed") == 10 and seen.count("seek") == 9

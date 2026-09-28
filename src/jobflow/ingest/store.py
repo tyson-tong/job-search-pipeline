@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -33,6 +33,8 @@ POSSIBLE_WINDOW_DAYS = 180
 # are shown as "highly similar"; the rest as "similar".
 HIGHLY_SIMILAR = 0.8
 IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
+# A filtered job this long past its posted date is archived (see archive_filtered).
+ARCHIVE_FILTERED_AFTER = timedelta(days=14)
 # Ads at least this alike under the same title are the same job even when the sites spell
 # the employer or place differently, e.g. "Shenwan Hongyuan (H.K.)" on LinkedIn and
 # "Shenwan Hongyuan Securities (H.K.)" in Admiralty on Seek. The title must match exactly:
@@ -490,6 +492,24 @@ def exclude_inbox_jobs(searches: list, dry_run: bool = False) -> tuple[list[dict
                                     VALUES (%s, 'new', 'filtered', 'update-searches')""",
                                  (job["id"],))
     return matched, len(rows)
+
+
+def archive_filtered(today: date | None = None) -> int:
+    """Move filtered jobs posted (or, with no posted date, first seen) more than
+    ARCHIVE_FILTERED_AFTER ago out of the Filtered tab, to status 'archived'. They stay in
+    the database and still match as duplicates, so a repost stays out of the Inbox; the
+    tracker never shows them. Returns how many were archived."""
+    from ..db import connect
+
+    cutoff = (today or date.today()) - ARCHIVE_FILTERED_AFTER
+    with connect() as conn:
+        return conn.execute(
+            """WITH moved AS (
+                   UPDATE jobs SET status='archived', status_updated_at=now()
+                   WHERE status='filtered' AND coalesce(posted_at, first_seen_at::date) < %s
+                   RETURNING id)
+               INSERT INTO status_history(job_id, from_status, to_status, via)
+               SELECT id, 'filtered', 'archived', 'archive' FROM moved""", (cutoff,)).rowcount
 
 
 def backfill_countries(conn) -> int:
