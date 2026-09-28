@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import re
+import sys
 from datetime import date, datetime, timedelta
 from typing import Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+import psycopg
 import psycopg.types.json
 
 from .options import LINKEDIN_COUNTRIES
@@ -406,6 +408,10 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
     from ..db import connect
 
     with connect() as conn:
+        # Imports take turns, in this process (sites run in parallel) and across processes
+        # (a manual jobflow ingest during the daily one): two copies of one job saved at
+        # once would each miss the other and never merge. Held until this run commits.
+        conn.execute("SELECT pg_advisory_xact_lock(hashtext('jobflow save_run'))")
         run_pk = conn.execute(
             """INSERT INTO scraper_runs(actor_id, apify_run_id, dataset_id, status,
                    started_at, finished_at, items_seen, cost_usd, search_name, input)
@@ -419,7 +425,17 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
             (actor_id, run_id, dataset_id, started_at, finished_at, len(jobs), cost_usd,
              search_name, psycopg.types.json.Jsonb(run_input) if run_input else None)
         ).fetchone()[0]
-        return sum(save_job(conn, run_pk, job, job_filter, country) for job in jobs)
+        added = 0
+        for job in jobs:
+            # The run is paid for: a posting the database rejects is skipped, not allowed to
+            # fail the import of every other posting in it.
+            try:
+                with conn.transaction():
+                    added += save_job(conn, run_pk, job, job_filter, country)
+            except (psycopg.DataError, UnicodeEncodeError) as exc:
+                title = job.get("title") if isinstance(job, dict) else None
+                print(f"skipped a posting that can't be saved ({title!r}): {exc}", file=sys.stderr)
+        return added
 
 
 def record_failed_run(actor_id: str, run_id: str | None, dataset_id: str | None, status: str,

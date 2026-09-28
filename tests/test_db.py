@@ -174,3 +174,10 @@ def test_a_job_whose_search_was_renamed_is_judged_by_the_defaults(database):
              search_name="old-name", country="AU")
     matched, _ = exclude_inbox_jobs(parse_config(text), fallback=defaults_search(text))
     assert [job["reason"] for job in matched] == ["title contains 'Intern'"]
+
+
+def test_one_posting_the_database_rejects_does_not_lose_the_rest_of_a_paid_run(database):
+    # A JSON "\ud800" escape is valid JSON, and PostgreSQL rejects it.
+    broken = {**SEEK, "id": "999", "title": "Analyst \ud800", "jobLink": "https://www.seek.com.au/job/999"}
+    assert save_run("seek:a", "r1", "d1", [broken, LINKEDIN], country="AU") == 1
+    assert _one("SELECT title FROM jobs")[0] == "Data Analyst"

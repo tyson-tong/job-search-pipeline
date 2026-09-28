@@ -12,9 +12,6 @@ from apify_client import ApifyClient
 
 from .searches import PlannedRun, filter_reason, load_searches, plan
 
-# Sites run at the same time, but imports take turns: two sites' copies of one job saved
-# at once would each miss the other and never merge.
-_save_lock = threading.Lock()
 # The longest APIFY_MAX_WAIT_MINUTES may be: the daily GitHub job itself stops at 180 minutes.
 MAX_WAIT_MINUTES = 180
 
@@ -29,7 +26,8 @@ def make_client() -> ApifyClient:
 def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) -> None:
     """Run one actor for one search, import its dataset, and record the run.
 
-    Any failure is recorded in scraper_runs and re-raised.
+    Any failure is recorded in scraper_runs and re-raised: with Apify's status, or
+    IMPORT_FAILED for a run that succeeded but whose results couldn't be saved.
     """
     from .store import record_failed_run, save_run
 
@@ -57,19 +55,22 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
             raise RuntimeError(f"Apify run {run.id} ended with {run.status}{detail}")
         items = list(client.dataset(run.default_dataset_id).iterate_items(clean=True))
         job_filter = partial(filter_reason, search=planned.search, site=planned.site)
-        with _save_lock:
-            added = save_run(actor_id, run.id, run.default_dataset_id, items,
-                             started_at=run.started_at, finished_at=run.finished_at,
-                             cost_usd=run.usage_total_usd, search_name=planned.search.name,
-                             run_input=planned.run_input, job_filter=job_filter,
-                             country=planned.country)
+        # Sites run at the same time; save_run makes their imports take turns.
+        added = save_run(actor_id, run.id, run.default_dataset_id, items,
+                         started_at=run.started_at, finished_at=run.finished_at,
+                         cost_usd=run.usage_total_usd, search_name=planned.search.name,
+                         run_input=planned.run_input, job_filter=job_filter,
+                         country=planned.country)
         cost = f", ${run.usage_total_usd:.2f}" if run.usage_total_usd is not None else ""
         print(f"{name}: {len(items)} items, {added} new jobs{cost}")
     except Exception as exc:
+        # A run that succeeded on Apify failed here, importing its results; they stay in
+        # its dataset on Apify.
+        status = "FAILED" if run is None else "IMPORT_FAILED" if run.status == "SUCCEEDED" \
+            else run.status
         try:
             record_failed_run(actor_id, run.id if run else None,
-                              run.default_dataset_id if run else None,
-                              run.status if run else "FAILED", str(exc),
+                              run.default_dataset_id if run else None, status, str(exc),
                               run.started_at if run else None,
                               run.finished_at if run else None,
                               run.usage_total_usd if run else None,

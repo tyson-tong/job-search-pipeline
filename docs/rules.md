@@ -47,4 +47,4 @@ Each scored job that is Interested now contributes the requirements its best-mat
 
 ## Failures
 
-If one Apify run fails, the error is recorded in the `scraper_runs` table, with the search name and the exact input, and the other runs still go ahead. A run still going after `APIFY_MAX_WAIT_MINUTES` is stopped, so it can't keep charging for results that won't be imported. The GitHub workflow then shows as failed, so you get GitHub's failure email.
+If one Apify run fails, the error is recorded in the `scraper_runs` table, with the search name and the exact input, and the other runs still go ahead. A run that succeeded on Apify but whose results couldn't be saved is recorded as `IMPORT_FAILED`, with its dataset ID: the results are still on Apify. A single posting the database rejects is skipped (and named in the log) rather than failing the rest of its run. A run still going after `APIFY_MAX_WAIT_MINUTES` is stopped, so it can't keep charging for results that won't be imported. The GitHub workflow then shows as failed, so you get GitHub's failure email.

@@ -278,6 +278,20 @@ def test_unsuccessful_runs_are_recorded_not_imported(monkeypatch, result, messag
     assert client.aborted == (["r1"] if result.status == "RUNNING" else [])
 
 
+def test_a_run_whose_import_fails_is_not_recorded_as_succeeded(monkeypatch):
+    import jobflow.ingest.store as store
+    recorded = []
+    monkeypatch.setattr(store, "record_failed_run", lambda *a: recorded.append(a))
+
+    def save_run(*args, **kwargs):
+        raise RuntimeError("numeric field overflow")
+    monkeypatch.setattr(store, "save_run", save_run)
+    with pytest.raises(RuntimeError, match="overflow"):
+        apify.run_search(FakeClient(_run()), plan(searches(), "counsel")[0], timedelta(minutes=5))
+    run_id, dataset_id, status = recorded[0][1:4]
+    assert (run_id, dataset_id, status) == ("r1", "d1", "IMPORT_FAILED")
+
+
 def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
     monkeypatch.setenv("APIFY_TOKEN", "t")
     monkeypatch.setenv("JOBFLOW_SEARCHES", CONFIG)
