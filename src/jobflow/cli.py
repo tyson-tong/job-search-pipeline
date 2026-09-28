@@ -174,8 +174,9 @@ def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
     twice, and a failed job is retried next time. A job counts as done only while
-    output_exists(its folder) too: one whose files were deleted (by clean-up, say) is
-    done again. A run whose draft failed the fact check (NEEDS-FIX) is done again, for a
+    output_exists(its folder) too, which checks the command's own marker file (a CV_*_draft.yaml,
+    cover-letter.docx, or interview-prep.html): one whose marker was deleted (by clean-up,
+    say) is done again. Deleting only a tailored CV's PDF doesn't count. A run whose draft failed the fact check (NEEDS-FIX) is done again, for a
     fresh draft, unless fixed_by_hand(its folder) says you fixed that draft yourself:
     then it's recorded as FIXED-BY-HAND and kept. done_one(folder), if given, runs for
     each job already done and returns a line to print, or None. One failure doesn't stop
@@ -211,7 +212,7 @@ def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
                 redo += 1
             todo.append((job_id, company, title))
     again = [f"{redo} drafted again: the last draft failed the fact check"] if redo else []
-    again += [f"{lost} done again: their files were deleted"] if lost else []
+    again += [f"{lost} done again: their output was deleted"] if lost else []
     print(f"{len(rows)} {status.capitalize()} job{'s' if len(rows) != 1 else ''}: "
           f"{len(rows) - len(todo)} already have {what}, {len(todo)} to do"
           + (f" ({'; '.join(again)})" if again else ""))
@@ -416,7 +417,7 @@ def manual(parser: argparse.ArgumentParser, command: str | None = None) -> str:
         section("NOTES", para(
             "tailor-cv, cover-letter, and interview-prep work on two jobs at a time and skip "
             "jobs they've already done (a job that failed, whose draft failed the fact "
-            "check, or whose folder was deleted is tried again). Only one run of each can go at a time. Every command "
+            "check, or whose draft, letter, or briefing was deleted is tried again). Only one run of each can go at a time. Every command "
             "except init and help brings the database tables up to date when it starts.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
                 "docs/structure.html"),
