@@ -97,4 +97,9 @@ uv sync --extra test
 uv run pytest
 ```
 
-The tests need no database or network.
+The tests need no database or network. The ones in `tests/test_db.py` (merging, saving, migrations) run only when `TEST_DATABASE_URL` names a disposable PostgreSQL database; each run works in a schema of its own and drops it afterwards. For example, with Docker:
+
+```
+docker run -d --rm --name jobflow-test-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:16
+TEST_DATABASE_URL=postgresql://postgres:pw@127.0.0.1:55432/postgres uv run pytest
+```
