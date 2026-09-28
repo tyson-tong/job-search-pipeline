@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import yaml
@@ -131,6 +132,15 @@ def research(job: dict) -> tuple[list[dict], list[str]]:
         return [], ["No company research: WEB_SEARCH_API_KEY is not set, so only the job ad "
                     "is used."]
     return web_search(job["company"] or "the company", job["title"]), []
+
+
+def research_soon(job_id: int) -> Future:
+    """Start research() for the job in the background: the web search then overlaps
+    choosing (maybe scoring) the CV and drafting. .result() gives what research() returns."""
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(lambda: research(fetch_job(job_id)))
+    pool.shutdown(wait=False)
+    return future
 
 
 def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict, str]:
@@ -366,6 +376,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
     if fmt not in FORMATS:
         raise RuntimeError(f"Unknown format {fmt!r}; choose from {', '.join(FORMATS)}")
     fit = f"{max_pages} page{'s' if max_pages != 1 else ''}"
+    researching = research_soon(job_id)
     job, variant, reason, source_doc, source_yaml = load_source(job_id, variant)
     prompt = {
         "job": {"title": job["title"], "company": job["company"],
@@ -386,7 +397,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
     errors, warnings = fact_check(source_doc["cv"], draft_cv)
 
     # The reviewer's revision is kept only if it passes the fact check at least as well.
-    sources, notes = research(job)
+    sources, notes = researching.result()
     critique: list[str] = []
     try:
         draft_yaml = yaml.safe_dump({"cv": draft_cv}, sort_keys=False, allow_unicode=True)

@@ -4,6 +4,13 @@ import argparse
 import shutil
 import subprocess
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+# Jobs for_jobs works on at once. More would be faster, but each job makes several LLM
+# calls sending whole CVs and ads, and providers cap tokens per minute (rate-limited
+# calls are retried; see llm.complete).
+JOBS_AT_ONCE = 2
 
 
 def positive_int(text: str) -> int:
@@ -88,8 +95,28 @@ def main() -> None:
         raise SystemExit(f"error: can't use the database (check DATABASE_URL): {exc}") from None
 
 
+class _JobOutput:
+    """Stands in for sys.stdout and sys.stderr so that what a job prints, from anywhere,
+    is held back and printed in one piece when it finishes, not interleaved with the
+    other job running at the same time."""
+
+    def __init__(self, stream):
+        self.stream, self.held = stream, threading.local()
+
+    def write(self, text: str) -> int:
+        held = getattr(self.held, "lines", None)
+        if held is None:
+            return self.stream.write(text)
+        held.append((self.stream, text))
+        return len(text)
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
 def for_jobs(status: str, kind: str, what: str, run_one) -> None:
-    """Run run_one(job_id) for each job with `status` and no recorded `kind` run.
+    """Run run_one(job_id) for each job with `status` and no recorded `kind` run,
+    JOBS_AT_ONCE at a time.
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
     twice, and a failed job is retried next time. One failure doesn't stop the rest,
@@ -106,20 +133,45 @@ def for_jobs(status: str, kind: str, what: str, run_one) -> None:
     todo = [row for row in rows if not row[3]]
     print(f"{len(rows)} {status.capitalize()} job{'s' if len(rows) != 1 else ''}: "
           f"{len(rows) - len(todo)} already have {what}, {len(todo)} to do")
-    failed = 0
-    for job_id, company, title, _ in todo:
+    out, err = _JobOutput(sys.stdout), _JobOutput(sys.stderr)
+    stop, lock = threading.Event(), threading.Lock()
+    tried, failed = [], []
+
+    def one(row) -> None:
+        job_id, company, title, _ = row
+        if stop.is_set():
+            return
+        out.held.lines = err.held.lines = lines = []
         print(f"\n#{job_id} {title} ({company or 'unknown employer'})")
         try:
             run_one(job_id)
         except Exception as exc:
-            failed += 1
             print(f"error: {exc}", file=sys.stderr)
+            with lock:
+                failed.append(job_id)
             if isinstance(exc, LLMError) and exc.fatal:
-                raise SystemExit(f"Stopped: the LLM provider will refuse the other "
-                                 f"{len(todo) - failed} job(s) too. Fix that, then run the "
-                                 "command again") from None
+                stop.set()
+        finally:
+            out.held.lines = err.held.lines = None
+            with lock:
+                tried.append(job_id)
+                for stream, text in lines:  # flushed, so stdout and stderr stay in order
+                    stream.write(text)
+                    stream.flush()
+
+    sys.stdout.flush()
+    sys.stdout, sys.stderr = out, err
+    try:
+        with ThreadPoolExecutor(max_workers=JOBS_AT_ONCE) as pool:
+            list(pool.map(one, todo))
+    finally:
+        sys.stdout, sys.stderr = out.stream, err.stream
+    if stop.is_set():
+        raise SystemExit(f"Stopped: the LLM provider will refuse the other "
+                         f"{len(todo) - len(tried)} job(s) too. Fix that, then run the "
+                         "command again")
     if failed:
-        raise SystemExit(f"{failed} of {len(todo)} failed; run the command again to retry them")
+        raise SystemExit(f"{len(failed)} of {len(todo)} failed; run the command again to retry them")
 
 
 def update_searches(dry_run: bool = False) -> None:

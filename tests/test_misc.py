@@ -160,3 +160,48 @@ def test_llm_drops_settings_the_provider_rejects(monkeypatch):
     content, _ = llm.complete("s", "u", json_mode=True)
     assert llm.parse_json(content) == {"a": 1}
     assert sent == [["response_format", "temperature"], ["temperature"], []]
+
+
+def test_jobs_run_two_at_a_time_print_whole_and_stop_on_a_bad_key(monkeypatch, capsys):
+    import re
+    import sys
+    import time
+    from jobflow import cli, db
+    from jobflow.llm import LLMError
+
+    class Conn:
+        def execute(self, *args):
+            return self
+
+        def fetchall(self):
+            return [(i, "Acme", f"Role {i}", False) for i in range(1, 7)]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr(db, "connect", Conn)
+    running, most = set(), []
+
+    def run_one(job_id):
+        running.add(job_id)
+        most.append(len(running))
+        print(f"start {job_id}")
+        time.sleep(0.05)
+        print(f"warning {job_id}", file=sys.stderr)
+        print(f"end {job_id}")
+        running.discard(job_id)
+        if job_id == 3:
+            raise LLMError("Invalid key (LLM provider, HTTP 401)", fatal=True)
+
+    with pytest.raises(SystemExit, match="Stopped"):
+        cli.for_jobs("interested", "tailor", "a tailored CV", run_one)
+    out = capsys.readouterr().out
+    assert max(most) == 2
+    # Each job's lines come out together, never interleaved with the other job's.
+    blocks = re.findall(r"#(\d) Role \1 \(Acme\)\n(.*?)(?=\n\n#|\Z)", out, re.S)
+    assert blocks and all(body.strip() == f"start {job}\nend {job}" for job, body in blocks)
+    # Job 4 may run alongside job 3; nothing after it starts.
+    assert {job for job, _ in blocks} <= {"1", "2", "3", "4"}

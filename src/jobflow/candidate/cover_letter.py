@@ -12,7 +12,7 @@ from . import documents
 from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, chosen_sources, is_yaml, normalise_text
 from .matching import best_variant, match_job
 from .paths import job_directory
-from .tailoring import _numbers, _strings, _terms, load_source, research
+from .tailoring import _numbers, _strings, _terms, load_source, research_soon
 
 # Capitalised words any letter uses, never worth a warning.
 LETTER_WORDS = {"i", "i'd", "i'm", "i've", "i'll", "dear", "hiring", "manager", "team",
@@ -115,8 +115,9 @@ def _review(job: dict, cv: str, letter: str, sources: list[dict]) -> tuple[dict,
 
 def write_letter(job_id: int, variant: str | None = None,
                  output_dir: Path | None = None) -> tuple[Path, list[str], list[str]]:
+    researching = research_soon(job_id)
     job, variant, reason, source_cv, cv_for_llm = load_cv(job_id, variant)
-    sources, notes = research(job)
+    sources, notes = researching.result()
     letter, model = _draft(job, cv_for_llm, sources)
     errors, warnings = check_letter(letter, source_cv, job, sources)
 

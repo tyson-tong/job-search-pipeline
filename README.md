@@ -78,6 +78,8 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | `jobflow ingest [--search NAME] [--site SITE]` | Run the searches now (the daily import does this; uses Apify credits) |
 | `jobflow init` | Create your settings files (first time only) |
 
+`tailor-cv`, `cover-letter`, and `interview-prep` work on two jobs at a time, printing each job's output together once it's done.
+
 Every command except `init` brings the database tables up to date when it starts.
 
 ## Privacy

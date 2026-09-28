@@ -1,5 +1,6 @@
 import copy
 import json
+from concurrent.futures import Future
 
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
 from jobflow.candidate import cover_letter
@@ -146,7 +147,9 @@ def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypat
     letter = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
     monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
         JOB, "main", "CV variant main.", SOURCE_CV, ""))
-    monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
+    researched = Future()
+    researched.set_result(([], []))
+    monkeypatch.setattr(cover_letter, "research_soon", lambda job_id: researched)
     monkeypatch.setattr(cover_letter, "connect", Conn)
     monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
         json.dumps({"critique": [], "cover_letter": letter}) if kw.get("reviewer")

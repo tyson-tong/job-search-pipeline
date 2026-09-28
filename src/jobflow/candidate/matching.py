@@ -149,13 +149,14 @@ def match_job(job_id: int) -> list[dict]:
                            "are scored")
     job = fetch_job(job_id)
     sources = chosen_sources()
-
-    def assess(variant: str, source: str) -> dict:
-        digest = cv_digest(source)
+    for variant, source in sources.items():
         if len(source) > CV_CHAR_LIMIT:
             print(f"warning: CV {variant!r} exceeds {CV_CHAR_LIMIT} characters; only the "
                   "start is assessed, so later evidence will show as not evidenced",
                   file=sys.stderr)
+
+    def assess(variant: str, source: str) -> dict:
+        digest = cv_digest(source)
         prompt = {"job": {"title": job["title"], "company": job["company"],
                           "description": job["description"][:JOB_CHAR_LIMIT]},
                   "cv_variant": variant, "cv_source": source[:CV_CHAR_LIMIT],

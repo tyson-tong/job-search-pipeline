@@ -37,16 +37,21 @@ def web_search(company: str, title: str) -> list[dict]:
     key = os.environ.get("WEB_SEARCH_API_KEY")
     if not key:
         raise RuntimeError("Set WEB_SEARCH_API_KEY for current company research (Tavily)")
-    results: list[dict] = []
-    for query in (f'"{company}" official company products about',
-                  f'"{company}" latest news {title}'):
+
+    def search(query: str) -> list[dict]:
         response = requests.post("https://api.tavily.com/search",
             headers={"Authorization": f"Bearer {key}"},
             json={"query": query, "topic": "news" if "latest" in query else "general",
                   "search_depth": "basic", "max_results": 5,
                   "include_answer": False}, timeout=45)
         response.raise_for_status()
-        results.extend(response.json().get("results", []))
+        return response.json().get("results", [])
+
+    # The two searches are independent, so they run side by side.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        results = [row for rows in pool.map(search, (
+            f'"{company}" official company products about', f'"{company}" latest news {title}'))
+            for row in rows]
     seen = set()
     unique = []
     for row in results:
