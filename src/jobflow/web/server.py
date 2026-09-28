@@ -117,7 +117,7 @@ def make_handler(token: str, port: int):
                     return self._json(job) if job else self._error(404, "No such job")
                 match = re.fullmatch(r"/api/jobs/(\d+)/duplicates", url.path)
                 if match:
-                    from ..ingest.store import possible_duplicates
+                    from ..ingest.similar import possible_duplicates
                     return self._json(possible_duplicates(int(match[1])))
                 return self._error(HTTPStatus.NOT_FOUND, "Not found")
             except Exception as exc:  # report, keep serving

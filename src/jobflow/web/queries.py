@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 
 from ..db import CLOSED_STATUSES, STATUSES, connect, set_job_state
 from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
-from ..ingest.store import IN_PROGRESS, possible_duplicate_map, possible_duplicates
+from ..ingest.similar import IN_PROGRESS, possible_duplicate_map, possible_duplicates
 from ..settings import today
 
 DEFAULT_STATUSES = ["interested", "applied", "interviewing", "offered", "accepted"]

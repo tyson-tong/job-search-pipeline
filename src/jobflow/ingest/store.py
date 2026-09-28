@@ -1,42 +1,25 @@
+"""Saving scraped postings: merging each into a known job (by the rules in dedupe.py) or
+storing it as a new one, recording scraper runs, and the upkeep that follows: filtering
+the Inbox after a searches change, archiving, and pruning old records."""
 from __future__ import annotations
 
-import hashlib
-import re
 import sys
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Callable
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import psycopg
 import psycopg.types.json
 
 from .. import settings
-from .options import LINKEDIN_COUNTRIES
+from .dedupe import (FUZZY_WINDOW_DAYS, SIMILAR_DESCRIPTION, description_similarity,
+                     fingerprint, identity, is_same_ad, match_key, same_place, simplify,
+                     title_patterns)
 from .searches import country_from_location, run_country, search_url_country
 from .sources import Posting, normalise, seek_url
 
 JobFilter = Callable[[Posting], "str | None"]
 
-TRACKING_PARAMS = {"trk", "trackingid", "refid", "position", "pagenum", "from", "tk", "vjk",
-                   "type", "ref", "origin"}
-# Words that differ between sites' spellings of the same employer.
-COMPANY_NOISE = {"pty", "ltd", "limited", "inc", "llc", "co", "corp", "corporation",
-                 "company", "group", "holdings", "australia", "the"}
-# Two postings with the same employer and title are the same job when their
-# description word sets overlap at least this much (Jaccard similarity).
-SIMILAR_DESCRIPTION = 0.5
-FUZZY_WINDOW_DAYS = 90
-# Similar jobs: copies the merge didn't catch, e.g. a recruiter re-posting an employer's
-# ad under its own name. Only reported, never merged, so the bar is lower and employer
-# and city are ignored.
-POSSIBLE_TITLE = 0.6
-POSSIBLE_DESCRIPTION = 0.4
-POSSIBLE_WINDOW_DAYS = 180
-# Similar jobs (titles at least POSSIBLE_TITLE alike) whose ads are at least this alike
-# are shown as "highly similar"; the rest as "similar".
-HIGHLY_SIMILAR = 0.8
-IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
 # A filtered job this long past its posted date, or a job this long after you marked it
 # Not interested, is archived (see archive_old_jobs).
 ARCHIVE_AFTER = timedelta(days=14)
@@ -47,239 +30,6 @@ KEEP_SIGHTING_RECORDS = timedelta(days=30)
 # matched by its ad (FUZZY_WINDOW_DAYS), as it was archived at least 2 weeks after it was
 # first seen.
 KEEP_ARCHIVED_RECORDS = timedelta(days=90)
-# Ads at least this alike under the same title are the same job even when the sites spell
-# the employer or place differently, e.g. "Shenwan Hongyuan (H.K.)" on LinkedIn and
-# "Shenwan Hongyuan Securities (H.K.)" in Admiralty on Seek. The title must match exactly:
-# employers reuse one ad for different roles (Susquehanna's research and trading
-# internships). Short ads are left out: boilerplate such as "Apply on our website" is
-# identical across unrelated jobs. One ad for offices in two countries stays two jobs.
-SAME_AD = 0.95
-SAME_AD_MIN_WORDS = 30
-# Location words that don't identify a city: states, countries, and generic terms.
-NOT_PLACE_WORDS = ({"nsw", "vic", "qld", "tas", "act", "wa", "sa", "nt", "area", "greater",
-                    "metropolitan", "metro", "region", "remote", "hybrid", "onsite", "site",
-                    "cbd", "the", "and", "city", "state", "district", "province", "county",
-                    # Australian states and territories written out in full.
-                    "new", "south", "wales", "victoria", "queensland", "tasmania", "western",
-                    "northern", "territory", "capital", "australian",
-                    "england", "scotland"}
-                   | {word for name in LINKEDIN_COUNTRIES.values()
-                      for word in name.casefold().split()})
-
-
-def canonical_url(value: str | None) -> str | None:
-    if not value:
-        return None
-    parts = urlsplit(value.strip())
-    # Only web links: a scraped "javascript:" URL would run script when clicked.
-    if parts.scheme.casefold() not in ("http", "https") or not parts.netloc:
-        return None
-    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
-             if k.casefold() not in TRACKING_PARAMS and not k.casefold().startswith("utm_")]
-    return urlunsplit((parts.scheme.casefold(), parts.netloc.casefold(),
-                       parts.path.rstrip("/"), urlencode(sorted(query)), ""))
-
-
-def _normalise(value: object) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
-
-
-def _digest(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
-
-
-def company_key(company: str | None) -> str:
-    return " ".join(w for w in _normalise(company).split() if w not in COMPANY_NOISE)
-
-
-def match_key(posting: Posting) -> str | None:
-    """Employer + title, spelled the same way whichever site it came from."""
-    company, title = company_key(posting.company), _normalise(posting.title)
-    if not company or not title or title == "untitled":
-        return None
-    return f"{company}|{title}"
-
-
-def fingerprint(posting: Posting) -> str | None:
-    """Exact content fingerprint; None when company, title, or description is missing."""
-    company, title = _normalise(posting.company), _normalise(posting.title)
-    description = _normalise(posting.description)[:1500]
-    if not (company and title and description):
-        return None
-    return _digest("|".join((company, title, _normalise(posting.location), description)))
-
-
-def _description_words(text: str | None) -> set[str]:
-    return {w for w in _normalise(text).split() if len(w) > 2}
-
-
-def description_similarity(a: str | None, b: str | None) -> float:
-    words_a, words_b = _description_words(a), _description_words(b)
-    if not words_a or not words_b:
-        return 0.0
-    return len(words_a & words_b) / len(words_a | words_b)
-
-
-def title_similarity(a: str | None, b: str | None) -> float:
-    words_a, words_b = set(_normalise(a).split()), set(_normalise(b).split())
-    if not words_a or not words_b:
-        return 0.0
-    return len(words_a & words_b) / len(words_a | words_b)
-
-
-def title_patterns(title: str | None) -> list[str]:
-    """ILIKE patterns that narrow titles in SQL before they are compared in Python."""
-    words = [w for w in _normalise(title).split() if len(w) > 3] or _normalise(title).split()
-    return [f"%{w}%" for w in words]
-
-
-def same_country(a: str | None, b: str | None) -> bool:
-    """False only when both countries are known and differ."""
-    return not (a and b and a != b)
-
-
-def is_same_ad(title_a: str | None, description_a: str | None,
-               title_b: str | None, description_b: str | None,
-               country_a: str | None = None, country_b: str | None = None) -> bool:
-    """True when two postings carry the same ad under the same title (ignoring case and
-    punctuation), whoever posted it and wherever in one country it is listed. An unknown
-    country doesn't block a match."""
-    if not same_country(country_a, country_b):
-        return False
-    if not _normalise(title_a) or _normalise(title_a) != _normalise(title_b):
-        return False
-    if min(len(_description_words(description_a)),
-           len(_description_words(description_b))) < SAME_AD_MIN_WORDS:
-        return False
-    return description_similarity(description_a, description_b) >= SAME_AD
-
-
-def looks_like_same_role(title_a: str | None, description_a: str | None,
-                         title_b: str | None, description_b: str | None) -> float | None:
-    """Description similarity if two ads look like the same role whoever posted it and
-    wherever it is, else None."""
-    if title_similarity(title_a, title_b) < POSSIBLE_TITLE:
-        return None
-    similarity = description_similarity(description_a, description_b)
-    return similarity if similarity >= POSSIBLE_DESCRIPTION else None
-
-
-def similarity_level(title: float, description: float) -> str:
-    """How the tracker and tailor-cv describe a pair of similar jobs."""
-    return ("highly similar" if title >= POSSIBLE_TITLE and description >= HIGHLY_SIMILAR
-            else "similar")
-
-
-def possible_duplicates(job_id: int, limit: int = 5,
-                        other_countries: bool = False) -> list[dict]:
-    """Other jobs in the same country that may be the same role as this one but weren't
-    merged; with other_countries, the similar ads found in other countries instead (one
-    role advertised for several countries' offices, which is not a duplicate)."""
-    from ..db import connect
-
-    with connect() as conn:
-        job = conn.execute("SELECT title, description, country FROM jobs WHERE id=%s",
-                           (job_id,)).fetchone()
-        if not job or not job[1]:
-            return []
-        title, description, country = job
-        patterns = title_patterns(title)
-        if not patterns:
-            return []
-        # Cheap title prefilter in SQL; descriptions are only loaded for close titles.
-        rows = conn.execute(
-            """SELECT id, title FROM jobs
-               WHERE id <> %s AND first_seen_at > now() - make_interval(days => %s)
-                 AND title ILIKE ANY(%s)""",
-            (job_id, POSSIBLE_WINDOW_DAYS, patterns)).fetchall()
-        close = [pk for pk, other in rows if title_similarity(title, other) >= POSSIBLE_TITLE]
-        if not close:
-            return []
-        rows = conn.execute(
-            """SELECT j.id, j.title, j.company, j.location, j.status, j.description,
-                      (SELECT url FROM job_sources s WHERE s.job_id = j.id
-                       ORDER BY s.first_seen_at LIMIT 1), j.country
-               FROM jobs j WHERE j.id = ANY(%s)""", (close[:100],)).fetchall()
-    matches = []
-    for pk, other_title, company, location, status, other_description, url, other_country in rows:
-        if same_country(country, other_country) == other_countries:
-            continue
-        similarity = looks_like_same_role(title, description, other_title, other_description)
-        if similarity is not None:
-            titles = title_similarity(title, other_title)
-            matches.append({"id": pk, "title": other_title, "company": company,
-                            "location": location, "status": status, "url": url,
-                            "country": other_country, "similarity": similarity,
-                            "title_similarity": titles,
-                            "level": similarity_level(titles, similarity)})
-    return sorted(matches, key=lambda m: (m["level"] == "highly similar", m["similarity"]),
-                  reverse=True)[:limit]
-
-
-def possible_duplicate_map(conn, job_ids: list[int]) -> dict[int, list[dict]]:
-    """Similar ads for many jobs at once: {job id: [{id, status, country, same_country,
-    level}]}, using two queries in total (titles first, then descriptions only for close
-    titles).
-    Only same_country matches are similar jobs; the others are one role advertised
-    in several countries."""
-    if not job_ids:
-        return {}
-    rows = conn.execute(
-        """SELECT id, title FROM jobs
-           WHERE first_seen_at > now() - make_interval(days => %s) OR id = ANY(%s)""",
-        (POSSIBLE_WINDOW_DAYS, job_ids)).fetchall()
-    titles = {pk: title for pk, title in rows}
-    by_word: dict[str, set[int]] = {}
-    for pk, title in titles.items():
-        for word in _normalise(title).split():
-            if len(word) > 3:
-                by_word.setdefault(word, set()).add(pk)
-    pairs: dict[tuple[int, int], float] = {}
-    for pk in job_ids:
-        words = [w for w in _normalise(titles.get(pk)).split() if len(w) > 3]
-        candidates = set().union(*(by_word.get(w, set()) for w in words)) - {pk}
-        for other in candidates:
-            similarity = title_similarity(titles[pk], titles[other])
-            if similarity >= POSSIBLE_TITLE:
-                pairs[(pk, other)] = similarity
-    if not pairs:
-        return {}
-    needed = sorted({pk for pair in pairs for pk in pair})
-    details = {pk: (description, status, country) for pk, description, status, country in
-               conn.execute("SELECT id, description, status, country FROM jobs WHERE id = ANY(%s)",
-                            (needed,)).fetchall()}
-    found: dict[int, list[dict]] = {}
-    for (pk, other), titles_alike in sorted(pairs.items()):
-        ads_alike = description_similarity(details[pk][0], details[other][0])
-        if ads_alike >= POSSIBLE_DESCRIPTION:
-            found.setdefault(pk, []).append({
-                "id": other, "status": details[other][1], "country": details[other][2],
-                "same_country": same_country(details[pk][2], details[other][2]),
-                "level": similarity_level(titles_alike, ads_alike)})
-    return found
-
-
-def place_words(location: str | None) -> set[str]:
-    """City and suburb words in a location, e.g. {"sydney"} for "Sydney NSW 2000"."""
-    return {w for w in re.findall(r"[a-z]{3,}", (location or "").casefold())
-            if w not in NOT_PLACE_WORDS}
-
-
-def same_place(a: str | None, b: str | None) -> bool:
-    """False only when both locations name places and none are shared (e.g. Sydney vs
-    Melbourne). Unknown or country-only locations never block a match."""
-    words_a, words_b = place_words(a), place_words(b)
-    return not words_a or not words_b or bool(words_a & words_b)
-
-
-def identity(posting: Posting) -> tuple[str, str | None]:
-    url = canonical_url(posting.url)
-    if posting.source_id:
-        return f"{posting.source}:{posting.source_id}", url
-    if url:
-        return f"url:{_digest(url)}", url
-    parts = "|".join(_normalise(v) for v in (posting.company, posting.title, posting.location))
-    return f"fingerprint:{_digest(parts + '|' + _normalise(posting.description)[:1500])}", None
 
 
 def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str | None,
@@ -320,7 +70,7 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str 
             """SELECT id, title FROM jobs
                WHERE first_seen_at > now() - make_interval(days => %s) AND title ILIKE ANY(%s)
                ORDER BY first_seen_at DESC""", (FUZZY_WINDOW_DAYS, patterns)).fetchall()
-        close = [pk for pk, other in rows if _normalise(other) == _normalise(title)]
+        close = [pk for pk, other in rows if simplify(other) == simplify(title)]
         if close:
             candidates = conn.execute(
                 """SELECT id, title, description, country FROM jobs WHERE id = ANY(%s)

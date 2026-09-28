@@ -1,7 +1,7 @@
 from datetime import date
 
 from jobflow.ingest.sources import normalise, to_date
-from jobflow.ingest.store import (canonical_url, description_similarity, is_same_ad,
+from jobflow.ingest.dedupe import (canonical_url, description_similarity, is_same_ad,
                                   looks_like_same_role, match_key, same_place)
 
 DESCRIPTION = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate "
