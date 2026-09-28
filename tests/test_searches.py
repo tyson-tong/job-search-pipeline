@@ -196,7 +196,15 @@ def _run(status="SUCCEEDED", message=None, cost=None):
 
 class FakeClient:
     def __init__(self, result, items=()):
-        self.result, self.items, self.calls = result, list(items), []
+        self.result, self.items, self.calls, self.aborted = result, list(items), [], []
+
+    def run(self, run_id):
+        client = self
+
+        class Run:
+            def abort(self):
+                client.aborted.append(run_id)
+        return Run()
 
     def actor(self, actor_id):
         client = self
@@ -240,9 +248,12 @@ def test_unsuccessful_runs_are_recorded_not_imported(monkeypatch, result, messag
     monkeypatch.setattr(store, "record_failed_run", lambda *a: recorded.append(a))
     monkeypatch.setattr(store, "save_run", lambda *a, **k: pytest.fail("imported"))
     planned = plan(searches(), "counsel")[0]
+    client = FakeClient(result)
     with pytest.raises(RuntimeError, match=message):
-        apify.run_search(FakeClient(result), planned, timedelta(minutes=5))
+        apify.run_search(client, planned, timedelta(minutes=5))
     assert recorded[0][-2:] == ("counsel", planned.run_input)
+    # A run still going would keep charging for results never imported: it is stopped.
+    assert client.aborted == (["r1"] if result.status == "RUNNING" else [])
 
 
 def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):

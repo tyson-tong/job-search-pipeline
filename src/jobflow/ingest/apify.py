@@ -43,7 +43,14 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
         if run.status != "SUCCEEDED":
             detail = f": {run.status_message}" if run.status_message else ""
             if run.status in ("READY", "RUNNING"):
-                detail += f" (still running after {max_wait}; results were not imported)"
+                # Left alone it would keep scraping, and charging, for results never imported.
+                try:
+                    client.run(run.id).abort()
+                    stopped = "stopped"
+                except Exception as exc:
+                    stopped = f"stopping it failed ({exc}); abort it in the Apify Console"
+                detail += (f" (still running after {max_wait}, so {stopped}; results were not "
+                           "imported)")
             raise RuntimeError(f"Apify run {run.id} ended with {run.status}{detail}")
         items = list(client.dataset(run.default_dataset_id).iterate_items(clean=True))
         job_filter = partial(filter_reason, search=planned.search, site=planned.site)
