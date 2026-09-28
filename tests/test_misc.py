@@ -128,3 +128,35 @@ def test_llm_retries_rate_limits_but_not_an_empty_balance(monkeypatch):
     with pytest.raises(llm.LLMError, match="no credits remaining") as caught:
         llm.complete("s", "u")
     assert caught.value.fatal and not replies and waits == [3.0]
+
+
+def test_llm_drops_settings_the_provider_rejects(monkeypatch):
+    # Anthropic's OpenAI-compatible API rejects JSON mode, and newer Claude models reject
+    # temperature, each with a 400 that failed every job in a scoring run.
+    import requests
+    from jobflow import llm
+
+    class Reply:
+        def __init__(self, status, body):
+            self.status_code, self.body, self.headers = status, body, {}
+            self.ok, self.reason = status < 400, "Bad Request"
+
+        def json(self):
+            return self.body
+
+    sent = []
+
+    def post(url, json, **kwargs):
+        sent.append(sorted(k for k in json if k in llm.OPTIONAL))
+        if "response_format" in json:
+            return Reply(400, {"error": {"message": "response_format.type: Input should be 'json_schema'"}})
+        if "temperature" in json:
+            return Reply(400, {"error": {"message": "`temperature` is deprecated for this model."}})
+        return Reply(200, {"choices": [{"message": {"content": '```json\n{"a": 1}\n```'}}]})
+
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setenv("LLM_API_KEY", "key")
+    monkeypatch.setenv("LLM_MODEL", "model")
+    content, _ = llm.complete("s", "u", json_mode=True)
+    assert llm.parse_json(content) == {"a": 1}
+    assert sent == [["response_format", "temperature"], ["temperature"], []]

@@ -11,6 +11,8 @@ DEFAULT_BASE_URL = "https://api.openai.com/v1"
 # provider asks (Retry-After) up to MAX_WAIT seconds, or 2, 4, 8... seconds otherwise.
 RETRIES = 4
 MAX_WAIT = 60
+# Settings sent when the provider accepts them, and dropped when it rejects them.
+OPTIONAL = ("response_format", "temperature")
 
 
 class LLMError(RuntimeError):
@@ -53,12 +55,21 @@ def complete(system: str, user: str, *, json_mode: bool = False,
              {"role": "user", "content": user}], "temperature": 0.1}
     if json_mode:
         body["response_format"] = {"type": "json_object"}
-    for attempt in range(RETRIES + 1):
+    attempt = 0
+    while True:
         response = requests.post(f"{base_url(reviewer)}/chat/completions", json=body,
                                  headers={"Authorization": f"Bearer {key}"}, timeout=180)
         if response.ok:
             return response.json()["choices"][0]["message"]["content"], model
         error = _error(response)
+        # Some providers or models (Anthropic's OpenAI-compatible API) reject JSON mode or
+        # temperature. Neither is needed: every prompt asks for JSON only, and parse_json
+        # finds it. So drop the one the error names and ask again.
+        rejected = [name for name in OPTIONAL if name in body and response.status_code == 400
+                    and name in f"{error.get('message')} {error.get('param')}"]
+        if rejected:
+            del body[rejected[0]]
+            continue
         # OpenAI reports an exhausted balance as a 429 too, but waiting won't fix that.
         quota = error.get("type") == "insufficient_quota" or error.get("code") in (
             "insufficient_quota", "credit_balance_exhausted")
@@ -66,6 +77,7 @@ def complete(system: str, user: str, *, json_mode: bool = False,
         if not retry or attempt == RETRIES:
             break
         time.sleep(_wait(response, attempt))
+        attempt += 1
     message = error.get("message") or response.reason or "request failed"
     raise LLMError(f"{message} (LLM provider, HTTP {response.status_code})",
                    fatal=quota or response.status_code in (401, 403, 404))
