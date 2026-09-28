@@ -263,9 +263,22 @@ def test_shortening_never_empties_an_entry_or_rewrites_anything():
     assert cv["sections"]["experiences"][0]["highlights"][0].startswith("Built")  # input untouched
 
 
-def test_an_empty_assessment_is_never_saved_as_a_score(monkeypatch):
-    # A job is scored only once: saving an answer listing no requirements would fix its
-    # score at 0 for good.
+def _assess(prompt: str) -> tuple[str, str]:
+    """The LLM's answer to a scoring prompt: evidence for CV dev, a failure for CV strat."""
+    if '"cv_variant": "strat"' in prompt:
+        raise RuntimeError("Read timed out")
+    return json.dumps({"requirements": [{"requirement": "Python", "status": "matched",
+                                         "evidence": ["Built Python ETL pipelines"]}]}), "m"
+
+
+@pytest.mark.parametrize("cvs, answer, message", [
+    # Saving an answer listing no requirements would fix the score at 0 for good.
+    (["dev"], lambda prompt: ('{"requirements": []}', "m"), "no requirements"),
+    # Saving the one CV that worked would leave the job scored without the other, for good.
+    (["dev", "strat"], _assess, "timed out"),
+])
+def test_a_failed_assessment_saves_no_score(monkeypatch, cvs, answer, message):
+    # A job is scored only once, so anything saved is final.
     from jobflow.candidate import matching
 
     class Conn:
@@ -282,9 +295,9 @@ def test_an_empty_assessment_is_never_saved_as_a_score(monkeypatch):
     monkeypatch.setattr(matching, "connect", Conn)
     monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
     monkeypatch.setattr(matching, "fetch_job", lambda job_id: JOB)
-    monkeypatch.setattr(matching, "chosen_sources", lambda: {"dev": CV_TEXT})
-    monkeypatch.setattr(matching, "complete", lambda *a, **k: ('{"requirements": []}', "m"))
-    with pytest.raises(RuntimeError, match="no requirements"):
+    monkeypatch.setattr(matching, "chosen_sources", lambda: {cv: CV_TEXT for cv in cvs})
+    monkeypatch.setattr(matching, "complete", lambda system, user, **kw: answer(user))
+    with pytest.raises(RuntimeError, match=message):
         matching.match_job(1)
     assert not any("INSERT" in sql for sql in Conn.sql)
 
@@ -340,3 +353,31 @@ def test_format_for_a_job_already_tailored_comes_from_its_checked_draft(tmp_path
     with pytest.raises(RuntimeError, match="fails the fact check"):
         tailoring.add_format(folder, "latex")
     assert not (folder / "CV_dev_draft.tex").exists()
+
+
+def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkeypatch):
+    # A PDF, .docx, or .tex from an earlier run would look like this draft, checked.
+    import yaml
+    from jobflow.candidate import tailoring
+
+    class Conn:
+        def execute(self, *args): return self
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+
+    invented = copy.deepcopy(SOURCE_CV)
+    invented["sections"]["experiences"][0]["position"] = "Head of Data"
+    draft = yaml.safe_dump({"cv": invented})
+    monkeypatch.setattr(tailoring, "load_source", lambda job_id, variant: (
+        JOB, "dev", "CV variant dev.", {"cv": SOURCE_CV}, yaml.safe_dump({"cv": SOURCE_CV})))
+    researched = Future()
+    researched.set_result(([], []))
+    monkeypatch.setattr(tailoring, "research_soon", lambda job_id: researched)
+    monkeypatch.setattr(tailoring, "connect", Conn)
+    monkeypatch.setattr(tailoring, "complete", lambda system, user, **kw: (
+        json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))
+    for suffix in (".pdf", ".docx", ".tex"):
+        (tmp_path / f"CV_dev_draft{suffix}").write_bytes(b"from an earlier run")
+    target, errors, _ = tailoring.tailor_cv(1, output_dir=tmp_path, fmt="docx")
+    assert errors and target == tmp_path / "CV_dev_draft.yaml"
+    assert sorted(p.name for p in tmp_path.glob("CV_dev_draft.*")) == ["CV_dev_draft.yaml"]

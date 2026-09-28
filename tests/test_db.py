@@ -69,6 +69,24 @@ def test_one_job_on_three_sites_is_one_row_with_three_copies(database):
     assert _one("SELECT count(*) FROM job_observations")[0] == 4
 
 
+def test_two_different_jobs_are_never_merged(database):
+    # A wrong merge loses a job: it never reaches the Inbox.
+    def ad(job_id, location, words):
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
+                "title": "Data Analyst", "companyName": "Acme", "location": location,
+                "descriptionText": " ".join(words)}
+    duties = [f"duty{i}" for i in range(60)]
+    edited = duties[:50] + [f"other{i}" for i in range(10)]   # about 70% the same words
+    save_run("linkedin:a", "r1", "d1", [ad("1", "Sydney, NSW", duties)], country="AU")
+    # The same employer and title with a similar ad, but in another city: another office.
+    assert save_run("linkedin:a", "r2", "d2", [ad("2", "Melbourne, VIC", edited)], country="AU") == 1
+    # The same ad word for word, for an office in another country: another job.
+    assert save_run("linkedin:a", "r3", "d3", [ad("3", "Hong Kong SAR", duties)], country="HK") == 1
+    # The check: in the same city, that similar ad is the same job.
+    assert save_run("linkedin:a", "r4", "d4", [ad("4", "Sydney NSW 2000", edited)], country="AU") == 0
+    assert _one("SELECT count(*) FROM jobs")[0] == 3
+
+
 def test_a_status_change_keeps_the_first_applied_date_and_every_note(database):
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     job_id = _one("SELECT id FROM jobs")[0]
