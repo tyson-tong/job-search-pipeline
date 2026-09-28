@@ -61,7 +61,8 @@ def main() -> None:
     update.add_argument("--dry-run", action="store_true",
                         help="Check the file and list the jobs that would be filtered; change nothing")
     web = sub.add_parser("web", help="Run the local job tracker web server")
-    web.add_argument("--port", type=int, default=8765)
+    web.add_argument("--port", type=int, default=8765,
+                     help="Port to serve the tracker on (default: 8765)")
     tailor = sub.add_parser("tailor-cv", help="Draft a tailored CV, reviewed and fact-checked, "
                             "for every Interested job that doesn't have one yet")
     tailor.add_argument("--cv", help="RenderCV YAML CV to use for every job, one of those cvs "
@@ -88,6 +89,14 @@ def main() -> None:
     sub.add_parser("clean-up", help="Delete the output folders of Not interested, Withdrawn, "
                    "Declined, and Rejected jobs, after asking you to confirm (the jobs stay in "
                    "the database)")
+    manual = sub.add_parser("help", help="Show every command, what it does, and its options "
+                            "(or just one command's)")
+    manual.add_argument("topic", nargs="?", metavar="COMMAND",
+                        choices=[name for name in sub.choices if name != "help"],
+                        help="Only this command")
+    # Each command's -h (and help) opens with what it does, not just its options.
+    for action in sub._choices_actions:
+        sub.choices[action.dest].description = action.help
     args = parser.parse_args()
     try:
         run(args, parser)
@@ -317,8 +326,54 @@ Next:
   4. uv run jobflow web, then the Searches tab to check your searches""")
 
 
+def manual(parser: argparse.ArgumentParser, command: str | None = None) -> str:
+    """Every command's usage, description, and options, laid out like a manual page; or
+    just command's. Made from the parser, so it always matches what the commands accept."""
+    import re
+    import textwrap
+
+    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    if command:
+        return sub.choices[command].format_help()
+
+    def section(title: str, text: str) -> str:
+        return f"{title}\n{textwrap.indent(text.strip(), '    ')}\n"
+
+    def para(text: str) -> str:
+        return textwrap.fill(text, 76)
+
+    def entry(name: str) -> str:
+        command = sub.choices[name]
+        command.formatter_class = lambda prog: argparse.HelpFormatter(prog, width=72)
+        usage, _, rest = command.format_help().strip().partition("\n\n")
+        # Without "usage: " and -h, which every command has.
+        usage = usage.removeprefix("usage: ").replace(" [-h]", "").replace("\n       ", "\n")
+        rest = re.sub(r"\n  -h, --help .*", "", rest)
+        rest = re.sub(r"\n\noptions:$", "", rest)   # a command with no options of its own
+        return f"{name}\n{textwrap.indent(usage + chr(10) * 2 + rest, '    ')}"
+
+    commands = "\n\n".join(entry(name) for name in sub.choices if name != "help")
+    return "\n".join([
+        section("NAME", para("jobflow - collect job ads, then triage, score, tailor CVs and "
+                             "cover letters, and prepare for interviews")),
+        section("SYNOPSIS", "uv run jobflow COMMAND [OPTIONS]\nuv run jobflow help [COMMAND]"),
+        section("DESCRIPTION", para(parser.description)),
+        section("COMMANDS", commands),
+        section("NOTES", para(
+            "tailor-cv, cover-letter, and interview-prep work on two jobs at a time and skip "
+            "jobs they've already done (a job that failed, or whose draft failed the fact "
+            "check, is tried again). Only one run of each can go at a time. Every command "
+            "except init and help brings the database tables up to date when it starts.")),
+        section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
+                "docs/structure.html"),
+    ])
+
+
 def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    if args.command == "init":
+    if args.command == "help":
+        import pydoc
+        pydoc.pager(manual(parser, args.topic))   # paged like man in a terminal
+    elif args.command == "init":
         init()
     elif args.command == "ingest":
         from .db import migrate
