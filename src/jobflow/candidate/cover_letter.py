@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-from ..db import connect, fetch_job
+from ..db import fetch_job
 from ..llm import complete, parse_json
 from . import documents
 from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, chosen_sources, is_yaml
@@ -13,6 +12,7 @@ from .factcheck import check_letter
 from .matching import best_variant, match_job
 from .paths import job_directory
 from .research import research_soon
+from .review import record_run, revise, write_review
 from .tailoring import load_source
 
 
@@ -97,23 +97,10 @@ def write_letter(job_id: int, variant: str | None = None,
     letter, model = _draft(job, cv_for_llm, sources)
     errors, warnings = check_letter(letter, source_cv, job, sources)
 
-    # The reviewer's revision is kept only if it passes the check at least as well.
-    critique: list[str] = []
-    try:
-        review, reviewer = _review(job, cv_for_llm, letter, sources)
-        notes.append(f"Reviewed by model {reviewer}.")
-        critique = [str(c) for c in review.get("critique") or [] if str(c).strip()]
-        revised = str(review.get("cover_letter") or "").strip()
-        if revised:
-            checked = check_letter(revised, source_cv, job, sources)
-            if len(checked[0]) <= len(errors):
-                letter, (errors, warnings) = revised, checked
-            else:
-                notes.append("The reviewer's revision failed the fact check, so the first "
-                             "draft is kept.")
-    except Exception as exc:
-        print(f"warning: review failed ({exc}); keeping the first draft", file=sys.stderr)
-        notes.append(f"The review failed ({exc}), so this is the unreviewed first draft.")
+    letter, (errors, warnings), critique = revise(
+        letter, (errors, warnings), lambda draft: _review(job, cv_for_llm, draft, sources),
+        lambda answer: str(answer.get("cover_letter") or "").strip() or None,
+        lambda revision: check_letter(revision, source_cv, job, sources), notes)
 
     target_dir = output_dir or job_directory(job_id, job)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -132,28 +119,14 @@ def write_letter(job_id: int, variant: str | None = None,
                "this file."
                if errors else "Read cover-letter.docx line by line before you send it with your "
                "application.")
-    report = [f"# Cover letter review: {job['company'] or 'Unknown employer'} — {job['title']} (job id {job_id})", "",
-              reason.replace("CV variant", "Written from CV variant"), "",
-              read_it + " The automated check below catches invented numbers and names but is "
-              "not exhaustive.", ""]
-    report += [f"- {n}" for n in notes] + ([""] if notes else [])
-    report += [f"## Fact-check errors ({len(errors)})", ""]
-    report += [f"- {e}" for e in errors] or ["- None found."]
-    report += ["", f"## Warnings ({len(warnings)})", ""]
-    report += [f"- {w}" for w in warnings] or ["- None."]
-    report += ["", "## Reviewer's critique of the first draft", ""]
-    if critique:
-        report += ["The reviewer then revised the letter; that revision is the letter written, "
-                   "unless a note above says the first draft was kept. Some points may already "
-                   "be addressed.", ""]
-    report += [f"- {c}" for c in critique] or ["- None."]
-    if errors:
-        report += ["", "## The letter (not written as cover-letter.docx until the errors are "
-                   "fixed)", "", letter]
-    (target_dir / "COVER_LETTER_REVIEW.md").write_text("\n".join(report) + "\n")
-    documents.write_review_docx("\n".join(report), target_dir / "COVER_LETTER_REVIEW.docx")
-    with connect() as conn:
-        conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "
-                     "VALUES (%s,'cover-letter',%s,%s,now())",
-                     (job_id, "NEEDS-FIX" if errors else "SUCCEEDED", model))
+    unwritten = (["", "## The letter (not written as cover-letter.docx until the errors are "
+                  "fixed)", "", letter] if errors else [])
+    write_review(target_dir / "COVER_LETTER_REVIEW.md",
+                 f"Cover letter review: {job['company'] or 'Unknown employer'} — {job['title']} "
+                 f"(job id {job_id})",
+                 [reason.replace("CV variant", "Written from CV variant"), "",
+                  read_it + " The automated check below catches invented numbers and names but "
+                  "is not exhaustive."],
+                 notes, errors, warnings, critique, "letter", unwritten)
+    record_run(job_id, "cover-letter", errors, model)
     return target, errors, warnings

@@ -14,7 +14,7 @@ from pathlib import Path
 import yaml
 from pypdf import PdfReader
 
-from ..db import connect, fetch_job
+from ..db import fetch_job
 from ..llm import complete, parse_json
 from . import documents
 from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, is_yaml
@@ -22,6 +22,7 @@ from .factcheck import fact_check
 from .matching import best_variant, match_job
 from .paths import job_directory
 from .research import research_soon
+from .review import record_run, revise, write_review
 
 # A rendered CV longer than this (unless tailor-cv --max-pages says otherwise) is
 # shortened by cutting its least relevant bullets.
@@ -327,24 +328,13 @@ def tailor_cv(job_id: int, variant: str | None = None,
     draft_cv = _parse_draft(content)
     errors, warnings = fact_check(source_doc["cv"], draft_cv)
 
-    # The reviewer's revision is kept only if it passes the fact check at least as well.
     sources, notes = researching.result()
-    critique: list[str] = []
-    try:
-        draft_yaml = yaml.safe_dump({"cv": draft_cv}, sort_keys=False, allow_unicode=True)
-        review, reviewer = _review(job, source_yaml, draft_yaml, sources)
-        notes.append(f"Reviewed by model {reviewer}.")
-        critique = [str(c) for c in review.get("critique") or [] if str(c).strip()]
-        revised_cv = _parse_draft(str(review.get("cv_yaml") or ""))
-        revised = fact_check(source_doc["cv"], revised_cv)
-        if len(revised[0]) <= len(errors):
-            draft_cv, (errors, warnings) = revised_cv, revised
-        else:
-            notes.append("The reviewer's revision failed the fact check, so the first draft "
-                         "is kept.")
-    except Exception as exc:
-        print(f"warning: review failed ({exc}); keeping the first draft", file=sys.stderr)
-        notes.append(f"The review failed ({exc}), so this is the unreviewed first draft.")
+    draft_cv, (errors, warnings), critique = revise(
+        draft_cv, (errors, warnings),
+        lambda cv: _review(job, source_yaml, yaml.safe_dump(
+            {"cv": cv}, sort_keys=False, allow_unicode=True), sources),
+        lambda answer: _parse_draft(str(answer.get("cv_yaml") or "")),
+        lambda cv: fact_check(source_doc["cv"], cv), notes)
 
     target_dir = output_dir or job_directory(job_id, job)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -388,30 +378,15 @@ def tailor_cv(job_id: int, variant: str | None = None,
         shown = pdf.name if pdf else target.name
         read_it = (f"Read {shown} line by line against your source CV before you send it with an "
                    f"application. If you edit {target.name}, render it again with {render_it}.")
-    report = [f"# CV review: {job['company'] or 'Unknown employer'} — {job['title']} (job id {job_id})", "",
-              reason, f"Draft: {target.name}. {rendered}", "",
-              read_it + " The automated check below catches common factual changes but is not "
-              "exhaustive.", ""]
-    report += [f"- {n}" for n in notes] + ([""] if notes else [])
-    report += [f"## Fact-check errors ({len(errors)})", ""]
-    report += [f"- {e}" for e in errors] or ["- None found."]
-    report += ["", f"## Warnings ({len(warnings)})", ""]
-    report += [f"- {w}" for w in warnings] or ["- None."]
-    report += ["", "## Reviewer's critique of the first draft", ""]
-    if critique:
-        report += ["The reviewer then revised the draft; that revision is the CV written, "
-                   "unless a note above says the first draft was kept. Some points may already "
-                   "be addressed.", ""]
-    report += [f"- {c}" for c in critique] or ["- None."]
-    if cut:
-        report += ["", f"## Bullets cut to fit {fit} ({len(cut)})", "",
-                   "The least relevant to this job, cut in this order. Copy one back from your "
-                   "source CV if you want it.", ""]
-        report += [f"- {b['label']}: {b['text']}" for b in cut]
-    (target_dir / "CV_REVIEW.md").write_text("\n".join(report) + "\n")
-    documents.write_review_docx("\n".join(report), target_dir / "CV_REVIEW.docx")
-    with connect() as conn:
-        conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "
-                     "VALUES (%s,'tailor',%s,%s,now())",
-                     (job_id, "NEEDS-FIX" if errors else "SUCCEEDED", model))
+    cuts = (["", f"## Bullets cut to fit {fit} ({len(cut)})", "",
+             "The least relevant to this job, cut in this order. Copy one back from your "
+             "source CV if you want it.", ""] + [f"- {b['label']}: {b['text']}" for b in cut]
+            if cut else [])
+    write_review(target_dir / "CV_REVIEW.md",
+                 f"CV review: {job['company'] or 'Unknown employer'} — {job['title']} (job id {job_id})",
+                 [reason, f"Draft: {target.name}. {rendered}", "",
+                  read_it + " The automated check below catches common factual changes but is "
+                  "not exhaustive."],
+                 notes, errors, warnings, critique, "CV", cuts)
+    record_run(job_id, "tailor", errors, model)
     return target, errors, warnings

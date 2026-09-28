@@ -5,7 +5,7 @@ import pytest
 from concurrent.futures import Future
 
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
-from jobflow.candidate import cover_letter
+from jobflow.candidate import cover_letter, review
 from jobflow.candidate.cover_letter import letter_fixed_by_hand
 from jobflow.candidate.factcheck import check_letter, fact_check
 from jobflow.candidate.skill_gaps import rank_skills
@@ -197,7 +197,7 @@ def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypat
     researched = Future()
     researched.set_result(([], []))
     monkeypatch.setattr(cover_letter, "research_soon", lambda job_id: researched)
-    monkeypatch.setattr(cover_letter, "connect", Conn)
+    monkeypatch.setattr(review, "connect", Conn)
     monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
         json.dumps({"critique": [], "cover_letter": letter}) if kw.get("reviewer")
         else letter, "m"))
@@ -222,14 +222,14 @@ def test_a_revision_with_more_fact_check_errors_is_discarded(tmp_path, monkeypat
     researched = Future()
     researched.set_result(([], []))
     monkeypatch.setattr(cover_letter, "research_soon", lambda job_id: researched)
-    monkeypatch.setattr(cover_letter, "connect", Conn)
+    monkeypatch.setattr(review, "connect", Conn)
     monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
         json.dumps({"critique": ["Add a metric"], "cover_letter": revised}) if kw.get("reviewer")
         else draft, "m"))
     target, errors, _ = cover_letter.write_letter(1, output_dir=tmp_path)
     assert not errors and target.name == "cover-letter.docx"
-    review = (tmp_path / "COVER_LETTER_REVIEW.md").read_text()
-    assert "failed the fact check, so the first draft is kept" in review
+    report = (tmp_path / "COVER_LETTER_REVIEW.md").read_text()
+    assert "failed the fact check, so the first draft is kept" in report
 
 
 def test_skill_ranking_counts_only_real_gaps_once():
@@ -374,7 +374,7 @@ def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkey
     researched = Future()
     researched.set_result(([], []))
     monkeypatch.setattr(tailoring, "research_soon", lambda job_id: researched)
-    monkeypatch.setattr(tailoring, "connect", Conn)
+    monkeypatch.setattr(review, "connect", Conn)
     monkeypatch.setattr(tailoring, "complete", lambda system, user, **kw: (
         json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))
     for suffix in (".pdf", ".docx", ".tex"):
