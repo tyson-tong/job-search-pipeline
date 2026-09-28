@@ -123,9 +123,9 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
         thread.start()
     for thread in threads:
         thread.join()
-    from .store import archive_filtered
-    archived = archive_filtered()
+    from .store import archive_old_jobs
+    archived = archive_old_jobs()
     if archived:
-        print(f"Archived {archived} filtered job{'s' if archived != 1 else ''} posted over 2 weeks ago")
+        print(f"Archived {archived} filtered or not interested job{'s' if archived != 1 else ''}")
     if failed:
         raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed")

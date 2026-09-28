@@ -177,6 +177,7 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
     <button class="tab" data-view="inbox">Inbox<span class="count" id="inbox-count">0</span></button>
     <button class="tab" data-view="jobs">My jobs<span class="count" id="jobs-count">0</span></button>
     <button class="tab" data-view="filtered">Filtered</button>
+    <button class="tab" data-view="not_interested">Not interested</button>
     <button class="tab" data-view="searches">Searches</button>
   </div>
   <div class="notice" id="cv-problem" role="alert" hidden></div>
@@ -242,7 +243,7 @@ const AUTO_REFRESH_MS = 3 * 60 * 1000;
 // Save so changes made elsewhere in the meantime are caught instead of overwritten.
 const state = { view: "jobs", statuses: new Set(["interested", "applied", "interviewing", "offered", "accepted"]), jobs: [], summary: null,
   pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null,
-  // Rows ticked for a bulk change (Inbox triage, Filtered back to the Inbox); lastPicked anchors shift-click ranges.
+  // Rows ticked for a bulk change (Inbox triage; Filtered and Not interested back to the Inbox); lastPicked anchors shift-click ranges.
   selected: new Set(), lastPicked: null,
   // Country and site filters: null for all, else the ticked ones (none ticked: no jobs); and
   // the countries and sites among this tab's jobs, with counts.
@@ -255,6 +256,10 @@ const TRIAGE_STATUSES = ["new", "interested", "not_interested"];
 // My jobs holds only jobs you picked as Interested and what followed; these never show there.
 const NOT_MY_JOBS = ["new", "not_interested", "filtered", "archived"];
 const PAGE_SIZES = [5, 10, 20, 50, 100];
+// The tabs that each show one status; My jobs shows the statuses chosen in its menu.
+const TAB_STATUS = { inbox: "new", filtered: "filtered", not_interested: "not_interested" };
+// Tabs whose jobs you can only send back to the Inbox (ticking several at once).
+const RETURN_TABS = ["filtered", "not_interested"];
 
 // ---- Helpers -------------------------------------------------------------------------
 function el(tag, attrs = {}, ...children) {
@@ -399,13 +404,14 @@ const qInput = document.getElementById("q"),
 const COLUMN_FILTERS = [["f-score", "score_min"], ["f-posted", "posted"]].map(([id, param]) => [document.getElementById(id), param]);
 function statusParams() {
   const params = new URLSearchParams();
-  const statuses = state.view === "inbox" ? ["new"] : state.view === "filtered" ? ["filtered"] : [...state.statuses];
+  const statuses = TAB_STATUS[state.view] ? [TAB_STATUS[state.view]] : [...state.statuses];
   statuses.forEach((s) => params.append("status", s));
   return params;
 }
-// Jobs in the Inbox and Filtered are never scored or followed up, so those sorts (and, for
-// Filtered, Recently added) don't apply there.
-const HIDDEN_SORTS = { inbox: ["score", "follow_up"], filtered: ["score", "added", "follow_up"] };
+// Jobs in the Inbox, Filtered, and Not interested aren't scored or followed up, so those
+// sorts (and, for Filtered, Recently added) don't apply there.
+const HIDDEN_SORTS = { inbox: ["score", "follow_up"], filtered: ["score", "added", "follow_up"],
+  not_interested: ["score", "follow_up"] };
 function fitSort() {
   const hidden = HIDDEN_SORTS[state.view] || [];
   [...sortInput.options].forEach((option) => {
@@ -487,7 +493,7 @@ function renderTabs() {
 }
 // All jobs in a tab (for My jobs, with the chosen statuses), before the other filters.
 function tabTotal(view) {
-  const statuses = view === "inbox" ? ["new"] : view === "filtered" ? ["filtered"] : [...state.statuses];
+  const statuses = TAB_STATUS[view] ? [TAB_STATUS[view]] : [...state.statuses];
   return statuses.reduce((sum, s) => sum + (state.summary.counts[s] || 0), 0);
 }
 function renderStatusMenu() {
@@ -512,9 +518,10 @@ function renderStatusMenu() {
 }
 function statusSelect(job) {
   const value = current(job, "status");
-  // A filtered job can only go back to the Inbox; a new one can only be triaged; a triaged
-  // one doesn't go back to New.
-  const choices = job.status === "filtered" ? ["new"] : job.status === "new" ? TRIAGE_STATUSES
+  // A filtered job can only go back to the Inbox; a new or not interested one can only be
+  // triaged; any other doesn't go back to New.
+  const choices = job.status === "filtered" ? ["new"]
+    : ["new", "not_interested"].includes(job.status) ? TRIAGE_STATUSES
     : state.summary.editable.filter((s) => s !== "new");
   const options = choices.map((s) => el("option", { value: s, selected: s === value }, label(s)));
   if (value === "filtered") options.unshift(el("option", { value: "filtered", selected: true, disabled: true }, "Filtered"));
@@ -548,10 +555,11 @@ function duplicateFlag(job) {
 // filters" when it belongs to this tab; null when it's in the list.
 function similarPlace(similar) {
   if (state.jobs.some((job) => job.id === similar.id)) return null;
-  const tab = similar.status === "new" ? "inbox" : similar.status === "filtered" ? "filtered"
-    : ["not_interested", "archived"].includes(similar.status) ? null : "jobs";
+  const tab = Object.keys(TAB_STATUS).find((view) => TAB_STATUS[view] === similar.status)
+    || (similar.status === "archived" ? null : "jobs");
   if (tab === state.view) return "hidden by your filters";
-  return { inbox: "Inbox", filtered: "Filtered", jobs: "My jobs" }[tab] || label(similar.status);
+  return { inbox: "Inbox", filtered: "Filtered", not_interested: "Not interested", jobs: "My jobs" }[tab]
+    || label(similar.status);
 }
 function renderSortHeads() {
   document.querySelectorAll(".sort-head").forEach((head) => {
@@ -612,7 +620,7 @@ function renderRows() {
     ? `The first ${n} jobs: narrow the filters to see the rest`
     : n < total ? `${n} of ${total} jobs` : `${n} job${n === 1 ? "" : "s"}`;
   const inbox = state.view === "inbox", filtered = state.view === "filtered";
-  const selectable = inbox || filtered;
+  const returnable = RETURN_TABS.includes(state.view), selectable = inbox || returnable;
   const loaded = new Set(state.jobs.map((job) => job.id));
   state.selected.forEach((id) => { if (!selectable || !loaded.has(id)) state.selected.delete(id); });
   // After a save or refresh removes rows, stay on the last page that still exists.
@@ -622,7 +630,7 @@ function renderRows() {
   renderPager(starts);
   renderExports(first, end);
   renderBulk();
-  // Only My jobs holds jobs that are followed up or scored, so the Inbox and Filtered have
+  // Only My jobs holds jobs that are followed up or scored, so the other tabs have
   // no Follow up or Match column.
   document.querySelectorAll(".fu-col").forEach((cell) => { cell.hidden = selectable; });
   document.querySelectorAll(".match-col").forEach((cell) => { cell.hidden = selectable; });
@@ -631,7 +639,9 @@ function renderRows() {
     fill(body, [el("tr", {}, el("td", { colspan: selectable ? 7 : 8, className: "empty" },
       none ? `No ${none} chosen: pick some in the ${WHERE_CHOSEN[none]}.`
         : inbox && !total ? "Inbox is empty: no new jobs to review."
-        : filtered && !total ? "No filtered jobs." : "No jobs match these filters."))]);
+        : filtered && !total ? "No filtered jobs."
+        : state.view === "not_interested" && !total ? "No jobs marked not interested."
+        : "No jobs match these filters."))]);
     return;
   }
   fill(body, [...state.jobs.slice(first, end).map((job, offset) => {
@@ -645,12 +655,12 @@ function renderRows() {
           return el("button", { className: "btn small" + (on ? " on" : ""), "aria-pressed": String(on),
             onclick: () => setPending(job, "status", on ? "new" : s) }, text);
         }))
-      : filtered
+      : returnable
       ? (() => {
           const on = current(job, "status") === "new";
-          // Clicking again keeps the job filtered.
+          // Clicking again keeps the job where it is.
           return el("button", { className: "btn small" + (on ? " on" : ""), "aria-pressed": String(on),
-            onclick: () => setPending(job, "status", on ? "filtered" : "new") }, "Move to Inbox");
+            onclick: () => setPending(job, "status", on ? job.status : "new") }, "Move to Inbox");
         })()
       : statusSelect(job);
     const grouped = job.group != null, abroad = job.area != null;
@@ -722,7 +732,7 @@ function renderSiteFilter() {
     state.sites, (site) => SITE_NAMES[site], (next) => { state.sites = next; remember(); refresh(); });
 }
 
-// ---- Selecting rows (Inbox, Filtered) for bulk changes ------------------------------------
+// ---- Selecting rows (Inbox, Filtered, Not interested) for bulk changes -------------------
 function pick(id, index, event) {
   const on = !state.selected.has(id);
   const anchor = event.shiftKey && state.lastPicked !== null ? state.lastPicked : index;
@@ -750,8 +760,8 @@ function pageJobs() {
   return state.jobs.slice(starts[state.page] ?? 0, starts[state.page + 1] ?? state.jobs.length);
 }
 function renderBulk() {
-  const inbox = state.view === "inbox", filtered = state.view === "filtered";
-  const selectable = inbox || filtered, n = state.selected.size;
+  const inbox = state.view === "inbox";
+  const selectable = inbox || RETURN_TABS.includes(state.view), n = state.selected.size;
   const onPage = pageJobs(), pageSelected = onPage.filter((job) => state.selected.has(job.id)).length;
   document.getElementById("select-col").hidden = !selectable;
   document.getElementById("select-col-filter").hidden = !selectable;

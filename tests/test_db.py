@@ -9,7 +9,7 @@ import pytest
 from psycopg.conninfo import make_conninfo
 
 from jobflow.db import connect, migrate, set_job_state
-from jobflow.ingest.store import archive_filtered, save_run
+from jobflow.ingest.store import archive_old_jobs, save_run
 from jobflow.web.queries import Conflict, list_jobs, parse_filters, save_changes
 
 AD = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate reporting in "
@@ -96,7 +96,7 @@ def test_a_save_over_a_change_made_elsewhere_writes_nothing(database):
     assert _one("SELECT status FROM jobs")[0] == "interested"
 
 
-def test_only_filtered_jobs_over_two_weeks_past_posting_are_archived(database):
+def test_filtered_and_not_interested_jobs_are_archived_after_two_weeks(database):
     from datetime import date
 
     def ad(job_id, title, posted, words):
@@ -107,12 +107,21 @@ def test_only_filtered_jobs_over_two_weeks_past_posting_are_archived(database):
     save_run("linkedin:a", "r1", "d1", [ad("1", "Intern", "2026-09-10", "old")], job_filter=filtered)
     save_run("linkedin:a", "r2", "d2", [ad("2", "Intern", "2026-09-18", "recent")], job_filter=filtered)
     save_run("linkedin:a", "r3", "d3", [ad("3", "Analyst", "2026-09-01", "inbox")])
-    # 2026-09-28: job 1 is 18 days past posting; job 2 is 10; job 3 is old but not filtered.
-    assert archive_filtered(date(2026, 9, 28)) == 1
+    save_run("linkedin:a", "r5", "d5", [ad("5", "Trader", "2026-09-01", "dropped"),
+                                         ad("6", "Quant", "2026-09-01", "fresh")])
+    with connect() as conn:   # marked not interested: job 5 on 09-10, job 6 on 09-20
+        for job_id, marked in (("5", "2026-09-10"), ("6", "2026-09-20")):
+            conn.execute("UPDATE jobs SET status='not_interested', status_updated_at=%s "
+                         "WHERE source_job_id=%s", (marked, job_id))
+    # 2026-09-28: job 1 is 18 days past posting; job 2 is 10; job 3 is old but not filtered;
+    # job 5 was marked 18 days ago, job 6 8 days ago, though both were posted weeks ago.
+    assert archive_old_jobs(date(2026, 9, 28)) == 2
     with connect() as conn:
         statuses = dict(conn.execute("SELECT source_job_id, status FROM jobs").fetchall())
-    assert statuses == {"1": "archived", "2": "filtered", "3": "new"}
-    assert _one("SELECT via FROM status_history")[0] == "archive"
+    assert statuses == {"1": "archived", "2": "filtered", "3": "new", "5": "archived",
+                        "6": "not_interested"}
+    assert sorted(_rows("SELECT from_status, via FROM status_history")) == [
+        ("filtered", "archive"), ("not_interested", "archive")]
     # Still a known job: seeing it again adds no new one, and it stays archived.
     assert save_run("linkedin:a", "r4", "d4", [ad("1", "Intern", "2026-09-10", "old")]) == 0
     assert _one("SELECT status FROM jobs WHERE source_job_id='1'")[0] == "archived"

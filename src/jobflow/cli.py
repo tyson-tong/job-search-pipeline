@@ -105,8 +105,8 @@ def main() -> None:
     sub.add_parser("skill-gaps", help="Report the skills your CVs don't show that scored "
                    "Interested jobs ask for most, with how to close each gap")
     sub.add_parser("clean-up", help="Delete the output folders of Not interested, Withdrawn, "
-                   "Declined, and Rejected jobs, after asking you to confirm (the jobs stay in "
-                   "the database)")
+                   "Declined, Rejected, and Archived jobs, after asking you to confirm (the "
+                   "jobs stay in the database)")
     sub.add_parser("status", help="Show the daily GitHub import, read from GitHub: whether it's "
                    "on, its last run, its secrets, whether its searches match "
                    "config/searches.toml, and which job sites it calls")
@@ -401,14 +401,15 @@ def status() -> None:
 
 # The statuses whose jobs' output folders clean-up deletes, with how it names them. Only a
 # job moved to Not interested from My jobs has a folder: Inbox jobs are never worked on.
+# Such a job is archived 2 weeks later, still with its folder.
 CLEAN_UP_STATUSES = {"not_interested": "Not interested", "withdrawn": "Withdrawn",
-                     "declined": "Declined", "rejected": "Rejected"}
+                     "declined": "Declined", "rejected": "Rejected", "archived": "Archived"}
 
 
 def clean_up() -> None:
     """Delete the output folders (CVs, letters, reviews, briefings) of jobs that are
-    Not interested, Withdrawn, Declined, or Rejected, once you confirm. The jobs, their notes, and their
-    history stay in the database."""
+    Not interested, Withdrawn, Declined, Rejected, or Archived, once you confirm. The jobs,
+    their notes, and their history stay in the database."""
     from .db import connect
     from .settings import output_directory
 
@@ -426,8 +427,8 @@ def clean_up() -> None:
     folders = [(folder, job_id, status) for job_id, status in closed_jobs()
                for folder in sorted(root.glob(f"*/*-{job_id}")) if folder.is_dir()]
     if not folders:
-        print("Nothing to clean up: no Not interested, Withdrawn, Declined, or Rejected job has a "
-              f"folder in {root}")
+        print("Nothing to clean up: no Not interested, Withdrawn, Declined, Rejected, or "
+              f"Archived job has a folder in {root}")
         return
     for folder, _, status in folders:
         print(f"  {CLEAN_UP_STATUSES[status]:<14}  {folder.relative_to(root)}")
@@ -529,11 +530,11 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         update_searches(dry_run=args.dry_run)
     elif args.command == "web":
         from .db import migrate
-        from .ingest.store import archive_filtered
+        from .ingest.store import archive_old_jobs
         from .web.server import serve
         migrate()
         # The daily import archives them too; this covers days it didn't run.
-        archive_filtered()
+        archive_old_jobs()
         serve(args.port)
     elif args.command == "tailor-cv":
         from .candidate.tailoring import add_format, cv_fixed_by_hand, tailor_cv

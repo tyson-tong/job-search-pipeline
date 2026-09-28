@@ -22,7 +22,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
 1. **Open the tracker:** `uv run jobflow web`. It runs on your machine only (http://127.0.0.1:8765); last night's import has already brought in the new jobs.
 
-2. **Triage the Inbox.** Mark each new job **Interested** or **Not interested**, one at a time or by ticking several rows (shift-click selects a range). Changes are drafts until you click **Save** (or press Ctrl+S). Interested jobs move to **My jobs**; Not interested jobs leave the tracker (they stay in the database), so undo a misclick before saving.
+2. **Triage the Inbox.** Mark each new job **Interested** or **Not interested**, one at a time or by ticking several rows (shift-click selects a range). Changes are drafts until you click **Save** (or press Ctrl+S). Interested jobs move to **My jobs**; Not interested jobs move to the **Not interested** tab, where **Move to Inbox** undoes a misclick for 2 weeks.
 
 3. **Score your picks.** In **My jobs**, click **Score all jobs**: each Interested job not yet scored is compared by the LLM with each CV that `cvs`, at the top of `config/profile.toml`, names by exact file name (1 or 2, such as `cvs = ["CV_dev.yaml", "CV_strat.yaml"]` for the files in `cv/`). A job's CVs are scored at the same time, two jobs at a time. Each CV is one LLM call per job, hence the limit of 2. `tailor-cv`, `cover-letter`, `skill-gaps`, and `interview-prep` use only those CVs too, and until `cvs` is set right, the tracker says what's wrong and they stop. A job is scored once and keeps its scores even if a CV changes. Only Interested jobs are ever scored.
 
@@ -49,7 +49,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
 ### In the tracker
 
-- **Tabs:** **Inbox** (new jobs), **My jobs** (Interested onwards; the status menu picks which statuses, **Default** restores them), **Filtered** (jobs your search filters kept out, with the reason; **Move to Inbox** brings one back; once a job is more than 2 weeks past its posted date, it's archived: kept in the database, still recognised if it's posted again, but in no tab), and **Searches** (checks your searches file).
+- **Tabs:** **Inbox** (new jobs), **My jobs** (Interested onwards; the status menu picks which statuses, **Default** restores them), **Filtered** (jobs your search filters kept out, with the reason; **Move to Inbox** brings one back; once a job is more than 2 weeks past its posted date, it's archived: kept in the database, still recognised if it's posted again, but in no tab), **Not interested** (jobs you marked so; **Move to Inbox** brings one back; 2 weeks after you marked it, it's archived the same way), and **Searches** (checks your searches file).
 - **Filters** under the column headings: minimum match score, a title/company/location search, country and site (tick several, or **All** or **None**), when the job was posted (past day, week, 2 weeks, or month, or over a month ago), and a minimum salary in US dollars (converted from each job's currency; jobs without a salary are kept). Click **Posted** or **Salary** to sort, again to reverse. **Export CSV (All)** exports every job in the tab (in My jobs, those with the chosen statuses), ignoring the other filters; **Export CSV (Filtered)** exports just the rows on the page you're viewing. Filters and sorting cover every job; the results are then shown 5 to 100 per page (the menu beside the job count), with similar jobs kept together on one page.
 - **Job panel** (click a title): the ad, links to each site it's listed on, why it scored as it did, similar jobs, notes, status history, and the tailor-cv, cover-letter, and interview-prep commands, ready to copy.
 - **Similar jobs** sit together with an orange bar ("highly similar" or "similar"; a similar job not in the list shown is counted with where it is, such as "1 highly similar (Filtered)"), and a row warns if it may be a role you've already applied for; the same ad in another country sits alongside with a blue bar. See [rules](docs/rules.md#similar-jobs).
@@ -74,7 +74,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | `jobflow cover-letter [--cv VARIANT]` | Optional: a reviewed, fact-checked cover letter for each Interested job without one |
 | `jobflow interview-prep` | An interview briefing for each Interviewing job without one |
 | `jobflow skill-gaps` | The skills your scored Interested jobs ask for that your CVs don't show |
-| `jobflow clean-up` | Delete the output folders of Not interested, Withdrawn, Declined, and Rejected jobs, after you confirm (the jobs stay in the tracker) |
+| `jobflow clean-up` | Delete the output folders of Not interested, Withdrawn, Declined, Rejected, and Archived jobs, after you confirm (the jobs stay in the tracker) |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
 | `jobflow ingest [--search NAME] [--site SITE]` | Run the searches now (the daily import does this; uses Apify credits) |
 | `jobflow status` | The daily GitHub import, read from GitHub: whether it's on, its last run, its secrets, whether its searches match `config/searches.toml`, and which sites it calls |

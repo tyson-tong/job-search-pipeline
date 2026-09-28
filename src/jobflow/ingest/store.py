@@ -36,8 +36,9 @@ POSSIBLE_WINDOW_DAYS = 180
 # are shown as "highly similar"; the rest as "similar".
 HIGHLY_SIMILAR = 0.8
 IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
-# A filtered job this long past its posted date is archived (see archive_filtered).
-ARCHIVE_FILTERED_AFTER = timedelta(days=14)
+# A filtered job this long past its posted date, or a job this long after you marked it
+# Not interested, is archived (see archive_old_jobs).
+ARCHIVE_AFTER = timedelta(days=14)
 # Ads at least this alike under the same title are the same job even when the sites spell
 # the employer or place differently, e.g. "Shenwan Hongyuan (H.K.)" on LinkedIn and
 # "Shenwan Hongyuan Securities (H.K.)" in Admiralty on Seek. The title must match exactly:
@@ -519,22 +520,28 @@ def exclude_inbox_jobs(searches: list, dry_run: bool = False,
     return matched, len(rows)
 
 
-def archive_filtered(today: date | None = None) -> int:
-    """Move filtered jobs posted (or, with no posted date, first seen) more than
-    ARCHIVE_FILTERED_AFTER ago out of the Filtered tab, to status 'archived'. They stay in
-    the database and still match as duplicates, so a repost stays out of the Inbox; the
-    tracker shows them in no tab. Returns how many were archived."""
+def archive_old_jobs(today: date | None = None) -> int:
+    """Move jobs out of the Filtered and Not interested tabs, to status 'archived', once
+    ARCHIVE_AFTER has passed: a filtered job's posted date (or, with none, the date first
+    seen), or the day you marked a job Not interested. They stay in the database and still
+    match as duplicates, so a repost stays out of the Inbox; the tracker shows them in no
+    tab. Returns how many were archived."""
     from ..db import connect
 
-    cutoff = (today or date.today()) - ARCHIVE_FILTERED_AFTER
+    cutoff = (today or date.today()) - ARCHIVE_AFTER
     with connect() as conn:
         return conn.execute(
             """WITH moved AS (
-                   UPDATE jobs SET status='archived', status_updated_at=now()
-                   WHERE status='filtered' AND coalesce(posted_at, first_seen_at::date) < %s
-                   RETURNING id)
+                   UPDATE jobs j SET status='archived', status_updated_at=now()
+                   FROM (SELECT id, status FROM jobs
+                         WHERE (status = 'filtered' AND coalesce(posted_at, first_seen_at::date) < %(cutoff)s)
+                            OR (status = 'not_interested' AND status_updated_at::date < %(cutoff)s)
+                         FOR UPDATE) old
+                   WHERE j.id = old.id
+                   RETURNING j.id, old.status)
                INSERT INTO status_history(job_id, from_status, to_status, via)
-               SELECT id, 'filtered', 'archived', 'archive' FROM moved""", (cutoff,)).rowcount
+               SELECT id, status, 'archived', 'archive' FROM moved""",
+            {"cutoff": cutoff}).rowcount
 
 
 def backfill_countries(conn) -> int:
