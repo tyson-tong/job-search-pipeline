@@ -8,8 +8,8 @@ import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
 
-from jobflow.db import connect, migrate, set_job_state
-from jobflow.ingest.store import archive_old_jobs, save_run
+from jobflow.db import connect, migrate, migration_files, set_job_state
+from jobflow.ingest.store import archive_old_jobs, prune_sightings, save_run
 from jobflow.web.queries import Conflict, list_jobs, parse_filters, save_changes
 
 AD = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate reporting in "
@@ -48,7 +48,6 @@ def _one(sql, *params):
         return conn.execute(sql, params).fetchone()
 
 
-
 def _rows(sql, *params):
     with connect() as conn:
         return conn.execute(sql, params).fetchall()
@@ -57,7 +56,7 @@ def _rows(sql, *params):
 def test_migrations_apply_once_on_an_empty_database(database, capsys):
     migrate()   # already applied by the fixture: nothing runs again
     assert "Applied migration" not in capsys.readouterr().out
-    assert _one("SELECT count(*) FROM schema_migrations")[0] == 9
+    assert _one("SELECT count(*) FROM schema_migrations")[0] == len(migration_files())
 
 
 def test_one_job_on_three_sites_is_one_row_with_three_copies(database):
@@ -190,3 +189,17 @@ def test_one_posting_the_database_rejects_does_not_lose_the_rest_of_a_paid_run(d
     broken = {**SEEK, "id": "999", "title": "Analyst \ud800", "jobLink": "https://www.seek.com.au/job/999"}
     assert save_run("seek:a", "r1", "d1", [broken, LINKEDIN], country="AU") == 1
     assert _one("SELECT title FROM jobs")[0] == "Data Analyst"
+
+
+def test_old_sightings_lose_only_their_scraped_record(database):
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    save_run("indeed:a", "r2", "d2", [INDEED], country="AU")
+    with connect() as conn:   # the LinkedIn sighting is 31 days old
+        conn.execute("""UPDATE job_observations SET observed_at = now() - interval '31 days'
+                        WHERE scraper_run_id = (SELECT id FROM scraper_runs WHERE apify_run_id='r1')""")
+    assert prune_sightings() == 1
+    assert _rows("SELECT observed_json IS NULL FROM job_observations ORDER BY observed_at") == [
+        (True,), (False,)]
+    assert _one("SELECT raw_json->>'id' FROM jobs")[0] == LINKEDIN["id"]   # the job keeps its record
+    # A later sighting still merges by the site's ID.
+    assert save_run("linkedin:a", "r3", "d3", [LINKEDIN], country="AU") == 0

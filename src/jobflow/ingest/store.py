@@ -39,6 +39,8 @@ IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
 # A filtered job this long past its posted date, or a job this long after you marked it
 # Not interested, is archived (see archive_old_jobs).
 ARCHIVE_AFTER = timedelta(days=14)
+# How long each sighting keeps its full scraped record (see prune_sightings).
+KEEP_SIGHTING_RECORDS = timedelta(days=30)
 # Ads at least this alike under the same title are the same job even when the sites spell
 # the employer or place differently, e.g. "Shenwan Hongyuan (H.K.)" on LinkedIn and
 # "Shenwan Hongyuan Securities (H.K.)" in Admiralty on Seek. The title must match exactly:
@@ -542,6 +544,20 @@ def archive_old_jobs(today: date | None = None) -> int:
                INSERT INTO status_history(job_id, from_status, to_status, via)
                SELECT id, status, 'archived', 'archive' FROM moved""",
             {"cutoff": cutoff}).rowcount
+
+
+def prune_sightings() -> int:
+    """Drop the scraped record from sightings older than KEEP_SIGHTING_RECORDS, keeping the
+    sighting itself (which job, which run, when). Each job keeps its first copy's record
+    in jobs.raw_json and every site's ID and link in job_sources; the other copies were
+    only needed while they were new. Returns how many records were dropped."""
+    from ..db import connect
+
+    with connect() as conn:
+        return conn.execute(
+            """UPDATE job_observations SET observed_json = NULL
+               WHERE observed_json IS NOT NULL AND observed_at < now() - %s""",
+            (KEEP_SIGHTING_RECORDS,)).rowcount
 
 
 def backfill_countries(conn) -> int:
