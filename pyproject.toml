@@ -30,7 +30,7 @@ jobflow = "jobflow.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-jobflow = ["migrations/*.sql", "web/static/*"]
+jobflow = ["migrations/*.sql", "web/static/*", "ingest/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
