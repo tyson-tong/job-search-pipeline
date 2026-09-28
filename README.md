@@ -82,7 +82,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 
 `tailor-cv`, `cover-letter`, and `interview-prep` work on two jobs at a time, printing each job's output together once it's done. Only one run of each can go at a time: start a second (in another terminal, say) and it stops, saying the first is still running.
 
-Every command except `init` brings the database tables up to date when it starts.
+Every command except `init` and `help` brings the database tables up to date when it starts. `tailor-cv`, `cover-letter`, `interview-prep`, and `skill-gaps` check your LLM (and, for `interview-prep`, Tavily) settings before starting any job.
 
 ## Privacy
 

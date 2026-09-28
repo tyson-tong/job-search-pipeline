@@ -35,6 +35,21 @@ def check_variant(variant: str | None, yaml_only: bool) -> str | None:
     return by_file.get(variant, variant)
 
 
+def check_keys(reviewer: bool = False, web_search: bool = False) -> None:
+    """Stop before any job is tried if a key it needs is missing: otherwise every job
+    fails in turn with the same message (after spending its web searches)."""
+    import os
+
+    from .llm import credentials
+
+    credentials()
+    if reviewer:
+        credentials(reviewer=True)
+    if web_search and not os.environ.get("WEB_SEARCH_API_KEY"):
+        raise RuntimeError("Set WEB_SEARCH_API_KEY in config/.env: interview briefings need "
+                           "Tavily company research")
+
+
 def main() -> None:
     import psycopg
 
@@ -411,6 +426,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         from .candidate.tailoring import add_format, cv_fixed_by_hand, tailor_cv
         from .db import migrate
         args.cv = check_variant(args.cv, yaml_only=True)
+        check_keys(reviewer=True)
         migrate()
 
         def tailor_one(job_id: int) -> None:
@@ -439,6 +455,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         from .candidate.cover_letter import letter_fixed_by_hand, write_letter
         from .db import migrate
         args.cv = check_variant(args.cv, yaml_only=False)
+        check_keys(reviewer=True)
         migrate()
 
         def letter_one(job_id: int) -> None:
@@ -463,6 +480,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         from .candidate.interview import prepare
         from .db import migrate
         chosen_sources()  # a problem with cvs in config/profile.toml stops it now
+        check_keys(web_search=True)
         migrate()
         for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)),
                  lambda folder: (folder / "interview-prep.html").exists())
@@ -473,6 +491,7 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     elif args.command == "skill-gaps":
         from .candidate.skill_gaps import report
         from .db import migrate
+        check_keys()
         migrate()
         target, skills = report()
         for rank, skill in enumerate(skills[:10], 1):
