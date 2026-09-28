@@ -110,3 +110,26 @@ def test_only_filtered_jobs_over_two_weeks_past_posting_are_archived(database):
     # Still a known job: seeing it again adds no new one, and it stays archived.
     assert save_run("linkedin:a", "r4", "d4", [ad("1", "Intern", "2026-09-10", "old")]) == 0
     assert _one("SELECT status FROM jobs WHERE source_job_id='1'")[0] == "archived"
+
+
+def test_a_draft_failing_the_check_after_an_earlier_one_passed_is_drafted_again(database, tmp_path,
+                                                                                   monkeypatch):
+    from jobflow import cli
+    from jobflow.candidate import paths
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    job_id = _one("SELECT id FROM jobs")[0]
+    with connect() as conn:
+        conn.execute("UPDATE jobs SET status='interested'")
+        # It passed, its output was deleted, and the new draft failed the fact check.
+        for status in ("SUCCEEDED", "NEEDS-FIX"):
+            conn.execute("INSERT INTO workflow_runs(job_id, kind, status) VALUES (%s, 'tailor', %s)",
+                         (job_id, status))
+    monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
+    folder = paths.job_directory(job_id, {"company": LINKEDIN["companyName"], "title": LINKEDIN["title"]})
+    folder.mkdir(parents=True)
+    (folder / "CV_dev_draft.yaml").write_text("cv: {}")   # the failed draft
+    ran = []
+    cli._run_jobs("interested", "tailor", "a tailored CV", ran.append,
+                  lambda folder: any(folder.glob("CV_*_draft.yaml")), lambda folder: False)
+    assert ran == [job_id]

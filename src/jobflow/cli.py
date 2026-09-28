@@ -191,12 +191,17 @@ def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
     from .llm import LLMError
 
     with connect() as conn:
+        # Done or not by the job's latest run: a draft that failed the fact check after an
+        # earlier one passed (its output deleted in between) is drafted again too.
         rows = conn.execute(
-            "SELECT j.id, j.company, j.title, "
-            "EXISTS (SELECT 1 FROM workflow_runs r WHERE r.job_id=j.id AND r.kind=%s "
-            "AND r.status<>'NEEDS-FIX'), "
-            "EXISTS (SELECT 1 FROM workflow_runs r WHERE r.job_id=j.id AND r.kind=%s) "
-            "FROM jobs j WHERE j.status=%s ORDER BY j.id", (kind, kind, status)).fetchall()
+            """SELECT j.id, j.company, j.title,
+                      last.status IS NOT NULL AND last.status <> 'NEEDS-FIX',
+                      last.status IS NOT NULL
+               FROM jobs j
+               LEFT JOIN LATERAL (SELECT r.status FROM workflow_runs r
+                                  WHERE r.job_id = j.id AND r.kind = %s
+                                  ORDER BY r.id DESC LIMIT 1) last ON true
+               WHERE j.status = %s ORDER BY j.id""", (kind, status)).fetchall()
         todo, done_jobs, redo, lost = [], [], 0, 0
         for job_id, company, title, done, tried in rows:
             name = f"#{job_id} {title} ({company or 'unknown employer'})"
