@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import copy
 import json
-import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import yaml
@@ -19,10 +17,11 @@ from pypdf import PdfReader
 from ..db import connect, fetch_job
 from ..llm import complete, parse_json
 from . import documents
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, is_yaml, normalise_text
-from .interview import web_search
+from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, is_yaml
+from .factcheck import fact_check
 from .matching import best_variant, match_job
 from .paths import job_directory
+from .research import research_soon
 
 # A rendered CV longer than this (unless tailor-cv --max-pages says otherwise) is
 # shortened by cutting its least relevant bullets.
@@ -33,145 +32,6 @@ FORMATS = ("pdf", "docx", "latex")
 # A page (other than the last) this empty at the bottom gets a warning: RenderCV never
 # splits an entry, so one too long for the space left moves whole to the next page.
 GAP_WARNING = 0.3
-
-# Header fields other than these must stay exactly as in the source CV, and none may be
-# added. The headline may be reworded, so it is checked like section text instead.
-FREE_TEXT_FIELDS = ("sections", "headline")
-FACT_FIELDS = ("company", "position", "institution", "area", "degree", "start_date",
-               "end_date", "date", "name", "title")
-
-
-def _entries(cv: dict):
-    for section in (cv.get("sections") or {}).values():
-        for entry in section if isinstance(section, list) else []:
-            if isinstance(entry, dict):
-                yield entry
-
-
-def _strings(value: object):
-    if isinstance(value, dict):
-        for item in value.values():
-            yield from _strings(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield from _strings(item)
-    elif value is not None:
-        yield str(value)
-
-
-def _numbers(value: object) -> set[str]:
-    return {n.replace(",", "") for text in _strings(value)
-            for n in re.findall(r"\d+(?:[.,]\d+)*", text)}
-
-
-def _terms(texts, skip_first: bool) -> set[str]:
-    """Capitalised or technical tokens (e.g. AWS, Node.js, C++), optionally ignoring
-    the first word of each sentence, which is capitalised anyway."""
-    terms = set()
-    for text in texts:
-        for sentence in re.split(r"(?<=[.!?;:])\s+|\n", text):
-            tokens = [t.strip(".,;:()[]\"'*") for t in sentence.split()]
-            for position, token in enumerate(tokens):
-                if not token or (skip_first and position == 0):
-                    continue
-                # Digits are left to the number check.
-                if not re.search(r"\d", token) and (token[0].isupper()
-                                                    or re.search(r"[+#]|\w\.\w", token)):
-                    terms.add(token)
-    return terms
-
-
-def _role(entry: dict) -> tuple[str, str, str]:
-    return tuple(normalise_text(entry.get(f)) for f in ("company", "position", "start_date"))
-
-
-def _facts(entry: dict) -> tuple[str | None, ...]:
-    """An entry's employer, position, dates, and education details together: a draft entry
-    must match one source entry on all of them, so no date or title moves between entries."""
-    return tuple(None if entry.get(f) is None else normalise_text(entry[f]) for f in FACT_FIELDS)
-
-
-def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
-    """Compare a tailored draft with its source CV.
-
-    Errors are likely factual changes (render is skipped); warnings are wording
-    changes a human should confirm.
-    """
-    errors, warnings = [], []
-    for field in sorted((set(source_cv) | set(draft_cv)) - set(FREE_TEXT_FIELDS)):
-        if field not in source_cv:
-            errors.append(f"Header field '{field}' was added.")
-        elif draft_cv.get(field) != source_cv.get(field):
-            errors.append(f"Header field '{field}' was changed or removed.")
-    source_facts = {(f, normalise_text(e[f])) for e in _entries(source_cv) for f in FACT_FIELDS
-                    if e.get(f) is not None}
-    source_entries = {_facts(e) for e in _entries(source_cv)}
-    for entry in _entries(draft_cv):
-        altered = False
-        for field in FACT_FIELDS:
-            if entry.get(field) is not None and (field, normalise_text(entry[field])) not in source_facts:
-                errors.append(f"New or altered {field}: {entry[field]!r} is not in the source CV.")
-                altered = True
-        # Each value may exist somewhere in the source, yet not together: an end date
-        # taken from a later job, or one employer's title given to another.
-        facts = _facts(entry)
-        if not altered and any(facts) and facts not in source_entries:
-            shown = ", ".join(f"{f} {entry[f]!r}" for f in FACT_FIELDS if entry.get(f) is not None)
-            errors.append(f"Entry doesn't match any one entry in the source CV ({shown}): a date, "
-                          "title, or detail was moved, added, or dropped.")
-    draft_entries = [(normalise_text(e.get("institution")), normalise_text(e.get("area")), normalise_text(e.get("degree")))
-                     for e in _entries(draft_cv)]
-    draft_companies = {normalise_text(e.get("company")) for e in _entries(draft_cv)}
-    # Each role, not just each employer: two roles at one employer are two entries.
-    draft_roles = {_role(e) for e in _entries(draft_cv)}
-    for entry in _entries(source_cv):
-        if entry.get("institution") and (normalise_text(entry.get("institution")), normalise_text(entry.get("area")),
-                                         normalise_text(entry.get("degree"))) not in draft_entries:
-            errors.append(f"Education entry removed: {entry.get('institution')} "
-                          f"{entry.get('degree') or ''} {entry.get('area') or ''}".rstrip() + ".")
-        if entry.get("company") and normalise_text(entry["company"]) not in draft_companies:
-            errors.append(f"Employer removed: {entry['company']}.")
-        elif entry.get("company") and _role(entry) not in draft_roles:
-            role = " ".join(str(entry.get(f) or "") for f in ("position", "start_date")).strip()
-            errors.append(f"Role removed at {entry['company']}: {role or 'an entry'}.")
-    # The other header fields are compared exactly above, so only these are scanned here.
-    source_sections = [source_cv.get("headline"), source_cv.get("sections")]
-    draft_sections = [draft_cv.get("headline"), draft_cv.get("sections")]
-    new_numbers = sorted(_numbers(draft_sections) - _numbers(source_sections))
-    if new_numbers:
-        errors.append("Numbers not in the source CV: " + ", ".join(new_numbers) + ".")
-    source_vocab = {t.casefold() for t in _terms(_strings(source_sections), skip_first=False)}
-    source_words = set(normalise_text(" ".join(_strings(source_sections))).split())
-    new_terms = sorted(t for t in _terms(_strings(draft_sections), skip_first=True)
-                       if t.casefold() not in source_vocab
-                       and not set(normalise_text(t).split()) <= source_words)
-    if new_terms:
-        warnings.append("Terms not in the source CV (check each is supported): "
-                        + ", ".join(new_terms) + ".")
-    return list(dict.fromkeys(errors)), warnings
-
-
-def research(job: dict) -> tuple[list[dict], list[str]]:
-    """Company web research for a reviewer or cover letter; optional, so a failed search
-    (Tavily down, or out of credits) is a note, not a failed job."""
-    if not os.environ.get("WEB_SEARCH_API_KEY"):
-        return [], ["No company research: WEB_SEARCH_API_KEY is not set, so only the job ad "
-                    "is used."]
-    try:
-        return web_search(job["company"] or "the company", job["title"]), []
-    except Exception as exc:
-        return [], [f"No company research: the web search failed ({exc}), so only the job ad "
-                    "is used."]
-
-
-def research_soon(job_id: int) -> Future:
-    """Start research() for the job in the background: the web search then overlaps
-    choosing (maybe scoring) the CV and drafting. .result() gives what research() returns."""
-    pool = ThreadPoolExecutor(max_workers=1)
-    future = pool.submit(lambda: research(fetch_job(job_id)))
-    pool.shutdown(wait=False)
-    return future
-
 
 def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict, str]:
     """The job, the CV variant to use (best-matching unless given, scoring the job first

@@ -3,18 +3,17 @@ from __future__ import annotations
 import concurrent.futures
 import html
 import json
-import os
 import re
 import sys
 from pathlib import Path
 
-import requests
 
 from ..db import connect, fetch_job
 from ..llm import complete
 from ..settings import now
 from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_sources
 from .paths import job_directory
+from .research import web_search
 
 
 AGENTS = {
@@ -30,36 +29,6 @@ AGENTS = {
     "Use only the supplied CV evidence to draft answer outlines. Clearly identify gaps; never "
     "invent experience.",
 }
-
-
-def web_search(company: str, title: str) -> list[dict]:
-    key = os.environ.get("WEB_SEARCH_API_KEY")
-    if not key:
-        raise RuntimeError("Set WEB_SEARCH_API_KEY for current company research (Tavily)")
-
-    def search(query: str) -> list[dict]:
-        response = requests.post("https://api.tavily.com/search",
-            headers={"Authorization": f"Bearer {key}"},
-            json={"query": query, "topic": "news" if "latest" in query else "general",
-                  "search_depth": "basic", "max_results": 5,
-                  "include_answer": False}, timeout=45)
-        response.raise_for_status()
-        return response.json().get("results", [])
-
-    # The two searches are independent, so they run side by side.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        results = [row for rows in pool.map(search, (
-            f'"{company}" official company products about', f'"{company}" latest news {title}'))
-            for row in rows]
-    seen = set()
-    unique = []
-    for row in results:
-        url = row.get("url")
-        if url and url not in seen:
-            seen.add(url)
-            unique.append({"title": row.get("title") or "", "url": url,
-                           "content": (row.get("content") or "")[:900]})
-    return unique[:10]
 
 
 def _agent(name: str, instruction: str, job: dict, cv_text: str,

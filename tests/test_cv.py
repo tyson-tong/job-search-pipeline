@@ -6,9 +6,10 @@ from concurrent.futures import Future
 
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
 from jobflow.candidate import cover_letter
-from jobflow.candidate.cover_letter import check_letter, letter_fixed_by_hand
+from jobflow.candidate.cover_letter import letter_fixed_by_hand
+from jobflow.candidate.factcheck import check_letter, fact_check
 from jobflow.candidate.skill_gaps import rank_skills
-from jobflow.candidate.tailoring import bullets, cut_order, cv_fixed_by_hand, fact_check, without
+from jobflow.candidate.tailoring import bullets, cut_order, cv_fixed_by_hand, without
 
 CV_TEXT = """cv:
   name: Alex Example
@@ -322,13 +323,13 @@ def test_cutting_to_fit_cuts_the_fewest_least_relevant_bullets(tmp_path, monkeyp
 
 
 def test_a_failed_company_search_is_a_note_not_a_failed_job(monkeypatch):
-    from jobflow.candidate import tailoring
+    from jobflow.candidate import research
 
     def down(company, title):
         raise RuntimeError("432 Client Error: usage limit exceeded")
     monkeypatch.setenv("WEB_SEARCH_API_KEY", "k")
-    monkeypatch.setattr(tailoring, "web_search", down)
-    sources, notes = tailoring.research({"company": "Acme", "title": "Analyst"})
+    monkeypatch.setattr(research, "web_search", down)
+    sources, notes = research.research({"company": "Acme", "title": "Analyst"})
     assert sources == [] and "web search failed" in notes[0]
 
 

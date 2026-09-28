@@ -2,24 +2,18 @@
 from __future__ import annotations
 
 import json
-import re
 import sys
 from pathlib import Path
 
 from ..db import connect, fetch_job
 from ..llm import complete, parse_json
 from . import documents
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, chosen_sources, is_yaml, normalise_text
+from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, chosen_sources, is_yaml
+from .factcheck import check_letter
 from .matching import best_variant, match_job
 from .paths import job_directory
-from .tailoring import _numbers, _strings, _terms, load_source, research_soon
-
-# Capitalised words any letter uses, never worth a warning.
-LETTER_WORDS = {"i", "i'd", "i'm", "i've", "i'll", "dear", "hiring", "manager", "team",
-                "sincerely", "regards", "kind", "best", "yours", "thank", "thanks",
-                "monday", "tuesday", "wednesday", "thursday", "friday", "january", "february",
-                "march", "april", "may", "june", "july", "august", "september", "october",
-                "november", "december"}
+from .research import research_soon
+from .tailoring import load_source
 
 
 def load_cv(job_id: int, variant: str | None) -> tuple[dict, str, str, dict | str, str]:
@@ -48,30 +42,6 @@ def load_cv(job_id: int, variant: str | None) -> tuple[dict, str, str, dict | st
         raise RuntimeError(f"{files[variant].name} is {len(text)} characters; over "
                            f"{CV_CHAR_LIMIT} it would be truncated")
     return fetch_job(job_id), variant, reason, text, text
-
-
-def check_letter(letter: str, source_cv: dict | str, job: dict,
-                 sources: list[dict]) -> tuple[list[str], list[str]]:
-    """Check a cover letter against what it may draw on: the source CV, the job ad, and
-    the company research. Errors are numbers found in none of them; warnings are new
-    capitalised or technical terms, and placeholders left in."""
-    allowed = [source_cv, job.get("title"), job.get("company"), job.get("description"),
-               [s.get("title") for s in sources], [s.get("content") for s in sources]]
-    errors, warnings = [], []
-    new_numbers = sorted(_numbers(letter) - _numbers(allowed))
-    if new_numbers:
-        errors.append("Numbers not in your CV, the job ad, or the company research: "
-                      + ", ".join(new_numbers) + ".")
-    vocab = {t.casefold() for t in _terms(_strings(allowed), skip_first=False)} | LETTER_WORDS
-    words = set(normalise_text(" ".join(_strings(allowed))).split())
-    new_terms = sorted(t for t in _terms([letter], skip_first=True)
-                       if t.casefold() not in vocab and not set(normalise_text(t).split()) <= words)
-    if new_terms:
-        warnings.append("Terms not in your CV, the job ad, or the company research (check each "
-                        "is true): " + ", ".join(new_terms) + ".")
-    if re.search(r"\[[^\]]*\]", letter):
-        warnings.append("A [placeholder] is left in; fill it in or remove it.")
-    return errors, warnings
 
 
 def _draft(job: dict, cv: str, sources: list[dict]) -> tuple[str, str]:
