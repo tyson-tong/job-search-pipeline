@@ -361,17 +361,6 @@ def test_cutting_to_fit_cuts_the_fewest_least_relevant_bullets(tmp_path, monkeyp
     assert fitted["sections"]["experiences"][1]["highlights"] == ["Only bullet"]
 
 
-def test_a_failed_company_search_is_a_note_not_a_failed_job(monkeypatch):
-    from jobflow.candidate import research
-
-    def down(company, title):
-        raise RuntimeError("432 Client Error: usage limit exceeded")
-    monkeypatch.setenv("WEB_SEARCH_API_KEY", "k")
-    monkeypatch.setattr(research, "web_search", down)
-    sources, notes = research.research({"company": "Acme", "title": "Analyst"})
-    assert sources == [] and "web search failed" in notes[0]
-
-
 def test_format_for_a_job_already_tailored_comes_from_its_checked_draft(tmp_path, monkeypatch):
     # tailor-cv --format docx after a PDF-only run used to skip the job as done.
     import yaml

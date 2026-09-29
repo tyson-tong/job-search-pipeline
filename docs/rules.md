@@ -6,7 +6,7 @@ The rules behind merging duplicates, flagging similar jobs, scoring, checking ta
 
 Each scraper's output is first converted to the same fields (`src/jobflow/ingest/sources.py`). A job then counts as already seen if any of these match, in order:
 1. Same site and job ID (or, for a posting without an ID, the same URL without tracking parameters), checked against every site's copy seen so far, not just the first.
-2. Identical company, title, location, and description.
+2. Identical company, title, location, and description (its first 1,500 characters, ignoring case and punctuation).
 3. Same employer and title, ignoring suffixes like "Pty Ltd" or "Pte Ltd", in the same city and country, first seen in the last 90 days, with descriptions that share at least half their words. This catches the same job on LinkedIn, Indeed, and Seek, and reposts with a new ID. "Same city" only rules out a match when both postings name different places, such as Sydney and Melbourne; a missing or country-only location doesn't. Suburbs count as different places, so a Parramatta and a Sydney listing of one job stay separate unless rule 4 applies.
 4. The same title (ignoring case and punctuation), in the same country, first seen in the last 90 days, with an ad at least 95% the same words, whatever the employer's spelling or the city. This catches one ad listed under slightly different employer names or districts. Short ads (under 30 distinct words) never match this way, a different title never does (employers reuse one ad for different roles), and neither does one ad for offices in two countries. A job's country is the one its search run covered, or else the country named in its location; an unknown country doesn't block a match.
 

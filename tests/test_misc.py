@@ -33,7 +33,7 @@ def test_env_file_never_overrides_real_environment(monkeypatch, tmp_path):
     assert os.environ["LLM_MODEL"] == "gpt-x"
     assert os.environ["LLM_API_KEY"] == "k#1"
     assert os.environ["EXAMPLE_IDS"] == "a,b"
-    assert os.environ["APIFY_MAX_WAIT_MINUTES"] == "30"   # kept its quotes, then failed as a number
+    assert os.environ["APIFY_MAX_WAIT_MINUTES"] == "30"   # quotes stripped, even before a comment
     assert "LLM_BASE_URL" not in os.environ  # empty values don't mask defaults
     assert os.environ["APIFY_TOKEN"] == "from-github-secret"
 
@@ -224,24 +224,29 @@ class _Rows:
         pass
 
 
-def test_a_bad_key_stops_the_jobs_instead_of_failing_each(monkeypatch, tmp_path):
-    from jobflow import batch, db
-    from jobflow.candidate import paths
+def test_a_bad_key_stops_the_batch_instead_of_failing_every_job():
+    # A bad key or an empty balance fails every request: tailor-cv, cover-letter,
+    # interview-prep, and the tracker's scoring must stop, not try (and bill) each job.
+    import time
+
+    from jobflow.batch import run_each
     from jobflow.llm import LLMError
 
-    monkeypatch.setattr(db, "connect", _Rows([(i, "Acme", f"Role {i}", False, False)
-                                              for i in range(1, 7)]))
-    monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
     tried = []
 
-    def run_one(job_id):
+    def work(job_id):
         tried.append(job_id)
         if job_id == 1:
             raise LLMError("Invalid key (LLM provider, HTTP 401)", fatal=True)
-
-    with pytest.raises(SystemExit, match="Stopped"):
-        batch._run_jobs("interested", "tailor", "a tailored CV", run_one, lambda folder: True)
-    assert set(tried) <= {1, 2}  # only job 2 may have started alongside job 1
+        if job_id == 3:
+            raise RuntimeError("one job's own problem")
+        time.sleep(0.05)
+    failed, skipped = run_each([1, 2, 3, 4, 5, 6], work)
+    assert set(tried) <= {1, 2}   # only job 2 may have started alongside job 1
+    assert 1 in failed and set(skipped) == {1, 2, 3, 4, 5, 6} - set(tried)
+    # Any other failure doesn't stop the rest.
+    tried.clear()
+    assert run_each([3, 4, 5], work) == ([3], []) and sorted(tried) == [3, 4, 5]
 
 
 def test_a_job_counts_as_done_only_while_its_files_exist(monkeypatch, tmp_path):

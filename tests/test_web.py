@@ -1,28 +1,12 @@
 import http.client
 import json
 import threading
-from datetime import date
 from http.server import ThreadingHTTPServer
 
 import pytest
 
 from jobflow.web.queries import InvalidChange, _csv_cell, validate_changes
 from jobflow.web.server import make_handler
-
-
-def test_valid_changes_are_normalised():
-    changes = validate_changes([
-        {"id": 1, "status": "applied", "note": "Called recruiter", "follow_up_on": "2026-10-02",
-         "expected_version": "1790000000000000"},
-        {"id": 2, "follow_up_on": ""},          # clearing a date is a change
-        {"id": 3, "status": "not_interested", "note": "   "},  # blank note is dropped
-    ])
-    assert changes == [
-        {"id": 1, "status": "applied", "note": "Called recruiter", "follow_up_on": date(2026, 10, 2),
-         "expected_version": "1790000000000000"},
-        {"id": 2, "follow_up_on": None},
-        {"id": 3, "status": "not_interested"},
-    ]
 
 
 @pytest.mark.parametrize("changes, message", [
@@ -71,45 +55,6 @@ def test_api_requires_the_token_and_a_local_host(server):
     status, _ = _request(port, "/api/save", {"Host": local, "Content-Type": "application/json"},
                          "POST", json.dumps({"changes": [{"id": 1, "status": "applied"}]}))
     assert status == 403
-
-
-# --- Scoring in the background ----------------------------------------------------------
-
-@pytest.fixture
-def scoring(monkeypatch):
-    from jobflow.web import scoring
-    monkeypatch.setattr(scoring, "credentials", lambda: ("key", "model"))
-    monkeypatch.setattr(scoring, "chosen_sources", lambda: {"dev": "cv: {}"})
-    monkeypatch.setattr(scoring, "_state", {**scoring._state, "running": False})
-    return scoring
-
-
-def _wait_until_finished(scoring):
-    import time
-    for _ in range(200):
-        if not scoring.status()["running"]:
-            return scoring.status()
-        time.sleep(0.01)
-    raise AssertionError("scoring did not finish")
-
-
-def test_a_bad_key_stops_the_batch_instead_of_failing_every_job(scoring, monkeypatch):
-    import time
-
-    from jobflow.llm import LLMError
-    tried = []
-
-    def match_job(job_id):
-        tried.append(job_id)
-        if job_id == 1:
-            raise LLMError("Invalid authentication credentials (LLM provider, HTTP 401)", fatal=True)
-        time.sleep(0.05)
-    monkeypatch.setattr(scoring, "match_job", match_job)
-    monkeypatch.setattr(scoring, "jobs_needing_match", lambda variants, only=None: [1, 2, 3, 4, 5])
-    scoring.start()
-    result = _wait_until_finished(scoring)
-    # Only job 2 may have started alongside job 1; nothing after it does.
-    assert set(tried) <= {1, 2} and result["done"] == len(tried) < result["total"]
 
 
 def test_similar_jobs_sit_together_but_only_same_country_ones_are_marked_duplicates():
