@@ -10,6 +10,10 @@ import requests
 
 from ..db import fetch_job
 
+# A search for "the company" finds other companies, whose facts and figures would then
+# count as research: the cover letter's check allows numbers from it.
+NO_EMPLOYER = "No company research: the ad names no employer, so only the job ad is used."
+
 
 def web_search(company: str, title: str) -> list[dict]:
     key = os.environ.get("WEB_SEARCH_API_KEY")
@@ -47,8 +51,10 @@ def research(job: dict) -> tuple[list[dict], list[str]]:
     if not os.environ.get("WEB_SEARCH_API_KEY"):
         return [], ["No company research: WEB_SEARCH_API_KEY is not set, so only the job ad "
                     "is used."]
+    if not job["company"]:
+        return [], [NO_EMPLOYER]
     try:
-        return web_search(job["company"] or "the company", job["title"]), []
+        return web_search(job["company"], job["title"]), []
     except Exception as exc:
         return [], [f"No company research: the web search failed ({exc}), so only the job ad "
                     "is used."]

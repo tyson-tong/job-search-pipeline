@@ -12,7 +12,7 @@ from ..llm import complete
 from ..settings import now
 from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_sources
 from .paths import job_directory
-from .research import web_search
+from .research import NO_EMPLOYER, web_search
 
 AGENTS = {
     "company": "Company research analyst: summarize the employer's business, products, strategy, "
@@ -108,7 +108,11 @@ def _safe_markup(text: str) -> str:
 
 def prepare(job_id: int, output: Path | None = None) -> Path:
     job = fetch_job(job_id)
-    sources = web_search(job["company"] or "the company", job["title"])
+    if job["company"]:
+        sources = web_search(job["company"], job["title"])
+    else:
+        sources = []
+        print(f"warning: {NO_EMPLOYER}", file=sys.stderr)
     # Each CV is cut to the limit on its own, so a long first CV can't crowd out the second.
     cvs = chosen_sources()
     for name, text in cvs.items():
