@@ -20,6 +20,7 @@ from .dedupe import (
     identity,
     is_same_ad,
     match_key,
+    same_country,
     same_place,
     simplify,
     title_patterns,
@@ -48,8 +49,8 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str 
 
     is_first_copy is True when this is the copy the jobs row was created from.
     Tried in order: this site's ID/URL on any known copy (job_sources), exact content
-    fingerprint, the same employer and title seen recently in the same place with a
-    similar description (another site's copy, or a repost), then a recent job with the
+    fingerprint, the same employer and title seen recently in the same place and country
+    with a similar description (another site's copy, or a repost), then a recent job with the
     same title and a near-identical ad under any employer or place in the same country
     (is_same_ad).
     """
@@ -65,12 +66,14 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str 
             return row[0], False
     if mkey and description:
         candidates = conn.execute(
-            """SELECT id, description, location FROM jobs
+            """SELECT id, description, location, country FROM jobs
                WHERE match_key=%s AND first_seen_at > now() - make_interval(days => %s)
                ORDER BY first_seen_at DESC LIMIT 20""", (mkey, FUZZY_WINDOW_DAYS)).fetchall()
-        for job_pk, existing, existing_location in candidates:
-            if same_place(location, existing_location) and \
-                    description_similarity(description, existing) >= SIMILAR_DESCRIPTION:
+        for job_pk, existing, existing_location, existing_country in candidates:
+            # A location naming no city ("Hong Kong", "Singapore") never rules out a match,
+            # so the country must: one employer's ad for two countries is two jobs.
+            if same_country(country, existing_country) and same_place(location, existing_location) \
+                    and description_similarity(description, existing) >= SIMILAR_DESCRIPTION:
                 return job_pk, False
     patterns = title_patterns(title)
     if description and patterns and title != "Untitled":

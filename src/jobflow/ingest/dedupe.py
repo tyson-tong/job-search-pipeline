@@ -13,8 +13,9 @@ from .sources import Posting
 TRACKING_PARAMS = {"trk", "trackingid", "refid", "position", "pagenum", "from", "tk", "vjk",
                    "type", "ref", "origin"}
 # Words that differ between sites' spellings of the same employer.
-COMPANY_NOISE = {"pty", "ltd", "limited", "inc", "llc", "co", "corp", "corporation",
-                 "company", "group", "holdings", "australia", "the"}
+COMPANY_NOISE = {"pty", "ltd", "limited", "inc", "llc", "llp", "plc", "pte", "gmbh", "sdn",
+                 "bhd", "co", "corp", "corporation", "company", "group", "holdings", "the",
+                 "australia", "nz", "singapore", "hk"}
 # Two postings with the same employer and title are the same job when their
 # description word sets overlap at least this much (Jaccard similarity).
 SIMILAR_DESCRIPTION = 0.5

@@ -10,3 +10,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     finished_at TIMESTAMPTZ,
     error TEXT
 );
+
+-- Migration ID: 02
+-- tailor-cv, cover-letter, and interview-prep look up each job's latest run of their kind.
+CREATE INDEX IF NOT EXISTS workflow_runs_job_idx ON workflow_runs (job_id, kind, id DESC);

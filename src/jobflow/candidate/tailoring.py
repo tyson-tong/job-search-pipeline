@@ -134,8 +134,9 @@ def add_format(directory: Path, fmt: str) -> Path | None:
                            "it can't be checked")
     source = yaml.safe_load(files[variant].read_text())
     draft = yaml.safe_load(draft_path.read_text())
-    if not isinstance(draft, dict) or not isinstance(draft.get("cv"), dict):
-        raise RuntimeError(f"{draft_path.name} has no cv mapping")
+    for name, doc in ((files[variant].name, source), (draft_path.name, draft)):
+        if not isinstance(doc, dict) or not isinstance(doc.get("cv"), dict):
+            raise RuntimeError(f"{name} has no cv mapping")
     errors, _ = fact_check(source["cv"], draft["cv"])
     if errors:
         kept = f" ({target.name} is from before your edit)" if stale else ""

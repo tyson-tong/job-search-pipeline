@@ -16,7 +16,7 @@ from ..llm import credentials
 
 MAX_JOBS = 500
 _lock = threading.Lock()
-_state: dict = {"running": False, "total": 0, "done": 0, "current": None, "errors": [],
+_state: dict = {"running": False, "total": 0, "done": 0, "errors": [],
                 "scored": [], "started_at": None, "finished_at": None}
 
 
@@ -41,7 +41,7 @@ def start(job_ids: list[int] | None = None) -> dict:
         ids = jobs_needing_match(variants, job_ids)
         if job_ids and not ids:
             raise ValueError("Only interested jobs not yet scored against every CV can be scored")
-        _state.update(running=bool(ids), total=len(ids), done=0, current=None, errors=[],
+        _state.update(running=bool(ids), total=len(ids), done=0, errors=[],
                       scored=[], started_at=datetime.now(timezone.utc), finished_at=None)
     if ids:
         threading.Thread(target=_run, args=(ids,), daemon=True).start()
@@ -53,8 +53,6 @@ def start(job_ids: list[int] | None = None) -> dict:
 
 def _run(ids: list[int]) -> None:
     def score(job_id: int) -> None:
-        with _lock:
-            _state["current"] = job_id
         try:
             match_job(job_id)
             with _lock:
@@ -71,7 +69,7 @@ def _run(ids: list[int]) -> None:
     # many were left.
     run_each(ids, score)
     with _lock:
-        _state.update(running=False, current=None, finished_at=datetime.now(timezone.utc))
+        _state.update(running=False, finished_at=datetime.now(timezone.utc))
 
 
 def parse_request(payload: object) -> list[int] | None:

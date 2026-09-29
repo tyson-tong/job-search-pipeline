@@ -98,7 +98,10 @@ def to_date(value: object) -> date | None:
     in time (a timestamp, or a datetime with its UTC offset) is dated in your timezone."""
     if value in (None, ""):
         return None
-    if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()):
+    # A string of digits is a timestamp only if it's long enough to be one: "20240101"
+    # is a date, not 8 hours into 1970.
+    if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()
+                                           and len(value) >= 10):
         number = float(value)
         return datetime.fromtimestamp(number / 1000 if number > 1e11 else number,
                                       tz=settings.timezone()).date()

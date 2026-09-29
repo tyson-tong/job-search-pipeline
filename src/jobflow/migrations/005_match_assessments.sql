@@ -13,3 +13,8 @@ CREATE TABLE IF NOT EXISTS match_assessments (
     model_name TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migration ID: 02
+-- The job list and scoring look up each job's latest score per CV.
+CREATE INDEX IF NOT EXISTS match_assessments_job_idx
+    ON match_assessments (job_id, cv_variant, created_at DESC);

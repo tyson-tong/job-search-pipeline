@@ -61,6 +61,7 @@ def test_to_date_handles_iso_and_unix_seconds_or_milliseconds():
     assert to_date("2026-09-01T10:00:00Z") == date(2026, 9, 1)
     assert to_date(1789862400000) == to_date(1789862400) == date(2026, 9, 20)
     assert to_date("3 days ago") is None
+    assert to_date("20260920") == date(2026, 9, 20)   # a compact date, not a 1970 timestamp
 
 
 def test_same_job_on_three_sites_is_recognised():
