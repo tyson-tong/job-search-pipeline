@@ -15,7 +15,7 @@ from ..db import connect
 from ..llm import complete, parse_json
 from ..settings import matching_weights, now, output_directory
 from .cvs import chosen_files
-from .matching import best_variant, stored_assessments
+from .matching import best_variant, current_digests, stored_assessments
 
 # How much one unmet requirement counts towards a skill's rank.
 IMPORTANCE_WEIGHT = {"required": 1.0, "preferred": 0.5}
@@ -23,11 +23,22 @@ STATUS_WEIGHT = {"not_evidenced": 1.0, "partial": 0.5}
 MAX_GAPS_SENT = 600
 
 
-def collect_gaps() -> tuple[list[dict], int]:
+def outdated_note(jobs: int) -> str:
+    """Scores are only redone when you ask, so one made before you added a skill to your CV
+    still counts it as a gap."""
+    return (f"{jobs} of these jobs {'was' if jobs == 1 else 'were'} scored against an earlier "
+            "version of your CV, so a skill you've since added may still be listed: click "
+            "Rescore edited CVs in the tracker's My jobs, then run skill-gaps again.")
+
+
+def collect_gaps() -> tuple[list[dict], int, int]:
     """Requirements not fully evidenced by each scored Interested job's best CV, among those
-    cvs in config/profile.toml names, newest job first, and the job count."""
-    weights, chosen = matching_weights(), chosen_files()
+    cvs in config/profile.toml names, newest job first; the job count; and how many of
+    those jobs' best scores were made against an earlier version of the CV, so may list
+    gaps you've since filled."""
+    weights, chosen, digests = matching_weights(), chosen_files(), current_digests()
     gaps: list[dict] = []
+    outdated = 0
     with connect() as conn:
         jobs = conn.execute(
             """SELECT j.id, j.title, j.company FROM jobs j
@@ -41,11 +52,12 @@ def collect_gaps() -> tuple[list[dict], int]:
                 continue
             scored += 1
             best = best_variant(stored)
+            outdated += best["cv_sha256"] != digests[best["variant"]]
             for item in best["partial"] + best["not_evidenced"]:
                 gaps.append({"id": len(gaps), "job_id": job_id, "job": f"{title} ({company or 'unknown employer'})",
                              "requirement": item["requirement"], "importance": item["importance"],
                              "status": item["status"]})
-    return gaps, scored
+    return gaps, scored, outdated
 
 
 def rank_skills(gaps: list[dict], groups: object) -> tuple[list[dict], int]:
@@ -100,7 +112,7 @@ def _group(gaps: list[dict]) -> tuple[object, str]:
 
 
 def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated: str,
-          left_out: int = 0) -> str:
+          left_out: int = 0, outdated: int = 0) -> str:
     rows = []
     for rank, s in enumerate(skills, 1):
         examples = "".join(
@@ -116,6 +128,8 @@ def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated
             "</details></td></tr>")
     note = (f"<p class=meta>{ungrouped} requirement{'s were' if ungrouped != 1 else ' was'} "
             "not grouped by the LLM and are left out.</p>" if ungrouped else "")
+    if outdated:
+        note += f"<p class=meta>{html.escape(outdated_note(outdated))}</p>"
     if left_out:
         note += (f"<p class=meta>Only the {MAX_GAPS_SENT} requirements from your most recently "
                  f"added scored jobs are grouped; {left_out} older ones are left out.</p>")
@@ -139,8 +153,9 @@ of it to your CV.</p>{note}
 </body></html>"""
 
 
-def report(output: Path | None = None) -> tuple[Path, list[dict]]:
-    gaps, scored = collect_gaps()
+def report(output: Path | None = None) -> tuple[Path, list[dict], int]:
+    """The report's file, its skills, and how many of its jobs have outdated scores."""
+    gaps, scored, outdated = collect_gaps()
     if not gaps:
         raise RuntimeError("No skill gaps to report: it reads scored Interested jobs, so score "
                            "some in the tracker first (against the CVs cvs in "
@@ -151,5 +166,5 @@ def report(output: Path | None = None) -> tuple[Path, list[dict]]:
     target = output or (output_directory() / f"skill-gaps-{generated:%Y-%m-%d}.html")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(_page(skills, scored, ungrouped, model, generated.strftime("%Y-%m-%d %H:%M %Z"),
-                            left_out=max(0, len(gaps) - MAX_GAPS_SENT)))
-    return target, skills
+                            left_out=max(0, len(gaps) - MAX_GAPS_SENT), outdated=outdated))
+    return target, skills, outdated

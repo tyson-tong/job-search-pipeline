@@ -139,7 +139,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="step"><b>Pick and track</b><span class="mod">web/ · jobflow web</span>
       <div class="what">Browser tracker on 127.0.0.1: Inbox of new jobs (Interested or Not interested; archived if still untriaged 30 days after posting), My jobs, Filtered and Not interested tabs to change your mind about jobs (filtered ones for 2 weeks after posting or first being seen, whichever is later, not interested ones for 2 weeks after you marked them; then they're archived), filters, statuses, notes, follow-ups, similar-job warnings. Edits are saved only when you click Save, in one transaction, with a check for changes made elsewhere since loading; the view auto-refreshes when there are no drafts.</div></div>
     <div class="step"><b>Score jobs against each CV</b><span class="mod">candidate/matching.py · Score all jobs in jobflow web</span>
-      <div class="what">Interested jobs only, each scored once against each CV. Runs in the background from the tracker. Requirements with verified CV quotes; score computed from required and preferred coverage.</div></div>
+      <div class="what">Interested jobs only, each scored once against each CV, and again against a CV you've edited when you click Rescore edited CVs. Runs in the background from the tracker. Requirements with verified CV quotes; score computed from required and preferred coverage.</div></div>
     <div class="step"><b>Tailor a CV</b><span class="mod">candidate/tailoring.py · jobflow tailor-cv</span>
       <div class="what">For each Interested job without one: a draft from the best-matching CV, revised by a hiring-manager reviewer, fact-checked against the original before rendering. Optionally, <code>jobflow cover-letter</code> (candidate/cover_letter.py) writes a cover letter the same way.</div></div>
     <div class="step"><b>Prepare for the interview</b><span class="mod">candidate/interview.py · jobflow interview-prep</span>
@@ -166,7 +166,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>ingest/report.py</code></td><td>The tracker's Searches tab: your searches, their planned runs, and allowed values.</td></tr>
   <tr><td><code>candidate/paths.py</code></td><td>Where a job's files go: <code>output/&lt;company&gt;/&lt;role&gt;-&lt;job id&gt;</code>.</td></tr>
   <tr><td><code>candidate/cvs.py</code></td><td>The 1 or 2 CV files <code>cvs</code> in config/profile.toml names (.yaml, .tex, .docx, .pdf), their text, and shared text helpers.</td></tr>
-  <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring: Interested jobs only, each scored once against each CV.</td></tr>
+  <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring: Interested jobs only, each scored once against each CV, and again on request after that CV is edited.</td></tr>
   <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft, the reviewer pass, the fact check, and the files written.</td></tr>
   <tr><td><code>candidate/render.py</code></td><td>Rendering a draft with RenderCV, and cutting its least relevant bullets until it fits --max-pages.</td></tr>
   <tr><td><code>candidate/documents.py</code></td><td>CV layouts for --format docx and latex, and the cover letter .docx, all laid out in code from the checked text.</td></tr>
@@ -244,7 +244,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
     <ul><li>LLM lists requirements: required or preferred; matched, partial, or not evidenced; with CV quotes.</li>
     <li>Each quote is checked against the CV file; unverifiable ones downgrade the item.</li>
     <li>Score = matched 1, partial 0.5, averaged per group, weighted by <code>required_weight</code> / <code>preferred_weight</code>.</li>
-    <li>Only Interested jobs, against the 1 or 2 CVs <code>cvs</code> names; each is scored once against each CV and not again when that CV's content changes; a CV added or renamed later is scored the next time.</li></ul></div>
+    <li>Only Interested jobs, against the 1 or 2 CVs <code>cvs</code> names; each is scored once against each CV; a score made against an earlier version of a CV is marked, and Rescore edited CVs redoes it; a CV added or renamed later is scored the next time.</li></ul></div>
   <div class="card"><h3>Tailoring</h3>
     <ul><li>Runs for every Interested job without a draft; jobs already done are skipped, unless their YAML draft was deleted. A draft that failed the fact check is drafted again, unless you've edited it. <code>--format docx</code> or <code>latex</code> for a job already done writes that file from its re-checked draft, with no LLM call.</li>
     <li>Uses each job's best-matching CV unless <code>--cv</code> is given (an unscored job is scored first).</li>

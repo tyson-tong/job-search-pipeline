@@ -150,6 +150,39 @@ def test_a_cv_named_later_is_scored_without_rescoring_the_others(database, monke
     assert asked == ["dev", "strat"]
 
 
+def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, monkeypatch):
+    # Scores were never redone, so a skill you added to your CV stayed a gap in skill-gaps.
+    # Each rescore is an LLM call per job per CV, so an unedited CV must not be sent again.
+    import json
+
+    from jobflow.candidate import matching
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    job_id = _one("SELECT id FROM jobs")[0]
+    with connect() as conn:
+        set_job_state(conn, job_id, status="interested", via="test")
+    asked = []
+
+    def complete(system, user, **kwargs):
+        prompt = json.loads(user)
+        asked.append(prompt["cv_variant"])
+        status = "matched" if "SQL" in prompt["cv_source"] else "not_evidenced"
+        return json.dumps({"requirements": [{"requirement": "SQL", "status": status,
+                                             "evidence": ["write SQL"]}]}), "m"
+    monkeypatch.setattr(matching, "complete", complete)
+    monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
+    cvs = {"dev": "I build dashboards.", "strat": "I plan strategy."}
+    monkeypatch.setattr(matching, "chosen_sources", lambda: dict(cvs))
+    matching.match_job(job_id)
+    cvs["dev"] = "I build dashboards and write SQL."   # the gap, now shown in the CV
+    assert matching.outdated_scores(matching.current_digests()) == [(job_id, "dev")]
+    matching.match_job(job_id)                        # not asked to rescore: nothing sent
+    assert asked == ["dev", "strat"]
+    scores = {r["variant"]: r["score"] for r in matching.match_job(job_id, rescore=True)}
+    assert asked == ["dev", "strat", "dev"] and scores == {"dev": 100, "strat": 0}
+    assert matching.outdated_scores(matching.current_digests()) == []
+
+
 def test_a_status_change_keeps_the_first_applied_date_and_every_note(database):
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     job_id = _one("SELECT id FROM jobs")[0]

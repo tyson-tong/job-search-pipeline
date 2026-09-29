@@ -311,13 +311,13 @@ def _assess(prompt: str) -> tuple[str, str]:
 
 
 @pytest.mark.parametrize("cvs, answer, message", [
-    # Saving an answer listing no requirements would fix the score at 0 for good.
+    # Saving an answer listing no requirements would fix the score at 0 until the CV changes.
     (["dev"], lambda prompt: ('{"requirements": []}', "m"), "no requirements"),
-    # Saving the one CV that worked would leave the job scored without the other, for good.
+    # Saving the one CV that worked would leave the job scored without the other.
     (["dev", "strat"], _assess, "timed out"),
 ])
 def test_a_failed_assessment_saves_no_score(monkeypatch, cvs, answer, message):
-    # A job is scored only once, so anything saved is final.
+    # A score stands until you edit the CV and rescore, so nothing may be saved from a failure.
     from jobflow.candidate import matching
 
     class Conn:

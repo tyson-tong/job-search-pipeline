@@ -434,8 +434,10 @@ function renderRows() {
       selectable ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
         el("input", { type: "checkbox", checked: state.selected.has(job.id), "aria-label": `Select ${job.title}` })) : null,
       selectable ? null : el("td", {}, el("span", { className: "score" + scoreClass,
-        title: job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored: only interested jobs are scored" },
-        score == null ? "–" : score)),
+        title: (job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored: only interested jobs are scored")
+          + (job.outdated.length ? `. Scored against an earlier version of ${job.outdated.join(" and ")}: `
+            + "Rescore edited CVs updates it" : "") },
+        score == null ? "–" : score + (job.outdated.length ? "*" : ""))),
       el("td", {},
         el("button", { className: "title-btn", onclick: () => openDetail(job.id) }, job.title),
         el("div", { className: "meta" }, [job.company, job.location].filter(Boolean).join(" · ")),
@@ -554,6 +556,11 @@ function renderScoring() {
   // Interested jobs, the only ones scored, live in My jobs: saving one moves it out of the Inbox.
   button.hidden = state.view !== "jobs";
   button.disabled = running || !unscored;
+  // Scores made against a CV you've edited since; only shown when there are some.
+  const rescore = document.getElementById("rescore-btn"), outdated = (state.summary || {}).outdated;
+  rescore.hidden = state.view !== "jobs" || !outdated || !outdated.jobs;
+  rescore.disabled = running;
+  if (outdated && outdated.jobs) rescore.textContent = `Rescore edited CVs (${outdated.jobs})`;
   // Only a configuration problem needs explaining, usually the CVs chosen in
   // config/profile.toml; it stops tailor-cv, cover-letter, skill-gaps, and interview-prep too.
   button.title = problem ? `Scoring unavailable: ${problem}` : "";
@@ -588,6 +595,12 @@ document.getElementById("score-btn").addEventListener("click", () => {
   const jobs = state.summary.unscored, cvs = state.summary.cv_variants.length;
   startScoring({}, `Score ${jobs} interested job${jobs === 1 ? "" : "s"} against each of your CVs it has no score for?`
     + `\n\nThis makes at most ${jobs * cvs} LLM call${jobs * cvs === 1 ? "" : "s"}, newest jobs first. You can keep working while it runs.`);
+});
+document.getElementById("rescore-btn").addEventListener("click", () => {
+  const { jobs, calls } = state.summary.outdated;
+  startScoring({ rescore: true }, `Rescore ${jobs} interested job${jobs === 1 ? "" : "s"} against the CVs you've edited `
+    + `since ${jobs === 1 ? "it was" : "they were"} scored?\n\nThis makes ${calls} LLM call${calls === 1 ? "" : "s"}`
+    + " (and scores any CV a job has no score against yet). Scores against CVs you haven't edited are kept.");
 });
 async function copyCommand(text) {
   try { await navigator.clipboard.writeText(text); toast("Copied: " + text); }
@@ -737,6 +750,8 @@ function renderDetail() {
   const inProgress = job.duplicates.filter((d) => ["applied", "interviewing", "offered", "accepted"].includes(d.status));
   // The CVs named in config/profile.toml this job has no score against yet.
   const unscored = state.summary.cv_variants.filter((v) => !job.matches.some((m) => m.variant === v));
+  // The CVs edited since this job was scored against them.
+  const outdated = job.matches.filter((m) => m.outdated).map((m) => m.variant);
   drawer.hidden = false;
   fill(drawer, [
     el("button", { className: "close", "aria-label": "Close", onclick: closeDetail }, "×"),
@@ -770,6 +785,10 @@ function renderDetail() {
         ? el("button", { className: "btn small", disabled: Boolean(state.scoring && state.scoring.running),
             title: "Ask the LLM to compare this job with each CV", onclick: () =>
               startScoring({ job_ids: [job.id] }) }, "Score")
+        : job.status === "interested" && outdated.length
+        ? el("button", { className: "btn small", disabled: Boolean(state.scoring && state.scoring.running),
+            title: "Ask the LLM to compare this job again with each CV you've edited since", onclick: () =>
+              startScoring({ job_ids: [job.id], rescore: true }) }, "Rescore")
         : null),
     job.matches.map(renderMatch),
     job.status === "interested" && unscored.length
@@ -819,6 +838,7 @@ function renderMatch(m) {
       r.note ? el("span", { className: "q" }, ` (${r.note})`) : null)))] : null;
   return el("div", { className: "match" },
     el("strong", {}, `${m.variant}: ${Math.round(m.score)}/100`),
+    m.outdated ? el("span", { className: "meta" }, " (scored against an earlier version of this CV)") : null,
     m.rationale ? el("div", { className: "meta" }, m.rationale) : null,
     items("Matched", m.matched, true), items("Partial", m.partial, true),
     items("Not evidenced in this CV (not proof you lack it)", m.not_evidenced, false));

@@ -44,6 +44,30 @@ VERSION_SQL = """(extract(epoch from greatest(j.status_updated_at,
                   * 1000000)::bigint::text"""
 
 
+def _digests_now() -> dict[str, str]:
+    """Each named CV's digest now, to tell which scores are from an earlier version of it;
+    empty when the CVs can't be read (the page explains that problem separately)."""
+    from ..candidate.matching import current_digests
+    try:
+        return current_digests()
+    except Exception:
+        return {}
+
+
+def _outdated(conn, job_ids: list[int], digests: dict[str, str]) -> dict[int, list[str]]:
+    """{job id: the CVs whose latest score for it is from an earlier version of the CV}."""
+    if not job_ids or not digests:
+        return {}
+    outdated: dict[int, list[str]] = {}
+    for job_id, variant, digest in conn.execute(
+            """SELECT DISTINCT ON (job_id, cv_variant) job_id, cv_variant, cv_sha256
+               FROM match_assessments WHERE job_id = ANY(%s)
+               ORDER BY job_id, cv_variant, created_at DESC""", (job_ids,)).fetchall():
+        if variant in digests and digest != digests[variant]:
+            outdated.setdefault(job_id, []).append(variant)
+    return outdated
+
+
 class InvalidChange(ValueError):
     pass
 
@@ -154,8 +178,12 @@ def list_jobs(filters: dict) -> list[dict]:
         for job in jobs:
             job["currency"] = CURRENCIES.get(job["country"])
         duplicates = similar_jobs(conn, [job["id"] for job in jobs])
+        outdated = _outdated(conn, [job["id"] for job in jobs if job["score"] is not None],
+                             _digests_now())
     now_today = today()
     for job in jobs:
+        # CVs edited since this job was scored against them: its score may be out of date.
+        job["outdated"] = outdated.get(job["id"], [])
         similar = duplicates.get(job["id"], [])
         dups = [d for d in similar if d["same_country"]]
         job["duplicates"] = dups
@@ -247,15 +275,21 @@ def summary() -> dict:
             (today(), CLOSED_STATUSES)).fetchone()[0]
     # Scoring reads your CV files; a missing CV folder shouldn't break the rest of the page.
     from ..candidate.cvs import chosen_sources
-    from ..candidate.matching import count_needing_match
+    from ..candidate.matching import count_needing_match, current_digests, outdated_scores
     try:
         variants = list(chosen_sources())
         unscored, scoring_problem = count_needing_match(variants), None
+        # Scores against a CV edited since, which Rescore edited CVs updates: one LLM
+        # call per (job, CV).
+        pairs = outdated_scores(current_digests())
+        outdated = {"jobs": len({job_id for job_id, _ in pairs}), "calls": len(pairs)}
     except Exception as exc:
         variants, unscored, scoring_problem = [], None, str(exc)
+        outdated = {"jobs": 0, "calls": 0}
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,
             "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,
             "default_statuses": DEFAULT_STATUSES, "cv_variants": variants, "unscored": unscored,
+            "outdated": outdated,
             "scoring_problem": scoring_problem, "max_rows": MAX_ROWS}
 
 
@@ -287,6 +321,9 @@ def job_detail(job_id: int) -> dict | None:
                    FROM match_assessments WHERE job_id=%s
                    ORDER BY cv_variant, created_at DESC""", (job_id,)).fetchall()]
         job["matches"].sort(key=lambda m: m["score"], reverse=True)
+        stale = _outdated(conn, [job_id], _digests_now()).get(job_id, [])
+        for match in job["matches"]:
+            match["outdated"] = match["variant"] in stale
         job["history"] = [dict(zip(("from_status", "to_status", "via", "changed_at"), r, strict=True))
                           for r in conn.execute(
             """SELECT from_status, to_status, via, changed_at FROM status_history

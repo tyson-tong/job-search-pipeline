@@ -115,10 +115,17 @@ def _cached_assessments(conn, job_id: int) -> dict[str, dict]:
     return cached
 
 
-def _assessed(conn, job_id: int) -> set[str]:
-    """The CVs the job has been assessed against, in any format."""
-    return {row[0] for row in conn.execute(
-        "SELECT DISTINCT cv_variant FROM match_assessments WHERE job_id=%s", (job_id,)).fetchall()}
+def _latest_digests(conn, job_id: int) -> dict[str, str]:
+    """{CV: the digest of the CV text its latest assessment used}, in any format."""
+    return dict(conn.execute(
+        """SELECT DISTINCT ON (cv_variant) cv_variant, cv_sha256 FROM match_assessments
+           WHERE job_id=%s ORDER BY cv_variant, created_at DESC""", (job_id,)).fetchall())
+
+
+def current_digests() -> dict[str, str]:
+    """{CV: the digest of its text now}, for the CVs cvs in config/profile.toml names: a
+    score whose cv_sha256 differs was made against an earlier version of that CV."""
+    return {variant: cv_digest(source) for variant, source in chosen_sources().items()}
 
 
 def stored_assessments(conn, job_id: int, weights: tuple[float, float]) -> list[dict]:
@@ -127,23 +134,25 @@ def stored_assessments(conn, job_id: int, weights: tuple[float, float]) -> list[
                     weights) for variant, hit in _cached_assessments(conn, job_id).items()]
 
 
-def match_job(job_id: int) -> list[dict]:
+def match_job(job_id: int, rescore: bool = False) -> list[dict]:
     """The job's assessment against each CV cvs in config/profile.toml names, scoring it
     first against any of them it has no score for (all at once).
 
-    A job is scored once against each CV and never again, even after that CV's content
-    changes; a CV named later (added, or renamed) is scored for it the next time. Only an
-    Interested job is scored. Returns every stored assessment, recomputed with the current
-    profile weights, including any against CVs no longer named.
+    A job is scored once against each CV, and again after that CV's content changes only
+    when you ask (rescore: the tracker's Rescore edited CVs); a CV named later (added, or
+    renamed) is scored for it the next time. Only an Interested job is scored. Returns
+    every stored assessment, recomputed with the current profile weights, including any
+    against CVs no longer named.
     """
     weights = matching_weights()
     with connect() as conn:
-        assessed = _assessed(conn, job_id)
+        assessed = _latest_digests(conn, job_id)
         status = conn.execute("SELECT status FROM jobs WHERE id=%s", (job_id,)).fetchone()
     if not status:
         raise RuntimeError(f"No job with database id {job_id}")
     sources = {variant: source for variant, source in chosen_sources().items()
-               if variant not in assessed}
+               if variant not in assessed
+               or (rescore and assessed[variant] != cv_digest(source))}
     if sources and status[0] != "interested":
         if assessed:   # scored while Interested: it keeps what it has
             sources = {}
@@ -160,7 +169,7 @@ def match_job(job_id: int) -> list[dict]:
         return stored
     job = fetch_job(job_id)
     for variant, source in sources.items():
-        # A job is scored only once, so a score from part of a CV would stand for good.
+        # A score stands until the CV changes, so one from part of a CV would stand too.
         if len(source) > CV_CHAR_LIMIT:
             raise RuntimeError(f"CV {variant!r} is {len(source)} characters; over "
                                f"{CV_CHAR_LIMIT} it would be truncated and evidence later in "
@@ -178,7 +187,7 @@ def match_job(job_id: int) -> list[dict]:
         result = parse_json(content)
         items = normalise_requirements(result.get("requirements"), source)
         if not items:
-            # A job is scored only once, so saving this would fix its score at 0 for good.
+            # A score stands until the CV changes, so saving this would fix it at 0.
             raise RuntimeError(f"The LLM listed no requirements for CV {variant!r}; nothing "
                                "was saved, so the job can be scored again")
         return _record(variant, digest, items, str(result.get("rationale") or ""), model, weights)
@@ -187,14 +196,16 @@ def match_job(job_id: int) -> list[dict]:
     with ThreadPoolExecutor(max_workers=len(sources)) as pool:
         results = list(pool.map(assess, sources, sources.values()))
     # Saved together, only once every CV is assessed: a job scored against only one of two
-    # CVs would look as good as scored, so a failure part-way must save none.
+    # CVs would look as good as scored, so a failure part-way must save none. A rescore
+    # adds a row; the latest row per CV is the job's score against it.
     with connect() as conn:
         # Another process (a second tracker, or tailor-cv) may have scored this job while
         # the LLM calls ran. Lock the job and keep whichever score was saved first.
         conn.execute("SELECT 1 FROM jobs WHERE id=%s FOR UPDATE", (job_id,))
-        assessed = _assessed(conn, job_id)
+        assessed = _latest_digests(conn, job_id)
         for record in results:
-            if record["variant"] in assessed:
+            already = assessed.get(record["variant"])
+            if already is not None and (not rescore or already == record["cv_sha256"]):
                 continue
             conn.execute(
                 """INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score,
@@ -234,6 +245,27 @@ def jobs_needing_match(variants: list[str], only: list[int] | None = None) -> li
 def count_needing_match(variants: list[str]) -> int:
     with connect() as conn:
         return conn.execute(f"SELECT count(*) {UNSCORED_SQL}", {"variants": variants}).fetchone()[0]
+
+
+# Each Interested job's latest score against each CV named whose text has changed since:
+# (job id, CV) pairs, the %(digests)s being each CV's digest now, in %(variants)s' order.
+OUTDATED_SQL = """SELECT j.id, cv.variant FROM jobs j
+    CROSS JOIN unnest(%(variants)s::text[], %(digests)s::text[]) AS cv(variant, digest)
+    JOIN LATERAL (SELECT m.cv_sha256 FROM match_assessments m
+                  WHERE m.job_id = j.id AND m.cv_variant = cv.variant
+                  ORDER BY m.created_at DESC LIMIT 1) latest ON true
+    WHERE j.status = 'interested' AND latest.cv_sha256 <> cv.digest
+      AND (%(only)s::bigint[] IS NULL OR j.id = ANY(%(only)s))
+    ORDER BY j.first_seen_at DESC"""
+
+
+def outdated_scores(digests: dict[str, str], only: list[int] | None = None) -> list[tuple[int, str]]:
+    """(job id, CV) for each Interested job's score made against an earlier version of
+    that CV (digests: current_digests()), newest job first; limited to `only` when given."""
+    with connect() as conn:
+        return [tuple(row) for row in conn.execute(
+            OUTDATED_SQL, {"variants": list(digests), "digests": list(digests.values()),
+                           "only": only}).fetchall()]
 
 
 def best_variant(results: list[dict]) -> dict:

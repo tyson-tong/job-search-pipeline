@@ -373,11 +373,13 @@ def run_clean_up(args: argparse.Namespace) -> None:
 
 
 def run_skill_gaps(args: argparse.Namespace) -> None:
-    from .candidate.skill_gaps import report
+    from .candidate.skill_gaps import outdated_note, report
     from .db import migrate
     check_keys()
     migrate()
-    target, skills = report()
+    target, skills, outdated = report()
+    if outdated:
+        print(f"warning: {outdated_note(outdated)}", file=sys.stderr)
     for rank, skill in enumerate(skills[:10], 1):
         print(f"{rank:>2}. {skill['skill']}: {skill['jobs']} job{'s' if skill['jobs'] != 1 else ''}"
               f", weight {skill['weight']}")
