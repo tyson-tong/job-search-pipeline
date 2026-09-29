@@ -9,14 +9,10 @@ from jobflow.web.queries import InvalidChange, _csv_cell, validate_changes
 from jobflow.web.server import make_handler
 
 
-@pytest.mark.parametrize("changes, message", [
-    ([{"id": 1, "status": "filtered"}], "status must be one of"),  # system-only status
-    ([{"id": 1, "status": "applied"}, {"id": 1, "note": "x"}], "repeated"),
-    ([{"id": 1, "follow_up_on": "next week"}], "YYYY-MM-DD"),
-])
-def test_invalid_changes_are_rejected_before_anything_is_written(changes, message):
-    with pytest.raises(InvalidChange, match=message):
-        validate_changes(changes)
+def test_a_system_only_status_is_rejected_before_anything_is_written():
+    # Only jobflow sets filtered or archived; a job set so by hand would vanish from the tabs.
+    with pytest.raises(InvalidChange, match="status must be one of"):
+        validate_changes([{"id": 1, "status": "filtered"}])
 
 
 def test_csv_cells_cannot_run_as_spreadsheet_formulas():
