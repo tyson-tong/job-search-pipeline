@@ -14,3 +14,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
 -- Migration ID: 02
 -- tailor-cv, cover-letter, and interview-prep look up each job's latest run of their kind.
 CREATE INDEX IF NOT EXISTS workflow_runs_job_idx ON workflow_runs (job_id, kind, id DESC);
+
+-- Migration ID: 03
+-- Nothing wrote error, and started_at was always the time the row was written.
+ALTER TABLE workflow_runs DROP COLUMN IF EXISTS error, DROP COLUMN IF EXISTS started_at;
