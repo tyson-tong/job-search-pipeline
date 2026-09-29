@@ -186,12 +186,18 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
     filtered = lambda posting: "title contains 'Intern'"
     save_run("linkedin:a", "r1", "d1", [ad("1", "Intern", "2026-09-10", "old")], job_filter=filtered)
     save_run("linkedin:a", "r2", "d2", [ad("2", "Intern", "2026-09-18", "recent")], job_filter=filtered)
+    save_run("linkedin:a", "r9", "d9", [ad("9", "Intern", "2026-08-20", "late")], job_filter=filtered)
     save_run("linkedin:a", "r3", "d3", [ad("3", "Analyst", "2026-09-01", "inbox")])
     save_run("linkedin:a", "r5", "d5", [ad("5", "Trader", "2026-09-01", "dropped"),
                                          ad("6", "Quant", "2026-09-01", "fresh"),
                                          ad("7", "Engineer", "2026-08-01", "stale"),
                                          ad("8", "Developer", "2026-08-01", "returned")])
-    with connect() as conn:   # marked not interested: job 5 on 09-10, job 6 on 09-20
+    with connect() as conn:
+        # Each first seen on its posted date, except job 9: posted on 08-20, first seen on
+        # 09-20 (in a month-long search), so it still gets its 2 weeks in Filtered.
+        conn.execute("UPDATE jobs SET first_seen_at = posted_at WHERE source_job_id <> '9'")
+        conn.execute("UPDATE jobs SET first_seen_at = '2026-09-20' WHERE source_job_id = '9'")
+        # Marked not interested: job 5 on 09-10, job 6 on 09-20.
         for job_id, marked in (("5", "2026-09-10"), ("6", "2026-09-20")):
             conn.execute("UPDATE jobs SET status='not_interested', status_updated_at=%s "
                          "WHERE source_job_id=%s", (marked, job_id))
@@ -207,7 +213,7 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
     with connect() as conn:
         statuses = dict(conn.execute("SELECT source_job_id, status FROM jobs").fetchall())
     assert statuses == {"1": "archived", "2": "filtered", "3": "new", "5": "archived",
-                        "6": "not_interested", "7": "archived", "8": "new"}
+                        "6": "not_interested", "7": "archived", "8": "new", "9": "filtered"}
     assert sorted(_rows("SELECT from_status, via FROM status_history")) == [
         ("filtered", "archive"), ("new", "archive"), ("not_interested", "archive")]
     # Still a known job: seeing it again adds no new one, and it stays archived.

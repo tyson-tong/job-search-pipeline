@@ -35,8 +35,8 @@ from .sources import Posting, normalise, seek_url
 
 JobFilter = Callable[[Posting], "str | None"]
 
-# A filtered job this long past its posted date, or a job this long after you marked it
-# Not interested, is archived (see archive_old_jobs).
+# A filtered job this long past its posted date (or the date first seen, if later), or a job
+# this long after you marked it Not interested, is archived (see archive_old_jobs).
 ARCHIVE_AFTER = timedelta(days=14)
 # An Inbox job you haven't triaged is archived once it was posted this long ago and has
 # been in the Inbox this long (a job moved back to the Inbox starts again).
@@ -353,9 +353,9 @@ def restore_filtered_jobs(searches: list, dry_run: bool = False,
 
 def archive_old_jobs(today: date | None = None) -> int:
     """Move jobs out of the Filtered, Not interested, and Inbox tabs, to status 'archived':
-    a filtered job ARCHIVE_AFTER past its posted date (or, with none, the date first seen),
-    a job ARCHIVE_AFTER after you marked it Not interested, and an Inbox job you never
-    triaged, posted and in the Inbox for INBOX_ARCHIVE_AFTER. They stay in the database
+    a filtered job ARCHIVE_AFTER past its posted date or the date first seen, whichever is
+    later, a job ARCHIVE_AFTER after you marked it Not interested, and an Inbox job you
+    never triaged, posted and in the Inbox for INBOX_ARCHIVE_AFTER. They stay in the database
     and still match as duplicates, so a repost stays out of the Inbox; the tracker shows
     them in no tab. Returns how many were archived."""
     from ..db import connect
@@ -366,7 +366,10 @@ def archive_old_jobs(today: date | None = None) -> int:
             """WITH moved AS (
                    UPDATE jobs j SET status='archived', status_updated_at=now()
                    FROM (SELECT id, status FROM jobs
-                         WHERE (status = 'filtered' AND coalesce(posted_at, first_seen_at::date) < %(cutoff)s)
+                         -- A filtered job first seen well after it was posted (in a
+                         -- month-long window, say) still gets its 2 weeks in the Filtered tab.
+                         WHERE (status = 'filtered'
+                                AND greatest(posted_at, first_seen_at::date) < %(cutoff)s)
                             OR (status = 'not_interested' AND status_updated_at::date < %(cutoff)s)
                             OR (status = 'new' AND coalesce(posted_at, first_seen_at::date) < %(inbox_cutoff)s
                                 AND status_updated_at::date < %(inbox_cutoff)s)
