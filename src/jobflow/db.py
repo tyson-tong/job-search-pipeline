@@ -5,6 +5,7 @@ import re
 from importlib import resources
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "offered",
             "accepted", "declined", "rejected", "withdrawn", "filtered", "archived")
@@ -18,16 +19,42 @@ CLOSED_STATUSES = ["not_interested", "accepted", "declined", "rejected", "withdr
 APPLIED_STATUSES = ["applied", "interviewing", "offered", "accepted", "declined"]
 
 
+# Database hosts on this machine, which may be reached without encryption.
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+# The sslmode values that never fall back to an unencrypted connection.
+ENCRYPTED_SSLMODES = ("require", "verify-ca", "verify-full")
+
+
+def encrypted_url(url: str) -> str:
+    """DATABASE_URL, made to require encryption for a database on another machine: the
+    connection carries its password and your job data. With no sslmode, psycopg's default
+    ("prefer") quietly connects unencrypted when the server (or anyone in between) allows
+    it; so a missing sslmode becomes require, and a weaker one is refused."""
+    params = conninfo_to_dict(url)
+    hosts = (params.get("host") or os.environ.get("PGHOST") or "").split(",")
+    # No host, or a folder, is a Unix socket on this machine.
+    if all(not host or host.startswith("/") or host in LOCAL_HOSTS for host in hosts):
+        return url
+    mode = params.get("sslmode") or os.environ.get("PGSSLMODE")
+    if mode is None:
+        return make_conninfo(url, sslmode="require")
+    if mode not in ENCRYPTED_SSLMODES:
+        raise RuntimeError(f"DATABASE_URL has sslmode={mode}, which can connect unencrypted; "
+                           "use sslmode=require (or verify-full) for a database on another machine")
+    return url
+
+
 def connect():
     """A connection in settings.timezone(), so the dates the database works out (a
-    timestamp's day) and the timestamps it returns match the rest of jobflow's."""
+    timestamp's day) and the timestamps it returns match the rest of jobflow's; encrypted
+    unless the database is on this machine (encrypted_url)."""
     from .settings import timezone
 
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL is required")
     zone = timezone().key
-    conn = psycopg.connect(url)
+    conn = psycopg.connect(encrypted_url(url))
     conn.execute("SELECT set_config('TimeZone', %s, false)", (zone,))
     conn.commit()
     return conn

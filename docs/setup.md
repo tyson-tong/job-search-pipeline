@@ -38,7 +38,7 @@ Any PostgreSQL database reachable from the internet works (Supabase, Amazon RDS,
 
 1. Sign up at [neon.tech](https://neon.tech) and create a project. Choose the region nearest to you; the tracker talks to the database on every page load.
 2. Open the project's **Connect** (connection details) panel and copy the connection string. Use the **direct** connection, not the pooled one (the pooled host name contains `-pooler`): the direct one is the one this project is tested with, and the pooled one would lose the lock that stops two runs of `tailor-cv` (or `cover-letter`, or `interview-prep`) from working on the same jobs at once.
-3. Make sure the string ends with `sslmode=require` (Neon's usually does), so the connection is encrypted.
+3. Make sure the string ends with `sslmode=require` (Neon's usually does), so the connection is encrypted. jobflow insists on it for a database on another machine: with no `sslmode` it uses `require`, and it refuses a weaker one (`disable`, `allow`, or `prefer`, which can all connect unencrypted).
 4. In `config/.env`:
 
    ```

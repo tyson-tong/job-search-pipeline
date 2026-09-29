@@ -99,6 +99,22 @@ def test_reviewer_llm_settings_fall_back_but_never_leak_the_main_key(monkeypatch
     assert base_url() == "http://localhost:11434/v1"
 
 
+def test_a_database_on_another_machine_is_only_reached_encrypted():
+    # With no sslmode, psycopg connects unencrypted when allowed, sending the password and
+    # every job in the clear.
+    from psycopg.conninfo import conninfo_to_dict
+
+    from jobflow.db import encrypted_url
+
+    remote = conninfo_to_dict(encrypted_url("postgresql://u:secret@ep-x.neon.tech/db"))
+    assert remote["sslmode"] == "require" and remote["password"] == "secret"
+    with pytest.raises(RuntimeError, match="sslmode=disable") as caught:
+        encrypted_url("postgresql://u:secret@db.example/db?sslmode=disable")
+    assert "secret" not in str(caught.value)
+    local = "postgresql://postgres:pw@127.0.0.1:5432/postgres"
+    assert encrypted_url(local) == local   # a test database on this machine
+
+
 def test_llm_retries_rate_limits_but_not_an_empty_balance(monkeypatch):
     # Both come back as HTTP 429 from OpenAI: a rate limit passes if you wait, an empty
     # balance never does and must stop a batch rather than fail every job in turn.
