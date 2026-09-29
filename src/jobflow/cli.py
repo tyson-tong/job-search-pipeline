@@ -97,8 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
                         "those cvs in config/profile.toml names, by file name or short name; "
                         "defaults to each job's best-matching CV (an unscored job is scored "
                         "first)")
-    command("interview-prep", run_interview_prep, "Generate an interview briefing HTML for every "
-            "Interviewing job that doesn't have one yet")
+    prep = command("interview-prep", run_interview_prep, "Generate an interview briefing HTML "
+                   "for every Interviewing job that doesn't have one yet")
+    for each_job in (tailor, letter, prep):
+        each_job.add_argument("--job", type=positive_int, action="append", metavar="ID",
+                              help="Only this job, by the number the tracker's job panel shows "
+                              "(#42); repeat for several")
     command("skill-gaps", run_skill_gaps, "Report the skills your CVs don't show that scored "
             "Interested jobs ask for most, with how to close each gap")
     command("clean-up", run_clean_up, "Delete the output folders of Not interested, Withdrawn, "
@@ -246,7 +250,8 @@ def manual(commands: dict[str, argparse.ArgumentParser], command: str | None = N
         section("NOTES", para(
             "tailor-cv, cover-letter, and interview-prep work on two jobs at a time and skip "
             "jobs they've already done (a job that failed, whose draft failed the fact "
-            "check, or whose draft, letter, or briefing was deleted is tried again). Only "
+            "check, or whose draft, letter, or briefing was deleted is tried again); --job "
+            "ID limits them to one job (or a few), by its number in the job panel. Only "
             "one run of each can go at a time. Every command except init, help, and status "
             "brings the database tables up to date when it starts.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
@@ -322,7 +327,7 @@ def run_tailor_cv(args: argparse.Namespace) -> None:
 
     for_jobs("interested", "tailor", "a tailored CV", tailor_one,
              lambda folder: any(folder.glob("CV_*_draft.yaml")), cv_fixed_by_hand,
-             add_requested_format if args.format != "pdf" else None)
+             add_requested_format if args.format != "pdf" else None, only=args.job)
 
 
 def run_cover_letter(args: argparse.Namespace) -> None:
@@ -344,7 +349,8 @@ def run_cover_letter(args: argparse.Namespace) -> None:
                             "with your application.")
 
     for_jobs("interested", "cover-letter", "a cover letter", letter_one,
-             lambda folder: (folder / "cover-letter.docx").exists(), letter_fixed_by_hand)
+             lambda folder: (folder / "cover-letter.docx").exists(), letter_fixed_by_hand,
+             only=args.job)
 
 
 def run_interview_prep(args: argparse.Namespace) -> None:
@@ -356,7 +362,7 @@ def run_interview_prep(args: argparse.Namespace) -> None:
     check_keys(web_search=True)
     migrate()
     for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)),
-             lambda folder: (folder / "interview-prep.html").exists())
+             lambda folder: (folder / "interview-prep.html").exists(), only=args.job)
 
 
 def run_clean_up(args: argparse.Namespace) -> None:

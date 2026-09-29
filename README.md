@@ -35,6 +35,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
    uv run jobflow tailor-cv --cv CV_dev.yaml   # or use one of your cvs for all (or --cv dev)
    uv run jobflow tailor-cv --max-pages 2   # allow 2 pages (default 1)
    uv run jobflow tailor-cv --format docx   # also write the CV as docx or latex
+   uv run jobflow tailor-cv --job 42        # only job #42 (its number is in the job panel)
    ```
 
    It works from your best-matching RenderCV YAML CV (CVs in other formats are scored, not tailored). For each job it drafts the CV; a reviewer, playing the hiring manager (with company research from Tavily, if set up), then critiques and revises it. The revision is kept only if it passes the fact check at least as well as the first draft. It writes `CV_<variant>_draft.yaml`, the PDF of it rendered by RenderCV (`CV_<variant>_draft.pdf`), and `CV_REVIEW.md` (the fact check and the reviewer's critique, with a `CV_REVIEW.docx` copy) to `output/<company>/<role>-<job-id>/`. If the draft runs past 1 page (or `--max-pages N`) as RenderCV lays it out, it cuts the bullets least relevant to the job until it fits (listed in `CV_REVIEW.md`, so you can restore any), and it warns about a page left mostly empty because a long entry moved to the next one. Read the PDF line by line before you send it; if you edit the YAML, render it again from that folder with `uv run rendercv render CV_<variant>_draft.yaml`. A draft with fact-check errors gets no PDF: fix the YAML and render it yourself. `--format` also writes the CV as `docx` or `latex` (a `.tex` to compile with lualatex) if the check found no errors. The `.docx` and `.tex` are laid out in code from the checked YAML, not by the LLM, so they say exactly what passed the check; they're fitted to RenderCV's page count, so check theirs in the program you open them with. An unscored job is scored first. For a job tailored before, `--format docx` or `latex` just adds that file, laid out from its YAML draft (after checking it again, in case you edited it), with no LLM call; if you've edited the draft since that file was written, it's written again.
@@ -51,7 +52,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
 - **Tabs:** **Inbox** (new jobs; one you haven't triaged 30 days after it was posted is archived), **My jobs** (Interested onwards; the status menu picks which statuses, **Default** restores them), **Filtered** (jobs your search filters kept out, with the reason; **Move to Inbox** brings one back; once a job is more than 2 weeks past its posted date, it's archived: kept in the database, still recognised if it's posted again, but in no tab), **Not interested** (jobs you marked so; **Move to Inbox** brings one back; 2 weeks after you marked it, it's archived the same way), and **Searches** (checks your searches file).
 - **Filters** under the column headings: minimum match score, a title/company/location search, country and site (tick several, or **All** or **None**), when the job was posted (past day, week, 2 weeks, or month, or over a month ago), and a minimum salary in US dollars (converted from each job's currency; jobs without a salary are kept). Click **Posted** or **Salary** to sort, again to reverse. **Export CSV (All)** exports every job in the tab (in My jobs, those with the chosen statuses), ignoring the other filters; **Export CSV (Filtered)** exports just the rows on the page you're viewing. Filters and sorting cover every job; the results are then shown 5 to 100 per page (the menu beside the job count), with similar jobs kept together on one page.
-- **Job panel** (click a title): the ad, links to each site it's listed on, why it scored as it did, similar jobs, notes, status history, and the tailor-cv, cover-letter, and interview-prep commands, ready to copy.
+- **Job panel** (click a title): the ad, links to each site it's listed on, why it scored as it did, similar jobs, notes, status history, and the tailor-cv and cover-letter commands (for an Interested job) or interview-prep (for an Interviewing one) with `--job` and the job's number, ready to copy. The number (`Job #42`) is at the top of the panel, and at the end of the job's output folder name.
 - **Similar jobs** sit together with an orange bar ("highly similar" or "similar"; a similar job not in the list shown is counted with where it is, such as "1 highly similar (Filtered)"), and a row warns if it may be a role you've already applied for; the same ad in another country sits alongside with a blue bar. See [rules](docs/rules.md#similar-jobs).
 - **Saving is safe:** the page refreshes itself (never over unsaved drafts), and if a job was changed elsewhere since you loaded it, Save writes nothing and shows what changed.
 
@@ -70,9 +71,9 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | Command | What it does |
 |---|---|
 | `jobflow web [--port N]` | The job tracker in your browser |
-| `jobflow tailor-cv [--cv VARIANT] [--max-pages N] [--format pdf\|docx\|latex]` | A reviewed, fact-checked CV (YAML and PDF) for each Interested job without one |
-| `jobflow cover-letter [--cv VARIANT]` | Optional: a reviewed, fact-checked cover letter for each Interested job without one |
-| `jobflow interview-prep` | An interview briefing for each Interviewing job without one |
+| `jobflow tailor-cv [--job ID] [--cv VARIANT] [--max-pages N] [--format pdf\|docx\|latex]` | A reviewed, fact-checked CV (YAML and PDF) for each Interested job without one |
+| `jobflow cover-letter [--job ID] [--cv VARIANT]` | Optional: a reviewed, fact-checked cover letter for each Interested job without one |
+| `jobflow interview-prep [--job ID]` | An interview briefing for each Interviewing job without one |
 | `jobflow skill-gaps` | The skills your scored Interested jobs ask for that your CVs don't show |
 | `jobflow clean-up` | Delete the output folders of Not interested, Withdrawn, Declined, Rejected, and Archived jobs, after you confirm (the jobs stay in the tracker) |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
@@ -81,7 +82,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | `jobflow init` | Create your settings files (first time only) |
 | `jobflow help [COMMAND]` | Every command with its options, like a manual page (or one command's; `COMMAND -h` works too) |
 
-`tailor-cv`, `cover-letter`, and `interview-prep` work on two jobs at a time, printing each job's output together once it's done. Only one run of each can go at a time: start a second (in another terminal, say) and it stops, saying the first is still running.
+`tailor-cv`, `cover-letter`, and `interview-prep` work through every job at their status, or only the ones `--job` names (repeat it for several), two jobs at a time, printing each job's output together once it's done. Only one run of each can go at a time: start a second (in another terminal, say) and it stops, saying the first is still running.
 
 Every command except `init`, `help`, and `status` brings the database tables up to date when it starts. `tailor-cv`, `cover-letter`, `interview-prep`, and `skill-gaps` check your LLM (and, for `interview-prep`, Tavily) settings before starting any job.
 

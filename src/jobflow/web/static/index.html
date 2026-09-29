@@ -980,7 +980,7 @@ function renderDetail() {
   fill(drawer, [
     el("button", { className: "close", "aria-label": "Close", onclick: closeDetail }, "×"),
     el("h2", {}, job.title),
-    el("div", { className: "meta" }, [job.company, job.location, fmtSalary(job.salary_min, job.salary_max, job.currency)]
+    el("div", { className: "meta" }, [`Job #${job.id}`, job.company, job.location, fmtSalary(job.salary_min, job.salary_max, job.currency)]
       .filter(Boolean).join(" · ")),
     el("div", { className: "meta" }, `Posted ${fmtDate(job.posted_at) || "unknown"} · added ${fmtDate(job.first_seen_at)}`
       + (job.applied_at ? ` · applied ${fmtDate(job.applied_at)}` : "")),
@@ -1015,12 +1015,8 @@ function renderDetail() {
       ? el("p", { className: "meta" }, `Not scored yet against ${unscored.join(", ")}.`)
       : !job.matches.length ? el("p", { className: "meta" },
           "Not scored: only interested jobs are scored. Mark it interested and save to score it.") : null,
-    el("div", { className: "next" }, el("strong", {}, "Next steps (in a terminal)"),
-      [["uv run jobflow tailor-cv", "Tailored CV drafts"],
-       ["uv run jobflow cover-letter", "Cover letters (optional)"],
-       ["uv run jobflow interview-prep", "Interview briefings"]].map(([command, what]) =>
-        el("div", { className: "cmd" }, el("span", { className: "meta", style: "min-width:120px" }, what),
-          el("code", {}, command), el("button", { className: "btn small", onclick: () => copyCommand(command) }, "Copy")))),
+    el("div", { className: "next" }, el("strong", {}, "Next steps for this job (in a terminal)"),
+      nextSteps(job)),
     similarList("Highly similar jobs", job.duplicates.filter((d) => d.level === "highly similar")),
     similarList("Similar jobs", job.duplicates.filter((d) => d.level !== "highly similar")),
     similarList("Same ad in other countries", job.elsewhere),
@@ -1033,6 +1029,20 @@ function renderDetail() {
       el("button", { className: "btn", onclick: closeDetail }, "Close"),
       el("button", { className: "btn primary", id: "d-save", onclick: () => save() }, "Save"))]);
   renderSaveBar();
+}
+// The commands for this job, by its saved status: tailor-cv and cover-letter work on
+// Interested jobs, interview-prep on Interviewing ones.
+function nextSteps(job) {
+  const steps = { interested: [["tailor-cv", "Tailored CV draft"], ["cover-letter", "Cover letter (optional)"]],
+    interviewing: [["interview-prep", "Interview briefing"]] }[job.status];
+  if (!steps) return el("p", { className: "meta", style: "margin:4px 0 0" },
+    "tailor-cv and cover-letter work on Interested jobs, and interview-prep on Interviewing ones: "
+    + "save one of those statuses to get its command here.");
+  return steps.map(([name, what]) => {
+    const command = `uv run jobflow ${name} --job ${job.id}`;
+    return el("div", { className: "cmd" }, el("span", { className: "meta", style: "min-width:120px" }, what),
+      el("code", {}, command), el("button", { className: "btn small", onclick: () => copyCommand(command) }, "Copy"));
+  });
 }
 function similarList(title, jobs) {
   return jobs.length ? [el("h3", {}, title),

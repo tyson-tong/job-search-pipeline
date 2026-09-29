@@ -231,6 +231,30 @@ def test_a_draft_failing_the_check_after_an_earlier_one_passed_is_drafted_again(
     assert ran == [job_id]
 
 
+def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database, tmp_path,
+                                                                       monkeypatch):
+    # --job 42 must not draft (and pay for) every other Interested job too.
+    from jobflow import batch
+    from jobflow.candidate import paths
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN, {**LINKEDIN, "id": "2", "title": "Quant",
+                                                   "descriptionText": "Price options."},
+                                        {**LINKEDIN, "id": "3", "title": "Trader",
+                                         "descriptionText": "Trade futures."}], country="AU")
+    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    with connect() as conn:
+        conn.execute("UPDATE jobs SET status='interested' WHERE source_job_id <> '3'")
+    monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
+    ran = []
+    batch._run_jobs("interested", "tailor", "a tailored CV", ran.append, lambda folder: False,
+                    only=[ids["2"]])
+    assert ran == [ids["2"]]
+    with pytest.raises(RuntimeError, match=f"#{ids['3']} is new"):
+        batch._run_jobs("interested", "tailor", "a tailored CV", ran.append, lambda folder: False,
+                        only=[ids["3"]])
+    assert ran == [ids["2"]]
+
+
 def test_update_searches_filters_the_inbox_but_not_a_job_moved_back_from_filtered(database):
     from jobflow.ingest.searches import parse_config
     from jobflow.ingest.store import exclude_inbox_jobs
