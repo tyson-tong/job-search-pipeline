@@ -146,7 +146,7 @@ def test_filtered_and_not_interested_jobs_are_archived_after_two_weeks(database)
 
 def test_a_draft_failing_the_check_after_an_earlier_one_passed_is_drafted_again(database, tmp_path,
                                                                                    monkeypatch):
-    from jobflow import cli
+    from jobflow import batch
     from jobflow.candidate import paths
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
@@ -162,7 +162,7 @@ def test_a_draft_failing_the_check_after_an_earlier_one_passed_is_drafted_again(
     folder.mkdir(parents=True)
     (folder / "CV_dev_draft.yaml").write_text("cv: {}")   # the failed draft
     ran = []
-    cli._run_jobs("interested", "tailor", "a tailored CV", ran.append,
+    batch._run_jobs("interested", "tailor", "a tailored CV", ran.append,
                   lambda folder: any(folder.glob("CV_*_draft.yaml")), lambda folder: False)
     assert ran == [job_id]
 

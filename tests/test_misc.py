@@ -61,15 +61,15 @@ def test_update_searches_never_publishes_an_invalid_file(tmp_path, monkeypatch):
     # The daily import reads the published copy, so a typo must stop before gh runs.
     import pytest
 
-    from jobflow import cli, settings
+    from jobflow import github, settings
     from jobflow.ingest.searches import SearchConfigError
 
     broken = tmp_path / "searches.toml"
     broken.write_text('[[search]]\nname = "x"\nterms = ["quant"]\nlocations = { AU = ["Syndey"] }\n')
     monkeypatch.setattr(settings, "searches_file", lambda: broken)
-    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: pytest.fail("published anyway"))
+    monkeypatch.setattr(github.subprocess, "run", lambda *a, **k: pytest.fail("published anyway"))
     with pytest.raises(SearchConfigError, match="unknown AU city"):
-        cli.update_searches()
+        github.update_searches()
 
 
 def test_reviewer_llm_settings_fall_back_but_never_leak_the_main_key(monkeypatch):
@@ -225,7 +225,7 @@ class _Rows:
 
 
 def test_a_bad_key_stops_the_jobs_instead_of_failing_each(monkeypatch, tmp_path):
-    from jobflow import cli, db
+    from jobflow import batch, db
     from jobflow.candidate import paths
     from jobflow.llm import LLMError
 
@@ -240,14 +240,14 @@ def test_a_bad_key_stops_the_jobs_instead_of_failing_each(monkeypatch, tmp_path)
             raise LLMError("Invalid key (LLM provider, HTTP 401)", fatal=True)
 
     with pytest.raises(SystemExit, match="Stopped"):
-        cli._run_jobs("interested", "tailor", "a tailored CV", run_one, lambda folder: True)
+        batch._run_jobs("interested", "tailor", "a tailored CV", run_one, lambda folder: True)
     assert set(tried) <= {1, 2}  # only job 2 may have started alongside job 1
 
 
 def test_a_job_counts_as_done_only_while_its_files_exist(monkeypatch, tmp_path):
     # clean-up deletes folders but not the runs that made them: a job moved back to
     # Interested must be drafted again, not skipped as done.
-    from jobflow import cli, db
+    from jobflow import batch, db
     from jobflow.candidate import paths
 
     conn = _Rows([(1, "Acme", "Analyst", True, True),     # done, folder deleted
@@ -257,7 +257,7 @@ def test_a_job_counts_as_done_only_while_its_files_exist(monkeypatch, tmp_path):
     monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
     (tmp_path / "acme" / "engineer-2").mkdir(parents=True)
     ran, extra = [], []
-    cli._run_jobs("interested", "tailor", "a tailored CV", ran.append,
+    batch._run_jobs("interested", "tailor", "a tailored CV", ran.append,
                   lambda folder: folder.exists(), lambda folder: folder.name == "quant-3",
                   lambda folder: extra.append(folder.name))
     assert ran == [1]

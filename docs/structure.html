@@ -154,6 +154,8 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>settings.py</code></td><td>Reads <code>config/.env</code> (never overriding real environment variables) and <code>config/profile.toml</code>: CV folder, output folders, searches file, scoring weights, timezone.</td></tr>
   <tr><td><code>db.py</code> · <code>migrations/</code></td><td>Connection, schema migrations (applied once each, in order), job lookup, and <code>set_job_state</code>: the one place status, notes, and follow-ups are changed and history recorded.</td></tr>
   <tr><td><code>llm.py</code></td><td>One call to any OpenAI-compatible chat-completions endpoint.</td></tr>
+  <tr><td><code>batch.py</code></td><td>Working through jobs two at a time: which jobs tailor-cv, cover-letter, and interview-prep still have to do, one run of each at a time, and each job's output printed in one piece; also the tracker's scoring runs.</td></tr>
+  <tr><td><code>github.py</code></td><td>The daily import seen from your machine, with the GitHub CLI: <code>update-searches</code> publishes your searches and timezone, <code>status</code> reads back what it uses.</td></tr>
   <tr><td><code>ingest/options.py</code></td><td>Constants: allowed search values (including the countries and their cities) and how each site's actor expresses them.</td></tr>
   <tr><td><code>ingest/searches.py</code></td><td>Loads and validates searches, builds actor inputs, and applies filters after import.</td></tr>
   <tr><td><code>ingest/apify.py</code></td><td>Runs each planned search on Apify and hands the results to the store.</td></tr>
@@ -165,7 +167,8 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>candidate/paths.py</code></td><td>Where a job's files go: <code>output/&lt;company&gt;/&lt;role&gt;-&lt;job id&gt;</code>.</td></tr>
   <tr><td><code>candidate/cvs.py</code></td><td>The 1 or 2 CV files <code>cvs</code> in config/profile.toml names (.yaml, .tex, .docx, .pdf), their text, and shared text helpers.</td></tr>
   <tr><td><code>candidate/matching.py</code></td><td>Evidence-based match scoring: Interested jobs only, each scored once.</td></tr>
-  <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft, the reviewer pass, the fact check, and fitting to --max-pages with RenderCV.</td></tr>
+  <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft, the reviewer pass, the fact check, and the files written.</td></tr>
+  <tr><td><code>candidate/render.py</code></td><td>Rendering a draft with RenderCV, and cutting its least relevant bullets until it fits --max-pages.</td></tr>
   <tr><td><code>candidate/documents.py</code></td><td>CV layouts for --format docx and latex, and the cover letter .docx, all laid out in code from the checked text.</td></tr>
   <tr><td><code>candidate/cover_letter.py</code></td><td>Optional cover letter, its reviewer pass and fact check.</td></tr>
   <tr><td><code>candidate/skill_gaps.py</code></td><td>Skill-gap report from stored match scores.</td></tr>
@@ -284,14 +287,14 @@ applications      42   applied   2026-09-25: Applied via referral</div>
 <div class="table-wrap"><table>
   <tr><th>Command</th><th>Does</th><th>Module</th></tr>
   <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
-  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables, filter Inbox jobs from excluded employers or matching excluded title terms</td><td>cli.py → ingest/store.py</td></tr>
+  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables, filter Inbox jobs from excluded employers or matching excluded title terms</td><td>github.py → ingest/store.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv</code></td><td>Reviewed, fact-checked CVs for Interested jobs</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow cover-letter</code></td><td>Optional reviewed, fact-checked cover letters for Interested jobs</td><td>candidate/cover_letter.py</td></tr>
   <tr><td><code>jobflow interview-prep</code></td><td>Interview briefing HTML for Interviewing jobs</td><td>candidate/interview.py</td></tr>
   <tr><td><code>jobflow clean-up</code></td><td>Delete output folders of Not interested, Withdrawn, Declined, Rejected, and Archived jobs, after you confirm</td><td>cli.py</td></tr>
   <tr><td><code>jobflow help [COMMAND]</code></td><td>Every command with its options, like a manual page (or one command's)</td><td>cli.py</td></tr>
-  <tr><td><code>jobflow status</code></td><td>Show the daily import, read from GitHub: on or off, last run, secrets, whether its searches and timezone match yours, and the sites it calls</td><td>cli.py (gh)</td></tr>
+  <tr><td><code>jobflow status</code></td><td>Show the daily import, read from GitHub: on or off, last run, secrets, whether its searches and timezone match yours, and the sites it calls</td><td>github.py (gh)</td></tr>
   <tr><td><code>jobflow init</code></td><td>Create config/.env, config/profile.toml, and config/searches.toml from the templates (first time only)</td><td>cli.py → settings.py</td></tr>
   <tr><td><code>jobflow skill-gaps</code></td><td>Skill-gap report HTML from scored Interested jobs</td><td>candidate/skill_gaps.py</td></tr>
 </table></div>

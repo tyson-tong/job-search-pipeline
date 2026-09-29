@@ -10,8 +10,9 @@ from jobflow.candidate import cover_letter, review
 from jobflow.candidate.cover_letter import letter_fixed_by_hand
 from jobflow.candidate.factcheck import check_letter, fact_check
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
+from jobflow.candidate.render import bullets, cut_order, without
 from jobflow.candidate.skill_gaps import rank_skills
-from jobflow.candidate.tailoring import bullets, cut_order, cv_fixed_by_hand, without
+from jobflow.candidate.tailoring import cv_fixed_by_hand
 
 CV_TEXT = """cv:
   name: Alex Example
@@ -308,19 +309,19 @@ def test_a_failed_assessment_saves_no_score(monkeypatch, cvs, answer, message):
 def test_cutting_to_fit_cuts_the_fewest_least_relevant_bullets(tmp_path, monkeypatch):
     import yaml
 
-    from jobflow.candidate import tailoring
+    from jobflow.candidate import render
 
     cv = copy.deepcopy(SOURCE_CV)
     cv["sections"]["experiences"][0]["highlights"] += ["Third", "Fourth", "Fifth"]
     cv["sections"]["experiences"].append({"company": "Other Co", "highlights": ["Only bullet"]})
     # One page holds 4 bullets; there are 6. Least relevant first: 4, 3, 2, 1, 0, 5.
-    monkeypatch.setattr(tailoring, "_render", lambda source: source)
-    monkeypatch.setattr(tailoring, "_pdf_pages", lambda source: 1 + (len(bullets(
+    monkeypatch.setattr(render, "render", lambda source: source)
+    monkeypatch.setattr(render, "pdf_pages", lambda source: 1 + (len(bullets(
         yaml.safe_load(source.read_text())["cv"])) > 4))
-    monkeypatch.setattr(tailoring, "_rank_bullets", lambda job, found: [4, 3, 2, 1, 0, 5])
-    monkeypatch.setattr(tailoring, "_page_gaps", lambda pdf: [])
+    monkeypatch.setattr(render, "rank_bullets", lambda job, found: [4, 3, 2, 1, 0, 5])
+    monkeypatch.setattr(render, "page_gaps", lambda pdf: [])
     warnings = []
-    fitted, cut, _ = tailoring._fit(JOB, {"cv": cv}, cv, "CV_dev_draft.yaml", 1, warnings)
+    fitted, cut, _ = render.fit(JOB, {"cv": cv}, cv, "CV_dev_draft.yaml", 1, warnings)
     assert [b["text"] for b in cut] == ["Fifth", "Fourth"] and not warnings
     assert fitted["sections"]["experiences"][1]["highlights"] == ["Only bullet"]
 
