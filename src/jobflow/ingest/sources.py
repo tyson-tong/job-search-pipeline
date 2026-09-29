@@ -88,9 +88,12 @@ def _text(value: object) -> str | None:
 
 
 def html_to_text(value: object) -> str:
+    """The text of an ad, one line per paragraph, list item, or heading, so the job panel
+    shows its structure. Duplicate matching ignores the line breaks."""
     text = re.sub(r"<(br|/p|/li|/h\d|/div)\b[^>]*>", "\n", str(value or ""), flags=re.I)
     text = unescape(re.sub(r"<[^>]+>", " ", text))
-    return re.sub(r"\s+", " ", text).strip()
+    lines = (" ".join(line.split()) for line in text.splitlines())
+    return "\n".join(line for line in lines if line)
 
 
 def to_date(value: object) -> date | None:
