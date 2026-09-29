@@ -213,10 +213,14 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
         for job in jobs:
             # The run is paid for: a posting the database rejects is skipped, not allowed to
             # fail the import of every other posting in it.
+            # A lost connection isn't the posting's fault, and fails every posting after it:
+            # it fails the import, which is then recorded as IMPORT_FAILED.
             try:
                 with conn.transaction():
                     added += save_job(conn, run_pk, job, job_filter, country)
-            except (psycopg.DataError, UnicodeEncodeError) as exc:
+            except (psycopg.OperationalError, psycopg.InterfaceError):
+                raise
+            except (psycopg.Error, UnicodeEncodeError) as exc:
                 title = job.get("title") if isinstance(job, dict) else None
                 print(f"skipped a posting that can't be saved ({title!r}): {exc}", file=sys.stderr)
         return added
