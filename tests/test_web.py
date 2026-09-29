@@ -50,6 +50,8 @@ def test_api_requires_the_token_and_a_local_host(server):
     local = f"127.0.0.1:{port}"
     assert _request(port, "/api/summary", {"Host": local})[0] == 403
     assert _request(port, "/api/summary", {"Host": local, "X-Jobflow-Token": "guess"})[0] == 403
+    # Only in a header: a token in a URL stays in the browser's history.
+    assert _request(port, f"/api/summary?token={token}", {"Host": local})[0] == 403
     # DNS rebinding: a foreign host name pointing at 127.0.0.1 is refused even with a token.
     assert _request(port, "/api/summary", {"Host": "evil.example", "X-Jobflow-Token": token})[0] == 403
     status, _ = _request(port, "/api/save", {"Host": local, "Content-Type": "application/json"},

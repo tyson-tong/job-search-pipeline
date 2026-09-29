@@ -1,7 +1,7 @@
 """A small local-only HTTP server for the web app (jobflow web).
 
-It listens on 127.0.0.1 only. Each start creates a random token that the page sends
-with every API call, and requests must name this machine as the host, so other
+It listens on 127.0.0.1 only. Each start creates a random token that the page sends in
+a header with every API call, and requests must name this machine as the host, so other
 websites open in your browser can't read or change your jobs.
 """
 from __future__ import annotations
@@ -33,8 +33,9 @@ def _json_default(value: object):
 
 def make_handler(token: str, port: int):
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
-    page = (resources.files("jobflow.web") / "static" / "index.html").read_text()
-    page = page.replace("__JOBFLOW_TOKEN__", token)
+    static = resources.files("jobflow.web") / "static"
+    page = (static / "index.html").read_text().replace("__JOBFLOW_TOKEN__", token)
+    script = (static / "app.js").read_bytes()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "jobflow"
@@ -64,11 +65,12 @@ def make_handler(token: str, port: int):
         def _error(self, status: int, message: str) -> None:
             self._json({"error": message}, status)
 
-        def _allowed(self, query: dict) -> bool:
+        def _allowed(self) -> bool:
             if self.headers.get("Host") not in allowed_hosts:
                 self._error(HTTPStatus.FORBIDDEN, "Unexpected host")
                 return False
-            supplied = self.headers.get("X-Jobflow-Token") or (query.get("token") or [""])[0]
+            # Only in a header: a token in a URL would stay in the browser's history.
+            supplied = self.headers.get("X-Jobflow-Token") or ""
             if not secrets.compare_digest(supplied, token):
                 self._error(HTTPStatus.FORBIDDEN, "Missing or wrong token; reload the page")
                 return False
@@ -80,17 +82,23 @@ def make_handler(token: str, port: int):
             if url.path == "/":
                 if self.headers.get("Host") not in allowed_hosts:
                     return self._error(HTTPStatus.FORBIDDEN, "Unexpected host")
-                # No framing: another site could otherwise load the tracker in a hidden
-                # frame and trick you into clicking Save (clickjacking).
+                # Scripts only from app.js, so text that reached the page (a scraped ad,
+                # say) could never run as script. No framing: another site could otherwise
+                # load the tracker in a hidden frame and trick you into clicking Save
+                # (clickjacking).
                 return self._send(200, page.encode(), "text/html; charset=utf-8",
                                   {"Content-Security-Policy":
                                    "default-src 'self'; style-src 'unsafe-inline'; "
-                                   "script-src 'unsafe-inline'; img-src 'self' data:; "
+                                   "script-src 'self'; img-src 'self' data:; "
                                    "frame-ancestors 'none'",
                                    "X-Frame-Options": "DENY"})
+            if url.path == "/app.js":
+                if self.headers.get("Host") not in allowed_hosts:
+                    return self._error(HTTPStatus.FORBIDDEN, "Unexpected host")
+                return self._send(200, script, "text/javascript; charset=utf-8")
             if not url.path.startswith("/api/"):
                 return self._error(HTTPStatus.NOT_FOUND, "Not found")
-            if not self._allowed(query):
+            if not self._allowed():
                 return None
             try:
                 if url.path == "/api/summary":
@@ -121,7 +129,7 @@ def make_handler(token: str, port: int):
 
         def do_POST(self) -> None:  # noqa: N802 - name from the base class
             url = urlsplit(self.path)
-            if not self._allowed({}):
+            if not self._allowed():
                 return None
             if url.path not in ("/api/save", "/api/scoring"):
                 return self._error(HTTPStatus.NOT_FOUND, "Not found")
