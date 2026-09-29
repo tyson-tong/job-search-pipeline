@@ -262,10 +262,11 @@ _FIRST_SEARCH_SQL = """
     LEFT JOIN LATERAL (SELECT scraper_run_id FROM job_observations o
                        WHERE o.job_id = j.id ORDER BY observed_at LIMIT 1) first ON true
     LEFT JOIN scraper_runs r ON r.id = first.scraper_run_id"""
-# A job you moved from Filtered back to the Inbox yourself, which update-searches leaves be.
+# A job you moved out of Filtered yourself (and so, if it's in the Inbox now, one you chose to
+# keep), which update-searches leaves be.
 _MOVED_BACK_SQL = """EXISTS (SELECT 1 FROM status_history h WHERE h.job_id = j.id
-                            AND h.from_status = 'filtered' AND h.to_status = 'new'
-                            AND h.via <> 'update-searches')"""
+                            AND h.from_status = 'filtered'
+                            AND h.via NOT IN ('update-searches', 'archive'))"""
 
 
 def exclude_inbox_jobs(searches: list, dry_run: bool = False,

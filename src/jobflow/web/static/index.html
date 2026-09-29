@@ -258,8 +258,11 @@ const NOT_MY_JOBS = ["new", "not_interested", "filtered", "archived"];
 const PAGE_SIZES = [5, 10, 20, 50, 100];
 // The tabs that each show one status; My jobs shows the statuses chosen in its menu.
 const TAB_STATUS = { inbox: "new", filtered: "filtered", not_interested: "not_interested" };
-// Tabs whose jobs you can only send back to the Inbox (ticking several at once).
+// Tabs whose jobs you can send back to the Inbox by ticking several at once.
 const RETURN_TABS = ["filtered", "not_interested"];
+// The one-click statuses in each tab's Status column; My jobs has a menu instead.
+const QUICK_STATUSES = { inbox: ["interested", "not_interested"], filtered: ["interested", "not_interested"],
+  not_interested: ["interested"] };
 
 // ---- Helpers -------------------------------------------------------------------------
 function el(tag, attrs = {}, ...children) {
@@ -518,10 +521,9 @@ function renderStatusMenu() {
 }
 function statusSelect(job) {
   const value = current(job, "status");
-  // A filtered job can only go back to the Inbox; a new or not interested one can only be
-  // triaged; any other doesn't go back to New.
-  const choices = job.status === "filtered" ? ["new"]
-    : ["new", "not_interested"].includes(job.status) ? TRIAGE_STATUSES
+  // A new, not interested, or filtered job can only be triaged (or go back to the Inbox);
+  // any other doesn't go back to New.
+  const choices = ["new", "not_interested", "filtered"].includes(job.status) ? TRIAGE_STATUSES
     : state.summary.editable.filter((s) => s !== "new");
   const options = choices.map((s) => el("option", { value: s, selected: s === value }, label(s)));
   if (value === "filtered") options.unshift(el("option", { value: "filtered", selected: true, disabled: true }, "Filtered"));
@@ -620,7 +622,7 @@ function renderRows() {
     ? `The first ${n} jobs: narrow the filters to see the rest`
     : n < total ? `${n} of ${total} jobs` : `${n} job${n === 1 ? "" : "s"}`;
   const inbox = state.view === "inbox", filtered = state.view === "filtered";
-  const returnable = RETURN_TABS.includes(state.view), selectable = inbox || returnable;
+  const selectable = inbox || RETURN_TABS.includes(state.view);
   const loaded = new Set(state.jobs.map((job) => job.id));
   state.selected.forEach((id) => { if (!selectable || !loaded.has(id)) state.selected.delete(id); });
   // After a save or refresh removes rows, stay on the last page that still exists.
@@ -648,20 +650,13 @@ function renderRows() {
     const index = first + offset;
     const score = job.score == null ? null : Math.round(job.score);
     const scoreClass = score == null ? "" : score >= 70 ? " hi" : score >= 45 ? " mid" : " lo";
-    const statusCell = inbox
-      ? el("div", { className: "quick" }, [["interested", "Interested"], ["not_interested", "Not interested"]].map(([s, text]) => {
+    const statusCell = QUICK_STATUSES[state.view]
+      ? el("div", { className: "quick" }, QUICK_STATUSES[state.view].map((s) => {
           const on = current(job, "status") === s;
-          // Clicking the chosen one again puts the job back to New.
+          // Clicking the chosen one again keeps the job where it is.
           return el("button", { className: "btn small" + (on ? " on" : ""), "aria-pressed": String(on),
-            onclick: () => setPending(job, "status", on ? "new" : s) }, text);
+            onclick: () => setPending(job, "status", on ? job.status : s) }, label(s));
         }))
-      : returnable
-      ? (() => {
-          const on = current(job, "status") === "new";
-          // Clicking again keeps the job where it is.
-          return el("button", { className: "btn small" + (on ? " on" : ""), "aria-pressed": String(on),
-            onclick: () => setPending(job, "status", on ? job.status : "new") }, "Move to Inbox");
-        })()
       : statusSelect(job);
     const grouped = job.group != null, abroad = job.area != null;
     const groupStart = grouped && (index === 0 || state.jobs[index - 1].group !== job.group);
