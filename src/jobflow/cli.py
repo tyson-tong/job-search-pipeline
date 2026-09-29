@@ -69,11 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--site", choices=SITES, help="Only this job site")
     update = command("update-searches", run_update_searches, "After editing config/searches.toml: "
                      "check it, update the GitHub copy the daily import reads (with your "
-                     "timezone), and filter Inbox jobs from its exclude_companies or matching "
-                     "its exclude_title_terms (and none of its include_title_terms)")
+                     "timezone), filter Inbox jobs from its exclude_companies or matching "
+                     "its exclude_title_terms (and none of its include_title_terms), and bring "
+                     "back Filtered jobs it would no longer filter")
     update.add_argument("--dry-run", action="store_true",
-                        help="Check the file and list the jobs that would be filtered; publish and "
-                        "filter nothing (the database tables are still brought up to date)")
+                        help="Check the file and list the jobs that would be filtered or brought "
+                        "back; publish and move nothing (the database tables are still brought up to date)")
     web = command("web", run_web, "Run the local job tracker web server")
     web.add_argument("--port", type=int, default=8765,
                      help="Port to serve the tracker on (default: 8765)")

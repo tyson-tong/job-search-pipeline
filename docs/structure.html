@@ -287,7 +287,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
 <div class="table-wrap"><table>
   <tr><th>Command</th><th>Does</th><th>Module</th></tr>
   <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import</td><td>ingest/apify.py → store.py</td></tr>
-  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables, filter Inbox jobs from excluded employers or matching excluded title terms</td><td>github.py → ingest/store.py</td></tr>
+  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables, filter Inbox jobs from excluded employers or matching excluded title terms, bring back Filtered jobs the searches would now keep</td><td>github.py → ingest/store.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv</code></td><td>Reviewed, fact-checked CVs for Interested jobs (or only those <code>--job ID</code> names)</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow cover-letter</code></td><td>Optional reviewed, fact-checked cover letters for Interested jobs (or only those <code>--job ID</code> names)</td><td>candidate/cover_letter.py</td></tr>

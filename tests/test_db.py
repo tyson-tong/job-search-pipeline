@@ -278,6 +278,35 @@ def test_update_searches_filters_the_inbox_but_not_a_job_moved_back_from_filtere
         "1": "filtered", "2": "new", "3": "new"}
 
 
+def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
+    # Dropping an excluded term used to leave the jobs it had filtered hidden until archived.
+    from functools import partial
+
+    from jobflow.ingest.searches import filter_reason, parse_config
+    from jobflow.ingest.store import exclude_inbox_jobs, restore_filtered_jobs
+
+    base = ('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
+            'salary_min = 100000\n')
+    strict = parse_config(base + 'exclude_title_terms = ["Intern"]\n')[0]
+
+    def ad(job_id, title, salary=None):
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}", "title": title,
+                "companyName": f"Employer {job_id}", "descriptionText": f"ad {job_id}",
+                **({"salaryInfo": salary} if salary else {})}
+    save_run("linkedin:a", "r1", "d1", [ad("1", "Intern Analyst"), ad("2", "Analyst", ["$60,000/yr"])],
+             search_name="s", country="AU", job_filter=partial(filter_reason, search=strict, site="linkedin"))
+    assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {"1": "filtered", "2": "filtered"}
+    relaxed = parse_config(base)
+    restored, checked = restore_filtered_jobs(relaxed, dry_run=True)
+    assert [job["reason"] for job in restored] == ["title contains 'Intern'"] and checked == 2
+    assert _one("SELECT count(*) FROM jobs WHERE status='new'")[0] == 0   # dry run
+    restore_filtered_jobs(relaxed)
+    # The salary filter still applies to the other job.
+    assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {"1": "new", "2": "filtered"}
+    # Brought back by update-searches, not by you: putting the term back filters it again.
+    assert [job["title"] for job in exclude_inbox_jobs([strict])[0]] == ["Intern Analyst"]
+
+
 def test_a_job_whose_search_was_renamed_is_judged_by_the_defaults(database):
     from jobflow.ingest.searches import defaults_search, parse_config
     from jobflow.ingest.store import exclude_inbox_jobs

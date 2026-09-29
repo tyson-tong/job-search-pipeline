@@ -64,7 +64,7 @@ Edit `config/searches.toml` ([settings reference](docs/searches.md)), then run:
 uv run jobflow update-searches
 ```
 
-It checks the file (an invalid one stops everything, so a typo never reaches the daily import), updates the copy the daily GitHub import reads (with your timezone, from `config/profile.toml`), and filters jobs already in your Inbox from your `exclude_companies` or whose titles match your `exclude_title_terms` (unless they match `include_title_terms`; a job you moved back from Filtered is left alone). Add `--dry-run` to check and preview without publishing or filtering anything (like every command, it still brings the database tables up to date). Filtered jobs go to the Filtered tab.
+It checks the file (an invalid one stops everything, so a typo never reaches the daily import), updates the copy the daily GitHub import reads (with your timezone, from `config/profile.toml`), and filters jobs already in your Inbox from your `exclude_companies` or whose titles match your `exclude_title_terms` (unless they match `include_title_terms`; a job you moved back from Filtered is left alone). It also brings Filtered jobs not yet archived back to the Inbox when your searches would no longer filter them, say after you remove an excluded term or lower a salary minimum. Add `--dry-run` to check and preview without publishing or filtering anything (like every command, it still brings the database tables up to date). Filtered jobs go to the Filtered tab.
 
 ## Commands
 
@@ -76,7 +76,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | `jobflow interview-prep [--job ID]` | An interview briefing for each Interviewing job without one |
 | `jobflow skill-gaps` | The skills your scored Interested jobs ask for that your CVs don't show |
 | `jobflow clean-up` | Delete the output folders of Not interested, Withdrawn, Declined, Rejected, and Archived jobs, after you confirm (the jobs stay in the tracker) |
-| `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox |
+| `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox, bring back Filtered jobs your searches now keep |
 | `jobflow ingest [--search NAME] [--site SITE]` | Run the searches now (the daily import does this; uses Apify credits) |
 | `jobflow status` | The daily GitHub import, read from GitHub: whether it's on, its last run, its secrets, whether its searches and timezone match yours, and which sites it calls |
 | `jobflow init` | Create your settings files (first time only) |

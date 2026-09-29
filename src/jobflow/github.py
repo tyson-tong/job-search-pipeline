@@ -33,11 +33,12 @@ def _gh(args: list[str], doing: str, input: str | None = None, hint: str = "") -
 def update_searches(dry_run: bool = False) -> None:
     """Check config/searches.toml, publish it as the JOBFLOW_SEARCHES GitHub variable that
     the daily import reads, then filter Inbox jobs from its excluded employers or matching
-    its excluded title terms (imports only apply them to the jobs they bring in). An invalid
-    file stops before anything is published, so a typo never reaches the daily import."""
+    its excluded title terms (imports only apply them to the jobs they bring in), and bring
+    back Filtered jobs its filters would now keep. An invalid file stops before anything
+    is published, so a typo never reaches the daily import."""
     from .db import migrate
     from .ingest.searches import defaults_search, parse_config, search_warnings
-    from .ingest.store import exclude_inbox_jobs
+    from .ingest.store import exclude_inbox_jobs, restore_filtered_jobs
     from .settings import searches_file, timezone
 
     path = searches_file()
@@ -67,12 +68,19 @@ def update_searches(dry_run: bool = False) -> None:
               "daily import uses them now")
     migrate()
     # A job found by a search since renamed or removed is judged by [defaults].
-    matched, checked = exclude_inbox_jobs(searches, dry_run=dry_run, fallback=defaults_search(text))
+    fallback = defaults_search(text)
+    matched, checked = exclude_inbox_jobs(searches, dry_run=dry_run, fallback=fallback)
     for job in matched:
         print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
               f"{job['reason']}")
     print(f"{'Would filter' if dry_run else 'Filtered'} {len(matched)} of {checked} Inbox jobs"
           f"{' (dry run: none filtered)' if dry_run else ''}")
+    restored, checked = restore_filtered_jobs(searches, dry_run=dry_run, fallback=fallback)
+    for job in restored:
+        print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
+              f"was {job['reason']}")
+    print(f"{'Would bring' if dry_run else 'Brought'} {len(restored)} of {checked} Filtered jobs "
+          f"back to the Inbox{' (dry run: none moved)' if dry_run else ''}")
 
 
 def status() -> None:
