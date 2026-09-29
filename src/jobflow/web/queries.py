@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 
 from ..db import CLOSED_STATUSES, STATUSES, connect, set_job_state
 from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
-from ..ingest.similar import IN_PROGRESS, possible_duplicate_map, possible_duplicates
+from ..ingest.similar import IN_PROGRESS, similar_jobs
 from ..settings import today
 
 DEFAULT_STATUSES = ["interested", "applied", "interviewing", "offered", "accepted"]
@@ -35,6 +35,8 @@ MAX_ROWS = 2000
 MAX_NOTE = 2000
 # The Country filter's value for a job whose country isn't known.
 UNKNOWN_COUNTRY = "none"
+# The most similar jobs, and same ads in other countries, the job panel lists.
+SIMILAR_SHOWN = 5
 # A job's tracking version: when its status, notes, or follow-up last changed (in
 # microseconds). Imports never change these, so they can't cause false conflicts.
 VERSION_SQL = """(extract(epoch from greatest(j.status_updated_at,
@@ -151,7 +153,7 @@ def list_jobs(filters: dict) -> list[dict]:
         jobs = [dict(zip(keys, row, strict=True)) for row in rows]
         for job in jobs:
             job["currency"] = CURRENCIES.get(job["country"])
-        duplicates = possible_duplicate_map(conn, [job["id"] for job in jobs])
+        duplicates = similar_jobs(conn, [job["id"] for job in jobs])
     now_today = today()
     for job in jobs:
         similar = duplicates.get(job["id"], [])
@@ -288,8 +290,16 @@ def job_detail(job_id: int) -> dict | None:
                           for r in conn.execute(
             """SELECT from_status, to_status, via, changed_at FROM status_history
                WHERE job_id=%s ORDER BY changed_at""", (job_id,)).fetchall()]
-    job["duplicates"] = possible_duplicates(job_id)
-    job["elsewhere"] = possible_duplicates(job_id, other_countries=True)
+        similar = similar_jobs(conn, [job_id]).get(job_id, [])
+        shown = {row[0]: row[1:] for row in conn.execute(
+            """SELECT j.id, j.title, j.company, j.location,
+                      (SELECT url FROM job_sources s WHERE s.job_id = j.id
+                       ORDER BY s.first_seen_at LIMIT 1)
+               FROM jobs j WHERE j.id = ANY(%s)""", ([s["id"] for s in similar],)).fetchall()}
+    for other in similar:
+        other.update(zip(("title", "company", "location", "url"), shown[other["id"]], strict=True))
+    job["duplicates"] = [s for s in similar if s["same_country"]][:SIMILAR_SHOWN]
+    job["elsewhere"] = [s for s in similar if not s["same_country"]][:SIMILAR_SHOWN]
     return job
 
 

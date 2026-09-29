@@ -87,6 +87,30 @@ def test_two_different_jobs_are_never_merged(database):
     assert _one("SELECT count(*) FROM jobs")[0] == 3
 
 
+def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
+    # They were worked out by two versions of the rules, which could disagree.
+    from jobflow.web.queries import job_detail
+
+    def ad(job_id, title, company, location, words):
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
+                "title": title, "companyName": company, "location": location,
+                "descriptionText": " ".join(words)}
+    duties = [f"duty{i}" for i in range(60)]
+    reposted = duties[:45] + [f"other{i}" for i in range(15)]   # about 60% the same words
+    save_run("linkedin:a", "r1", "d1", [ad("1", "Data Analyst", "Acme", "Sydney", duties)], country="AU")
+    save_run("linkedin:a", "r2", "d2", [ad("2", "Senior Data Analyst", "Hays", "Sydney", reposted)],
+             country="AU")
+    save_run("linkedin:a", "r3", "d3", [ad("3", "Data Analyst", "Acme", "Hong Kong SAR", duties)], country="HK")
+    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    listed = {job["id"]: job for job in list_jobs(parse_filters({"status": ["new"]}))}
+    panel = job_detail(ids["1"])
+    assert [d["id"] for d in listed[ids["1"]]["duplicates"]] == [d["id"] for d in panel["duplicates"]] \
+        == [ids["2"]]
+    assert [d["id"] for d in listed[ids["1"]]["elsewhere"]] == [d["id"] for d in panel["elsewhere"]] \
+        == [ids["3"]]
+    assert panel["duplicates"][0]["company"] == "Hays" and panel["duplicates"][0]["level"] == "similar"
+
+
 def test_a_status_change_keeps_the_first_applied_date_and_every_note(database):
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     job_id = _one("SELECT id FROM jobs")[0]

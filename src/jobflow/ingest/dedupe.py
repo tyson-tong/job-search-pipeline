@@ -93,24 +93,29 @@ def description_words(text: str | None) -> set[str]:
     return {w for w in simplify(text).split() if len(w) > 2}
 
 
+def jaccard(a: set[str], b: set[str]) -> float:
+    """How alike two word sets are: the words they share over all their words."""
+    return len(a & b) / len(a | b) if a and b else 0.0
+
+
 def description_similarity(a: str | None, b: str | None) -> float:
-    words_a, words_b = description_words(a), description_words(b)
-    if not words_a or not words_b:
-        return 0.0
-    return len(words_a & words_b) / len(words_a | words_b)
+    return jaccard(description_words(a), description_words(b))
 
 
 def title_similarity(a: str | None, b: str | None) -> float:
-    words_a, words_b = set(simplify(a).split()), set(simplify(b).split())
-    if not words_a or not words_b:
-        return 0.0
-    return len(words_a & words_b) / len(words_a | words_b)
+    return jaccard(set(simplify(a).split()), set(simplify(b).split()))
+
+
+def title_words(title: str | None) -> list[str]:
+    """The words that find titles like this one: those over 3 letters, or every word of a
+    title with none."""
+    words = simplify(title).split()
+    return [w for w in words if len(w) > 3] or words
 
 
 def title_patterns(title: str | None) -> list[str]:
     """ILIKE patterns that narrow titles in SQL before they are compared in Python."""
-    words = [w for w in simplify(title).split() if len(w) > 3] or simplify(title).split()
-    return [f"%{w}%" for w in words]
+    return [f"%{w}%" for w in title_words(title)]
 
 
 def same_country(a: str | None, b: str | None) -> bool:
