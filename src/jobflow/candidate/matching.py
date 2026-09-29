@@ -101,6 +101,7 @@ def _record(variant: str, digest: str, items: list[dict], rationale: str, model:
 
 
 def _cached_assessments(conn, job_id: int) -> dict[str, dict]:
+    """The latest assessment of the job against each CV, in the current format."""
     rows = conn.execute(
         """SELECT DISTINCT ON (cv_variant) cv_variant, cv_sha256, matched, partial, gaps,
                   evidence, model_name
@@ -114,40 +115,50 @@ def _cached_assessments(conn, job_id: int) -> dict[str, dict]:
     return cached
 
 
-def _has_assessment(conn, job_id: int) -> bool:
-    return conn.execute("SELECT EXISTS (SELECT 1 FROM match_assessments WHERE job_id=%s)",
-                        (job_id,)).fetchone()[0]
+def _assessed(conn, job_id: int) -> set[str]:
+    """The CVs the job has been assessed against, in any format."""
+    return {row[0] for row in conn.execute(
+        "SELECT DISTINCT cv_variant FROM match_assessments WHERE job_id=%s", (job_id,)).fetchall()}
 
 
-def _stored(cached: dict[str, dict], weights: tuple[float, float]) -> list[dict]:
+def stored_assessments(conn, job_id: int, weights: tuple[float, float]) -> list[dict]:
+    """The job's stored assessments, one per CV, scored with these profile weights."""
     return [_record(variant, hit["cv_sha256"], hit["items"], hit["rationale"], hit["model"],
-                    weights) for variant, hit in cached.items()]
+                    weights) for variant, hit in _cached_assessments(conn, job_id).items()]
 
 
 def match_job(job_id: int) -> list[dict]:
-    """Assess one job against each CV cvs in config/profile.toml names, all at once.
+    """The job's assessment against each CV cvs in config/profile.toml names, scoring it
+    first against any of them it has no score for (all at once).
 
-    A job is scored once and never again, even after a CV changes: a scored job returns
-    its stored assessments (recomputed with the current profile weights). Only an
-    Interested job is ever scored.
+    A job is scored once against each CV and never again, even after that CV's content
+    changes; a CV named later (added, or renamed) is scored for it the next time. Only an
+    Interested job is scored. Returns every stored assessment, recomputed with the current
+    profile weights, including any against CVs no longer named.
     """
     weights = matching_weights()
     with connect() as conn:
-        cached = _cached_assessments(conn, job_id)
-        scored = _has_assessment(conn, job_id)
+        assessed = _assessed(conn, job_id)
         status = conn.execute("SELECT status FROM jobs WHERE id=%s", (job_id,)).fetchone()
-    if cached:
-        return _stored(cached, weights)
-    if scored:
-        # Only assessments in an older format: still scored, so never scored again.
-        raise RuntimeError(f"Job {job_id} was scored by an earlier version; it isn't scored again")
     if not status:
         raise RuntimeError(f"No job with database id {job_id}")
-    if status[0] != "interested":
-        raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only interested jobs "
-                           "are scored")
+    sources = {variant: source for variant, source in chosen_sources().items()
+               if variant not in assessed}
+    if sources and status[0] != "interested":
+        if assessed:   # scored while Interested: it keeps what it has
+            sources = {}
+        else:
+            raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only interested "
+                               "jobs are scored")
+    if not sources:
+        with connect() as conn:
+            stored = stored_assessments(conn, job_id, weights)
+        if not stored:
+            # Only assessments in an older format: still scored, so never scored again.
+            raise RuntimeError(f"Job {job_id} was scored by an earlier version; it isn't "
+                               "scored again")
+        return stored
     job = fetch_job(job_id)
-    sources = chosen_sources()
     for variant, source in sources.items():
         # A job is scored only once, so a score from part of a CV would stand for good.
         if len(source) > CV_CHAR_LIMIT:
@@ -175,15 +186,16 @@ def match_job(job_id: int) -> list[dict]:
     # The CVs are independent, so their LLM calls run side by side.
     with ThreadPoolExecutor(max_workers=len(sources)) as pool:
         results = list(pool.map(assess, sources, sources.values()))
-    # Saved together, only once every CV is assessed: a job counts as scored as soon as it
-    # has any assessment and is never scored again, so a failure part-way must save none.
+    # Saved together, only once every CV is assessed: a job scored against only one of two
+    # CVs would look as good as scored, so a failure part-way must save none.
     with connect() as conn:
         # Another process (a second tracker, or tailor-cv) may have scored this job while
-        # the LLM calls ran. Lock the job and keep whichever scores were saved first.
+        # the LLM calls ran. Lock the job and keep whichever score was saved first.
         conn.execute("SELECT 1 FROM jobs WHERE id=%s FOR UPDATE", (job_id,))
-        if _has_assessment(conn, job_id):
-            return _stored(_cached_assessments(conn, job_id), weights)
+        assessed = _assessed(conn, job_id)
         for record in results:
+            if record["variant"] in assessed:
+                continue
             conn.execute(
                 """INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score,
                        matched, partial, gaps, evidence, model_name)
@@ -197,27 +209,31 @@ def match_job(job_id: int) -> list[dict]:
                  record["model"]))
             conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "
                          "VALUES (%s,'match','SUCCEEDED',%s,now())", (job_id, record["model"]))
-    return results
+        return stored_assessments(conn, job_id, weights)
 
 
-# Only Interested jobs are scored, and each only once.
+# Interested jobs without a score against one of the CVs named (%(variants)s): each job is
+# scored once against each CV.
 UNSCORED_SQL = """FROM jobs j
     WHERE j.status = 'interested'
-      AND NOT EXISTS (SELECT 1 FROM match_assessments m WHERE m.job_id = j.id)"""
+      AND EXISTS (SELECT 1 FROM unnest(%(variants)s::text[]) AS cv(variant)
+                  WHERE NOT EXISTS (SELECT 1 FROM match_assessments m
+                                    WHERE m.job_id = j.id AND m.cv_variant = cv.variant))"""
 
 
-def jobs_needing_match(only: list[int] | None = None) -> list[int]:
-    """Interested jobs never scored, newest first; limited to `only` when given."""
+def jobs_needing_match(variants: list[str], only: list[int] | None = None) -> list[int]:
+    """Interested jobs with no score against one of these CVs, newest first; limited to
+    `only` when given."""
     with connect() as conn:
         rows = conn.execute(
             f"""SELECT j.id {UNSCORED_SQL} AND (%(only)s::bigint[] IS NULL OR j.id = ANY(%(only)s))
-                ORDER BY j.first_seen_at DESC""", {"only": only}).fetchall()
+                ORDER BY j.first_seen_at DESC""", {"variants": variants, "only": only}).fetchall()
     return [row[0] for row in rows]
 
 
-def count_needing_match() -> int:
+def count_needing_match(variants: list[str]) -> int:
     with connect() as conn:
-        return conn.execute(f"SELECT count(*) {UNSCORED_SQL}").fetchone()[0]
+        return conn.execute(f"SELECT count(*) {UNSCORED_SQL}", {"variants": variants}).fetchone()[0]
 
 
 def best_variant(results: list[dict]) -> dict:

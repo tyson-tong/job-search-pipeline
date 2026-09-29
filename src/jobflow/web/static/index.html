@@ -789,7 +789,7 @@ document.getElementById("select-all").addEventListener("change", (event) => {
 function renderScoring() {
   const button = document.getElementById("score-btn"), chip = document.getElementById("scoring");
   const running = state.scoring && state.scoring.running;
-  const { unscored, cv_count: cvs, scoring_problem: problem } = state.summary || {};
+  const { unscored, scoring_problem: problem } = state.summary || {};
   // Interested jobs, the only ones scored, live in My jobs: saving one moves it out of the Inbox.
   button.hidden = state.view !== "jobs";
   button.disabled = running || !unscored;
@@ -824,9 +824,9 @@ async function pollScoring() {
   if (state.detail && !state.pending.size) await openDetail(state.detail.id);
 }
 document.getElementById("score-btn").addEventListener("click", () => {
-  const jobs = state.summary.unscored, cvs = state.summary.cv_count;
-  startScoring({}, `Score ${jobs} interested job${jobs === 1 ? "" : "s"} against your ${cvs} CV${cvs === 1 ? "" : "s"}?`
-    + `\n\nThis makes about ${jobs * cvs} LLM call${jobs * cvs === 1 ? "" : "s"}, newest jobs first. You can keep working while it runs.`);
+  const jobs = state.summary.unscored, cvs = state.summary.cv_variants.length;
+  startScoring({}, `Score ${jobs} interested job${jobs === 1 ? "" : "s"} against each of your CVs it has no score for?`
+    + `\n\nThis makes at most ${jobs * cvs} LLM call${jobs * cvs === 1 ? "" : "s"}, newest jobs first. You can keep working while it runs.`);
 });
 async function copyCommand(text) {
   try { await navigator.clipboard.writeText(text); toast("Copied: " + text); }
@@ -974,6 +974,8 @@ function renderDetail() {
   const target = listed || { ...job, duplicates: job.duplicates, duplicate_in_progress: null };
   const drawer = document.getElementById("drawer");
   const inProgress = job.duplicates.filter((d) => ["applied", "interviewing", "offered", "accepted"].includes(d.status));
+  // The CVs named in config/profile.toml this job has no score against yet.
+  const unscored = state.summary.cv_variants.filter((v) => !job.matches.some((m) => m.variant === v));
   drawer.hidden = false;
   fill(drawer, [
     el("button", { className: "close", "aria-label": "Close", onclick: closeDetail }, "×"),
@@ -1001,16 +1003,18 @@ function renderDetail() {
         maxlength: 2000, oninput: (event) => setPending(target, "note", event.target.value) },
         current(target, "note") || "")),
     job.notes ? [el("h3", {}, "Notes"), el("div", { className: "notes" }, job.notes)] : null,
-    // Only a saved Interested job is scored, and only once.
+    // Only a saved Interested job is scored, once against each CV.
     el("div", { className: "h3-row" }, el("h3", {}, "Match with your CVs"),
-      job.status === "interested" && !job.matches.length
+      job.status === "interested" && unscored.length
         ? el("button", { className: "btn small", disabled: Boolean(state.scoring && state.scoring.running),
             title: "Ask the LLM to compare this job with each CV", onclick: () =>
               startScoring({ job_ids: [job.id] }) }, "Score")
         : null),
-    job.matches.length ? job.matches.map(renderMatch)
-      : el("p", { className: "meta" }, job.status === "interested" ? "Not scored yet."
-          : "Not scored: only interested jobs are scored. Mark it interested and save to score it."),
+    job.matches.map(renderMatch),
+    job.status === "interested" && unscored.length
+      ? el("p", { className: "meta" }, `Not scored yet against ${unscored.join(", ")}.`)
+      : !job.matches.length ? el("p", { className: "meta" },
+          "Not scored: only interested jobs are scored. Mark it interested and save to score it.") : null,
     el("div", { className: "next" }, el("strong", {}, "Next steps (in a terminal)"),
       [["uv run jobflow tailor-cv", "Tailored CV drafts"],
        ["uv run jobflow cover-letter", "Cover letters (optional)"],

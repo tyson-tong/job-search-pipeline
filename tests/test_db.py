@@ -111,6 +111,37 @@ def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
     assert panel["duplicates"][0]["company"] == "Hays" and panel["duplicates"][0]["level"] == "similar"
 
 
+def test_a_cv_named_later_is_scored_without_rescoring_the_others(database, monkeypatch):
+    # Scores were never refreshed, so renaming or adding a CV left every scored job with
+    # no score against it: tailor-cv then refused them all.
+    import json
+
+    from jobflow.candidate import matching
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    job_id = _one("SELECT id FROM jobs")[0]
+    with connect() as conn:
+        set_job_state(conn, job_id, status="interested", via="test")
+    asked = []
+
+    def complete(system, user, **kwargs):
+        asked.append(json.loads(user)["cv_variant"])
+        return json.dumps({"requirements": [{"requirement": "SQL", "status": "matched",
+                                             "evidence": ["write SQL"]}]}), "m"
+    monkeypatch.setattr(matching, "complete", complete)
+    monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
+    cvs = {"dev": "I write SQL daily."}
+    monkeypatch.setattr(matching, "chosen_sources", lambda: dict(cvs))
+    assert [r["variant"] for r in matching.match_job(job_id)] == ["dev"]
+    cvs["strat"] = "I write SQL for strategy work."   # a second CV, named later
+    assert matching.jobs_needing_match(list(cvs)) == [job_id]
+    assert sorted(r["variant"] for r in matching.match_job(job_id)) == ["dev", "strat"]
+    assert asked == ["dev", "strat"]                  # dev was not scored again
+    assert matching.jobs_needing_match(list(cvs)) == [] and matching.count_needing_match(list(cvs)) == 0
+    matching.match_job(job_id)
+    assert asked == ["dev", "strat"]
+
+
 def test_a_status_change_keeps_the_first_applied_date_and_every_note(database):
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     job_id = _one("SELECT id FROM jobs")[0]

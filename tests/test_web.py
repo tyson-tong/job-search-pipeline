@@ -105,7 +105,7 @@ def test_a_bad_key_stops_the_batch_instead_of_failing_every_job(scoring, monkeyp
             raise LLMError("Invalid authentication credentials (LLM provider, HTTP 401)", fatal=True)
         time.sleep(0.05)
     monkeypatch.setattr(scoring, "match_job", match_job)
-    monkeypatch.setattr(scoring, "jobs_needing_match", lambda only=None: [1, 2, 3, 4, 5])
+    monkeypatch.setattr(scoring, "jobs_needing_match", lambda variants, only=None: [1, 2, 3, 4, 5])
     scoring.start()
     result = _wait_until_finished(scoring)
     # Only job 2 may have started alongside job 1; nothing after it does.

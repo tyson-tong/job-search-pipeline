@@ -30,17 +30,17 @@ def status() -> dict:
 
 
 def start(job_ids: list[int] | None = None) -> dict:
-    """Score the given jobs, or every Interested job not yet scored. Only Interested jobs
-    that have never been scored are ever scored. Checks the LLM settings and CV files
+    """Score the given jobs, or every Interested job, against each CV it has no score for
+    yet; each job is scored once against each CV. Checks the LLM settings and CV files
     first, so a configuration problem fails now rather than on every job."""
     credentials()
-    chosen_sources()
+    variants = list(chosen_sources())
     with _lock:
         if _state["running"]:
             raise Busy("Scoring is already running")
-        ids = jobs_needing_match(job_ids)
+        ids = jobs_needing_match(variants, job_ids)
         if job_ids and not ids:
-            raise ValueError("Only interested jobs that haven't been scored can be scored")
+            raise ValueError("Only interested jobs not yet scored against every CV can be scored")
         _state.update(running=bool(ids), total=len(ids), done=0, current=None, errors=[],
                       scored=[], started_at=datetime.now(timezone.utc), finished_at=None)
     if ids:

@@ -249,12 +249,13 @@ def summary() -> dict:
     from ..candidate.cvs import chosen_sources
     from ..candidate.matching import count_needing_match
     try:
-        cv_count, unscored, scoring_problem = len(chosen_sources()), count_needing_match(), None
+        variants = list(chosen_sources())
+        unscored, scoring_problem = count_needing_match(variants), None
     except Exception as exc:
-        cv_count, unscored, scoring_problem = 0, None, str(exc)
+        variants, unscored, scoring_problem = [], None, str(exc)
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,
             "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,
-            "default_statuses": DEFAULT_STATUSES, "cv_count": cv_count, "unscored": unscored,
+            "default_statuses": DEFAULT_STATUSES, "cv_variants": variants, "unscored": unscored,
             "scoring_problem": scoring_problem, "max_rows": MAX_ROWS}
 
 

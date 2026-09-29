@@ -15,7 +15,7 @@ from ..db import connect
 from ..llm import complete, parse_json
 from ..settings import matching_weights, now, output_directory
 from .cvs import chosen_files
-from .matching import _cached_assessments, _stored, best_variant
+from .matching import best_variant, stored_assessments
 
 # How much one unmet requirement counts towards a skill's rank.
 IMPORTANCE_WEIGHT = {"required": 1.0, "preferred": 0.5}
@@ -36,12 +36,11 @@ def collect_gaps() -> tuple[list[dict], int]:
                ORDER BY j.id DESC""").fetchall()
         scored = 0
         for job_id, title, company in jobs:
-            cached = {variant: hit for variant, hit in _cached_assessments(conn, job_id).items()
-                      if variant in chosen}
-            if not cached:
+            stored = [r for r in stored_assessments(conn, job_id, weights) if r["variant"] in chosen]
+            if not stored:
                 continue
             scored += 1
-            best = best_variant(_stored(cached, weights))
+            best = best_variant(stored)
             for item in best["partial"] + best["not_evidenced"]:
                 gaps.append({"id": len(gaps), "job_id": job_id, "job": f"{title} ({company or 'unknown employer'})",
                              "requirement": item["requirement"], "importance": item["importance"],
