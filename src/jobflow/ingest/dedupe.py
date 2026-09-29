@@ -37,11 +37,11 @@ POSSIBLE_DESCRIPTION = 0.4
 # are shown as "highly similar"; the rest as "similar".
 HIGHLY_SIMILAR = 0.8
 # Ads at least this alike under the same title are the same job even when the sites spell
-# the employer or place differently, e.g. "Shenwan Hongyuan (H.K.)" on LinkedIn and
-# "Shenwan Hongyuan Securities (H.K.)" in Admiralty on Seek. The title must match exactly:
-# employers reuse one ad for different roles (Susquehanna's research and trading
-# internships). Short ads are left out: boilerplate such as "Apply on our website" is
-# identical across unrelated jobs. One ad for offices in two countries stays two jobs.
+# the employer differently, e.g. "Shenwan Hongyuan (H.K.)" on LinkedIn and "Shenwan
+# Hongyuan Securities (H.K.)" on Seek. The title must match exactly: employers reuse one ad
+# for different roles (Susquehanna's research and trading internships). Short ads are left
+# out: boilerplate such as "Apply on our website" is identical across unrelated jobs. One
+# ad for offices in two cities, or two countries, stays two jobs (see same_place).
 SAME_AD = 0.95
 SAME_AD_MIN_WORDS = 30
 # Location words that don't identify a city: states, countries, and generic terms.
@@ -149,11 +149,12 @@ def same_country(a: str | None, b: str | None) -> bool:
 
 def is_same_ad(title_a: str | None, description_a: str | None,
                title_b: str | None, description_b: str | None,
-               country_a: str | None = None, country_b: str | None = None) -> bool:
+               country_a: str | None = None, country_b: str | None = None,
+               location_a: str | None = None, location_b: str | None = None) -> bool:
     """True when two postings carry the same ad under the same title (ignoring case and
-    punctuation), whoever posted it and wherever in one country it is listed. An unknown
-    country doesn't block a match."""
-    if not same_country(country_a, country_b):
+    punctuation), whoever posted it, in the same city of the same country. An unknown
+    country, or a location naming no city, doesn't block a match."""
+    if not same_country(country_a, country_b) or not same_place(location_a, location_b):
         return False
     if not simplify(title_a) or simplify(title_a) != simplify(title_b):
         return False

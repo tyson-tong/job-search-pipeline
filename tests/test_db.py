@@ -82,10 +82,9 @@ def test_two_different_jobs_are_never_merged(database):
     lending = standard + [f"lending{i}" for i in range(20)]
     save_run("linkedin:a", "r1", "d1", [ad("1", "Sydney, NSW", payments)], country="AU")
     assert save_run("linkedin:a", "r2", "d2", [ad("2", "Sydney NSW", lending)], country="AU") == 1
-    # A similar ad in another city is another office's job; the same ad in another country
-    # is too, even when its location names no city to tell the two apart.
-    melbourne = payments[:100] + [f"melbourne{i}" for i in range(10)]
-    assert save_run("linkedin:a", "r3", "d3", [ad("3", "Melbourne, VIC", melbourne)], country="AU") == 1
+    # The same ad word for word in another city is another office's job; in another country
+    # too, even when its location names no city to tell the two apart.
+    assert save_run("linkedin:a", "r3", "d3", [ad("3", "Melbourne, VIC", payments)], country="AU") == 1
     assert save_run("linkedin:a", "r4", "d4", [ad("4", "Hong Kong", payments)], country="HK") == 1
     # The check: another site's cut-down copy of the first ad, in the same city, is that job.
     seek = {"id": "5", "jobLink": "https://www.seek.com.au/job/5", "title": "Software Engineer",

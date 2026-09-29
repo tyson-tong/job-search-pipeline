@@ -60,7 +60,7 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str 
     fingerprint, the same employer and title seen recently in the same place and country
     with one ad a cut-down or padded copy of the other (another site's copy, or a repost;
     see is_copy_of_ad), then a recent job with the same title and a near-identical ad
-    under any employer or place in the same country (is_same_ad).
+    under any employer, in the same city and country (is_same_ad).
     """
     row = conn.execute("""SELECT s.job_id, j.canonical_key = s.source_key
                           FROM job_sources s JOIN jobs j ON j.id = s.job_id
@@ -93,10 +93,11 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str 
         close = [pk for pk, other in rows if simplify(other) == simplify(title)]
         if close:
             candidates = conn.execute(
-                """SELECT id, title, description, country FROM jobs WHERE id = ANY(%s)
+                """SELECT id, title, description, country, location FROM jobs WHERE id = ANY(%s)
                    ORDER BY first_seen_at DESC""", (close[:50],)).fetchall()
-            for job_pk, other_title, existing, other_country in candidates:
-                if is_same_ad(title, description, other_title, existing, country, other_country):
+            for job_pk, other_title, existing, other_country, other_location in candidates:
+                if is_same_ad(title, description, other_title, existing, country, other_country,
+                              location, other_location):
                     return job_pk, False
     return None
 
