@@ -78,7 +78,7 @@ def update_searches(dry_run: bool = False) -> None:
     restored, checked = restore_filtered_jobs(searches, dry_run=dry_run, fallback=fallback)
     for job in restored:
         print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
-              f"was {job['reason']}")
+              f"was filtered: {job['reason']}")
     print(f"{'Would bring' if dry_run else 'Brought'} {len(restored)} of {checked} Filtered jobs "
           f"back to the Inbox{' (dry run: none moved)' if dry_run else ''}")
 
