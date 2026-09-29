@@ -20,6 +20,9 @@ from .cvs import JOB_CHAR_LIMIT
 # A page (other than the last) this empty at the bottom gets a warning: RenderCV never
 # splits an entry, so one too long for the space left moves whole to the next page.
 GAP_WARNING = 0.3
+# The longest one RenderCV render may take; one that hangs would otherwise hold its job,
+# and the lock that stops a second tailor-cv, for good.
+RENDER_TIMEOUT_SECONDS = 180
 
 
 class RenderFailed(RuntimeError):
@@ -36,10 +39,14 @@ def write_cv(target: Path, source_doc: dict, cv: dict) -> None:
 def render(source: Path) -> Path:
     """Render a RenderCV YAML to a PDF beside it, and nothing else; return the PDF."""
     pdf = source.with_suffix(".pdf")
-    result = subprocess.run(
-        [sys.executable, "-m", "rendercv", "render", source.name, "--pdf-path", pdf.name,
-         "--output-folder", "rendercv_output", "-nomd", "-nohtml", "-nopng"],
-        cwd=source.parent, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "rendercv", "render", source.name, "--pdf-path", pdf.name,
+             "--output-folder", "rendercv_output", "-nomd", "-nohtml", "-nopng"],
+            cwd=source.parent, capture_output=True, text=True, timeout=RENDER_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        raise RenderFailed(f"RenderCV took over {RENDER_TIMEOUT_SECONDS} seconds and was "
+                           "stopped") from None
     if result.returncode or not pdf.exists():
         # RenderCV draws its errors as a table; keep the words.
         output = " ".join(re.sub(r"[─-╿]", " ", result.stdout + result.stderr).split())

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from ..db import connect
+from ..llm import LLMError
 from . import documents
 
 
@@ -16,7 +17,8 @@ def revise(draft, checked: tuple[list[str], list[str]], review, revision_of, che
     draft's own check, else the draft. review(draft) returns (the reviewer's answer, the
     reviewer's model); revision_of(answer) is the revised draft, or None if there is none;
     check(revision) is its (errors, warnings). What happened is added to `notes`; a failed
-    review keeps the draft. Returns (draft or revision, its (errors, warnings), critique)."""
+    review keeps the draft, unless the provider will refuse every request (a fatal
+    LLMError), which is raised. Returns (draft or revision, its (errors, warnings), critique)."""
     critique: list[str] = []
     try:
         answer, reviewer = review(draft)
@@ -30,6 +32,10 @@ def revise(draft, checked: tuple[list[str], list[str]], review, revision_of, che
             notes.append("The reviewer's revision failed the fact check, so the first draft "
                          "is kept.")
     except Exception as exc:
+        # A bad reviewer key or model, or no credit left, fails every job the same way:
+        # stop the batch rather than write unreviewed drafts for all of them.
+        if isinstance(exc, LLMError) and exc.fatal:
+            raise
         print(f"warning: review failed ({exc}); keeping the first draft", file=sys.stderr)
         notes.append(f"The review failed ({exc}), so this is the unreviewed first draft.")
     return draft, checked, critique

@@ -38,9 +38,11 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
     cap = planned.search.max_cost_usd
     run = None
     try:
+        # Apify stops the run itself at max_wait too, so it can't keep charging if this
+        # process is killed first (the daily GitHub job is stopped at 180 minutes).
         run = client.actor(planned.actor).call(
-            run_input=planned.run_input, wait_duration=max_wait, logger=None,
-            max_total_charge_usd=Decimal(str(cap)) if cap else None)
+            run_input=planned.run_input, wait_duration=max_wait, run_timeout=max_wait,
+            logger=None, max_total_charge_usd=Decimal(str(cap)) if cap else None)
         if run is None:
             raise RuntimeError("Apify returned no run")
         if run.status != "SUCCEEDED":

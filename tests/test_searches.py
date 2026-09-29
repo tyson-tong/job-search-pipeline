@@ -268,6 +268,8 @@ def test_run_passes_cost_cap_and_applies_the_search_filter(monkeypatch):
     apify.run_search(client, planned, timedelta(minutes=5))
     (_, call), = client.calls
     assert str(call["max_total_charge_usd"]) == "0.5"
+    # Apify stops the run itself too, in case this process is killed while it waits.
+    assert call["run_timeout"] == call["wait_duration"] == timedelta(minutes=5)
     part_time = normalise({"viewJobLink": "/viewjob?jk=2", "title": "x", "jobTypes": ["Part-time"]})
     assert "part-time" in saved[0]["job_filter"](part_time)
 

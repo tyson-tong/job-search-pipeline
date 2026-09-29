@@ -235,6 +235,27 @@ def test_a_revision_with_more_fact_check_errors_is_discarded(tmp_path, monkeypat
     assert "failed the fact check, so the first draft is kept" in report
 
 
+def test_a_reviewer_every_job_would_fail_on_stops_the_batch(tmp_path, monkeypatch):
+    # A misspelt LLM_REVIEW_MODEL (404) was caught like a network blip: every job got an
+    # unreviewed draft, and the batch went on paying for drafts.
+    from jobflow.llm import LLMError
+
+    def complete(system, user, **kw):
+        if kw.get("reviewer"):
+            raise LLMError("The model `gpt-typo` does not exist (LLM provider, HTTP 404)",
+                           fatal=True)
+        return "Dear Hiring Manager,\n\nI built Python ETL pipelines.\n\nAlex Example", "m"
+    monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
+        JOB, "main", "CV variant main.", SOURCE_CV, ""))
+    researched = Future()
+    researched.set_result(([], []))
+    monkeypatch.setattr(cover_letter, "research_soon", lambda job_id: researched)
+    monkeypatch.setattr(cover_letter, "complete", complete)
+    with pytest.raises(LLMError) as caught:
+        cover_letter.write_letter(1, output_dir=tmp_path)
+    assert caught.value.fatal and not list(tmp_path.iterdir())
+
+
 def test_skill_ranking_counts_only_real_gaps_once():
     gaps = [{"id": 0, "job_id": 1, "job": "A", "requirement": "AWS", "importance": "required",
              "status": "not_evidenced"},
