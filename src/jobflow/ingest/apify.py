@@ -130,7 +130,8 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
     from .store import archive_old_jobs, prune_archived_jobs, prune_sightings
     archived = archive_old_jobs()
     if archived:
-        print(f"Archived {archived} filtered or not interested job{'s' if archived != 1 else ''}")
+        print(f"Archived {archived} filtered, not interested, or untriaged Inbox "
+              f"job{'s' if archived != 1 else ''}")
     pruned = prune_sightings()
     if pruned:
         print(f"Dropped the scraped records of {pruned} sighting{'s' if pruned != 1 else ''} "

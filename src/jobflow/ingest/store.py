@@ -33,6 +33,9 @@ JobFilter = Callable[[Posting], "str | None"]
 # A filtered job this long past its posted date, or a job this long after you marked it
 # Not interested, is archived (see archive_old_jobs).
 ARCHIVE_AFTER = timedelta(days=14)
+# An Inbox job you haven't triaged is archived once it was posted this long ago and has
+# been in the Inbox this long (a job moved back to the Inbox starts again).
+INBOX_ARCHIVE_AFTER = timedelta(days=30)
 # How long each sighting keeps its full scraped record (see prune_sightings).
 KEEP_SIGHTING_RECORDS = timedelta(days=30)
 # How long an archived job keeps its description and scraped record (see
@@ -293,14 +296,15 @@ def exclude_inbox_jobs(searches: list, dry_run: bool = False,
 
 
 def archive_old_jobs(today: date | None = None) -> int:
-    """Move jobs out of the Filtered and Not interested tabs, to status 'archived', once
-    ARCHIVE_AFTER has passed: a filtered job's posted date (or, with none, the date first
-    seen), or the day you marked a job Not interested. They stay in the database and still
-    match as duplicates, so a repost stays out of the Inbox; the tracker shows them in no
-    tab. Returns how many were archived."""
+    """Move jobs out of the Filtered, Not interested, and Inbox tabs, to status 'archived':
+    a filtered job ARCHIVE_AFTER past its posted date (or, with none, the date first seen),
+    a job ARCHIVE_AFTER after you marked it Not interested, and an Inbox job you never
+    triaged, posted and in the Inbox for INBOX_ARCHIVE_AFTER. They stay in the database
+    and still match as duplicates, so a repost stays out of the Inbox; the tracker shows
+    them in no tab. Returns how many were archived."""
     from ..db import connect
 
-    cutoff = (today or settings.today()) - ARCHIVE_AFTER
+    today = today or settings.today()
     with connect() as conn:
         return conn.execute(
             """WITH moved AS (
@@ -308,12 +312,14 @@ def archive_old_jobs(today: date | None = None) -> int:
                    FROM (SELECT id, status FROM jobs
                          WHERE (status = 'filtered' AND coalesce(posted_at, first_seen_at::date) < %(cutoff)s)
                             OR (status = 'not_interested' AND status_updated_at::date < %(cutoff)s)
+                            OR (status = 'new' AND coalesce(posted_at, first_seen_at::date) < %(inbox_cutoff)s
+                                AND status_updated_at::date < %(inbox_cutoff)s)
                          FOR UPDATE) old
                    WHERE j.id = old.id
                    RETURNING j.id, old.status)
                INSERT INTO status_history(job_id, from_status, to_status, via)
                SELECT id, status, 'archived', 'archive' FROM moved""",
-            {"cutoff": cutoff}).rowcount
+            {"cutoff": today - ARCHIVE_AFTER, "inbox_cutoff": today - INBOX_ARCHIVE_AFTER}).rowcount
 
 
 def prune_sightings() -> int:

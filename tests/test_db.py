@@ -169,7 +169,7 @@ def test_a_save_over_a_change_made_elsewhere_writes_nothing(database):
     assert _one("SELECT status FROM jobs")[0] == "interested"
 
 
-def test_filtered_and_not_interested_jobs_are_archived_after_two_weeks(database):
+def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(database):
     from datetime import date
 
     def ad(job_id, title, posted, words):
@@ -181,20 +181,28 @@ def test_filtered_and_not_interested_jobs_are_archived_after_two_weeks(database)
     save_run("linkedin:a", "r2", "d2", [ad("2", "Intern", "2026-09-18", "recent")], job_filter=filtered)
     save_run("linkedin:a", "r3", "d3", [ad("3", "Analyst", "2026-09-01", "inbox")])
     save_run("linkedin:a", "r5", "d5", [ad("5", "Trader", "2026-09-01", "dropped"),
-                                         ad("6", "Quant", "2026-09-01", "fresh")])
+                                         ad("6", "Quant", "2026-09-01", "fresh"),
+                                         ad("7", "Engineer", "2026-08-01", "stale"),
+                                         ad("8", "Developer", "2026-08-01", "returned")])
     with connect() as conn:   # marked not interested: job 5 on 09-10, job 6 on 09-20
         for job_id, marked in (("5", "2026-09-10"), ("6", "2026-09-20")):
             conn.execute("UPDATE jobs SET status='not_interested', status_updated_at=%s "
                          "WHERE source_job_id=%s", (marked, job_id))
-    # 2026-09-28: job 1 is 18 days past posting; job 2 is 10; job 3 is old but not filtered;
-    # job 5 was marked 18 days ago, job 6 8 days ago, though both were posted weeks ago.
-    assert archive_old_jobs(date(2026, 9, 28)) == 2
+        # In the Inbox since 08-01 (job 7), and moved back to it on 09-20 (job 8).
+        for job_id, since in (("7", "2026-08-01"), ("8", "2026-09-20")):
+            conn.execute("UPDATE jobs SET status_updated_at=%s WHERE source_job_id=%s",
+                         (since, job_id))
+    # 2026-09-28: job 1 is 18 days past posting; job 2 is 10; job 5 was marked 18 days ago,
+    # job 6 8 days ago, though both were posted weeks ago. Inbox jobs wait 30 days: job 3
+    # was posted 27 days ago, job 7 58 days ago and never triaged; job 8 is as old, but
+    # was moved back to the Inbox 8 days ago.
+    assert archive_old_jobs(date(2026, 9, 28)) == 3
     with connect() as conn:
         statuses = dict(conn.execute("SELECT source_job_id, status FROM jobs").fetchall())
     assert statuses == {"1": "archived", "2": "filtered", "3": "new", "5": "archived",
-                        "6": "not_interested"}
+                        "6": "not_interested", "7": "archived", "8": "new"}
     assert sorted(_rows("SELECT from_status, via FROM status_history")) == [
-        ("filtered", "archive"), ("not_interested", "archive")]
+        ("filtered", "archive"), ("new", "archive"), ("not_interested", "archive")]
     # Still a known job: seeing it again adds no new one, and it stays archived.
     assert save_run("linkedin:a", "r4", "d4", [ad("1", "Intern", "2026-09-10", "old")]) == 0
     assert _one("SELECT status FROM jobs WHERE source_job_id='1'")[0] == "archived"
