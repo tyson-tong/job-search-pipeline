@@ -23,7 +23,10 @@ def revise(draft, checked: tuple[list[str], list[str]], review, revision_of, che
     try:
         answer, reviewer = review(draft)
         notes.append(f"Reviewed by model {reviewer}.")
-        critique = [str(c) for c in answer.get("critique") or [] if str(c).strip()]
+        points = answer.get("critique") or []
+        # Asked for a list; one string would otherwise be listed a character at a time.
+        points = [points] if isinstance(points, str) else points
+        critique = [str(c) for c in points if str(c).strip()]
         revision = revision_of(answer)
         if revision is not None:
             rechecked = check(revision)
