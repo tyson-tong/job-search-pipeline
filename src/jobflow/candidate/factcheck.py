@@ -77,7 +77,11 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
             errors.append(f"Header field '{field}' was changed or removed.")
     source_facts = {(f, normalise_text(e[f])) for e in _entries(source_cv) for f in FACT_FIELDS
                     if e.get(f) is not None}
-    source_entries = {_facts(e) for e in _entries(source_cv)}
+    # Each source entry's numbers, by its facts (entries with the same facts pooled).
+    source_entries: dict[tuple, set[str]] = {}
+    for e in _entries(source_cv):
+        source_entries.setdefault(_facts(e), set()).update(_numbers(e))
+    source_numbers = _numbers([source_cv.get("headline"), source_cv.get("sections")])
     for entry in _entries(draft_cv):
         altered = False
         for field in FACT_FIELDS:
@@ -87,10 +91,19 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
         # Each value may exist somewhere in the source, yet not together: an end date
         # taken from a later job, or one employer's title given to another.
         facts = _facts(entry)
-        if not altered and any(facts) and facts not in source_entries:
-            shown = ", ".join(f"{f} {entry[f]!r}" for f in FACT_FIELDS if entry.get(f) is not None)
+        if altered or not any(facts):
+            continue
+        shown = ", ".join(f"{f} {entry[f]!r}" for f in FACT_FIELDS if entry.get(f) is not None)
+        if facts not in source_entries:
             errors.append(f"Entry doesn't match any one entry in the source CV ({shown}): a date, "
                           "title, or detail was moved, added, or dropped.")
+            continue
+        # A number from another entry ("cut costs 30%" at one job, given to another). Numbers
+        # in no entry at all are reported below, for the whole CV.
+        moved = sorted((_numbers(entry) - source_entries[facts]) & source_numbers)
+        if moved:
+            errors.append(f"Numbers from another entry in the source CV ({shown}): "
+                          + ", ".join(moved) + ".")
     draft_entries = [(normalise_text(e.get("institution")), normalise_text(e.get("area")), normalise_text(e.get("degree")))
                      for e in _entries(draft_cv)]
     draft_companies = {normalise_text(e.get("company")) for e in _entries(draft_cv)}
@@ -109,7 +122,7 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
     # The other header fields are compared exactly above, so only these are scanned here.
     source_sections = [source_cv.get("headline"), source_cv.get("sections")]
     draft_sections = [draft_cv.get("headline"), draft_cv.get("sections")]
-    new_numbers = sorted(_numbers(draft_sections) - _numbers(source_sections))
+    new_numbers = sorted(_numbers(draft_sections) - source_numbers)
     if new_numbers:
         errors.append("Numbers not in the source CV: " + ", ".join(new_numbers) + ".")
     source_vocab = {t.casefold() for t in _terms(_strings(source_sections), skip_first=False)}

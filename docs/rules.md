@@ -27,7 +27,7 @@ Only the CV's `cv` section goes to the LLM; design, locale, and settings are cop
 - new or altered employers, positions, dates, or education
 - an entry whose employer, position, dates, and education details don't match one entry of the original together, such as an end date taken from a later job or one employer's title given to another
 - a removed employer, role (each position and start date at an employer), or education entry
-- numbers that aren't in the original
+- numbers that aren't in the original, and, in an entry, numbers from another entry of the original (a "30%" from one job given to another); a number in the headline or a section without employers or dates, such as skills, only has to be somewhere in the original
 
 New capitalised or technical terms, such as a tool name, are warnings. The check catches common problems; it does not replace reading the draft.
 

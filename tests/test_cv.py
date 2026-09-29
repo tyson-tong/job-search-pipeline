@@ -154,6 +154,20 @@ def test_fact_check_flags_a_date_or_title_moved_between_entries():
     assert any("doesn't match any one entry" in e for e in fact_check(source, promoted)[0])
 
 
+def test_fact_check_flags_a_number_moved_to_another_job():
+    # Every number was somewhere in the source, so "cut costs 30%" could move to another job.
+    source = copy.deepcopy(SOURCE_CV)
+    source["sections"]["experiences"].append(
+        {"company": "Other Co", "position": "Analyst", "start_date": "2018-01",
+         "end_date": "2021-01", "highlights": ["Cut reporting costs by 30%"]})
+    draft = copy.deepcopy(source)
+    draft["sections"]["experiences"][0]["highlights"][1] = \
+        "Presented dashboards to executives using Tableau, cutting costs by 30%"
+    errors, _ = fact_check(source, draft)
+    assert errors == ["Numbers from another entry in the source CV (company 'Example Corp', "
+                      "position 'Data Analyst', start_date '2021-02', end_date 'present'): 30."]
+
+
 def test_a_draft_fixed_by_hand_is_not_drafted_again(tmp_path):
     # A job whose draft failed the fact check is drafted again, which would overwrite a
     # draft you fixed yourself.
