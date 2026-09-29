@@ -3,6 +3,7 @@ from datetime import date
 from jobflow.ingest.dedupe import (
     canonical_url,
     description_similarity,
+    is_copy_of_ad,
     is_same_ad,
     looks_like_same_role,
     match_key,
@@ -68,7 +69,7 @@ def test_same_job_on_three_sites_is_recognised():
     postings = [normalise(i) for i in (LINKEDIN, INDEED, SEEK)]
     assert {match_key(p) for p in postings} == {"acme|data analyst"}
     for p in postings[1:]:
-        assert description_similarity(postings[0].description, p.description) >= 0.5
+        assert is_copy_of_ad(postings[0].description, p.description)
 
 
 def test_different_jobs_are_not_merged():

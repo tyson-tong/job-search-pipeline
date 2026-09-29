@@ -16,9 +16,17 @@ TRACKING_PARAMS = {"trk", "trackingid", "refid", "position", "pagenum", "from", 
 COMPANY_NOISE = {"pty", "ltd", "limited", "inc", "llc", "llp", "plc", "pte", "gmbh", "sdn",
                  "bhd", "co", "corp", "corporation", "company", "group", "holdings", "the",
                  "australia", "nz", "singapore", "hk"}
-# Two postings with the same employer and title are the same job when their
-# description word sets overlap at least this much (Jaccard similarity).
-SIMILAR_DESCRIPTION = 0.5
+# Two postings with the same employer, title, and city are the same job when nearly all of
+# the shorter ad's words are in the longer one: a site's cut-down or padded copy of one ad.
+# Word overlap alone can't tell that from two roles sharing an employer's standard text
+# (about us, benefits, diversity), which made up 85% of two different banking roles' words;
+# each role's own duties keep it below this. An edited repost falls below it too, and is
+# shown as a similar job instead: a missed merge leaves a flagged duplicate, a wrong one
+# loses a job.
+SAME_JOB_CONTAINMENT = 0.95
+# A short ad (under SAME_AD_MIN_WORDS words) is a copy only when the two share at least this
+# much of their words: a site may add a word or two ("Hybrid"), not a whole other ad.
+SHORT_AD_SHARE = 0.8
 FUZZY_WINDOW_DAYS = 90
 # Similar jobs: copies the merge didn't catch, e.g. a recruiter re-posting an employer's
 # ad under its own name. Only reported, never merged, so the bar is lower and employer
@@ -101,6 +109,21 @@ def jaccard(a: set[str], b: set[str]) -> float:
 
 def description_similarity(a: str | None, b: str | None) -> float:
     return jaccard(description_words(a), description_words(b))
+
+
+def is_copy_of_ad(a: str | None, b: str | None) -> bool:
+    """True when one ad is a copy of the other, cut down or padded: at least
+    SAME_JOB_CONTAINMENT of the shorter ad's words are in the longer one. A short ad
+    (under SAME_AD_MIN_WORDS words) must also be most of the longer one (SHORT_AD_SHARE of
+    their words together), not just inside it: a stub such as "Join Acme as an analyst,
+    apply now" is inside every Acme analyst ad."""
+    words_a, words_b = description_words(a), description_words(b)
+    if not words_a or not words_b:
+        return False
+    shorter = min(len(words_a), len(words_b))
+    if len(words_a & words_b) / shorter < SAME_JOB_CONTAINMENT:
+        return False
+    return shorter >= SAME_AD_MIN_WORDS or jaccard(words_a, words_b) >= SHORT_AD_SHARE
 
 
 def title_similarity(a: str | None, b: str | None) -> float:

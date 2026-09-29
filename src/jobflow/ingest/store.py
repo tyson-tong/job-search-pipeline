@@ -14,10 +14,9 @@ import psycopg.types.json
 from .. import settings
 from .dedupe import (
     FUZZY_WINDOW_DAYS,
-    SIMILAR_DESCRIPTION,
-    description_similarity,
     fingerprint,
     identity,
+    is_copy_of_ad,
     is_same_ad,
     match_key,
     same_country,
@@ -59,9 +58,9 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str 
     is_first_copy is True when this is the copy the jobs row was created from.
     Tried in order: this site's ID/URL on any known copy (job_sources), exact content
     fingerprint, the same employer and title seen recently in the same place and country
-    with a similar description (another site's copy, or a repost), then a recent job with the
-    same title and a near-identical ad under any employer or place in the same country
-    (is_same_ad).
+    with one ad a cut-down or padded copy of the other (another site's copy, or a repost;
+    see is_copy_of_ad), then a recent job with the same title and a near-identical ad
+    under any employer or place in the same country (is_same_ad).
     """
     row = conn.execute("""SELECT s.job_id, j.canonical_key = s.source_key
                           FROM job_sources s JOIN jobs j ON j.id = s.job_id
@@ -82,7 +81,7 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str 
             # A location naming no city ("Hong Kong", "Singapore") never rules out a match,
             # so the country must: one employer's ad for two countries is two jobs.
             if same_country(country, existing_country) and same_place(location, existing_location) \
-                    and description_similarity(description, existing) >= SIMILAR_DESCRIPTION:
+                    and is_copy_of_ad(description, existing):
                 return job_pk, False
     patterns = title_patterns(title)
     if description and patterns and title != "Untitled":

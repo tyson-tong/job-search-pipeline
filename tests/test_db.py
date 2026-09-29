@@ -73,19 +73,26 @@ def test_two_different_jobs_are_never_merged(database):
     # A wrong merge loses a job: it never reaches the Inbox.
     def ad(job_id, location, words):
         return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
-                "title": "Data Analyst", "companyName": "Acme", "location": location,
+                "title": "Software Engineer", "companyName": "Big Bank", "location": location,
                 "descriptionText": " ".join(words)}
-    duties = [f"duty{i}" for i in range(60)]
-    edited = duties[:50] + [f"other{i}" for i in range(10)]   # about 70% the same words
-    save_run("linkedin:a", "r1", "d1", [ad("1", "Sydney, NSW", duties)], country="AU")
-    # The same employer and title with a similar ad, but in another city: another office.
-    assert save_run("linkedin:a", "r2", "d2", [ad("2", "Melbourne, VIC", edited)], country="AU") == 1
-    # The same ad word for word, for an office in another country: another job, even when
-    # its location names no city to tell the two apart.
-    assert save_run("linkedin:a", "r3", "d3", [ad("3", "Hong Kong", duties)], country="HK") == 1
-    # The check: in the same city, that similar ad is the same job.
-    assert save_run("linkedin:a", "r4", "d4", [ad("4", "Sydney NSW 2000", edited)], country="AU") == 0
-    assert _one("SELECT count(*) FROM jobs")[0] == 3
+    # Two roles sharing the employer's standard text (about us, benefits), which is most
+    # of each ad: 85% of the shorter ad's words, and 74% of both ads' words together.
+    standard = [f"benefit{i}" for i in range(90)]
+    payments = standard + [f"payments{i}" for i in range(20)]
+    lending = standard + [f"lending{i}" for i in range(20)]
+    save_run("linkedin:a", "r1", "d1", [ad("1", "Sydney, NSW", payments)], country="AU")
+    assert save_run("linkedin:a", "r2", "d2", [ad("2", "Sydney NSW", lending)], country="AU") == 1
+    # A similar ad in another city is another office's job; the same ad in another country
+    # is too, even when its location names no city to tell the two apart.
+    melbourne = payments[:100] + [f"melbourne{i}" for i in range(10)]
+    assert save_run("linkedin:a", "r3", "d3", [ad("3", "Melbourne, VIC", melbourne)], country="AU") == 1
+    assert save_run("linkedin:a", "r4", "d4", [ad("4", "Hong Kong", payments)], country="HK") == 1
+    # The check: another site's cut-down copy of the first ad, in the same city, is that job.
+    seek = {"id": "5", "jobLink": "https://www.seek.com.au/job/5", "title": "Software Engineer",
+            "advertiser": {"name": "Big Bank Limited"}, "joblocationInfo": {"displayLocation": "Sydney NSW"},
+            "content": {"unEditedContent": " ".join(payments[:80] + payments[90:])}}
+    assert save_run("seek:a", "r5", "d5", [seek], country="AU") == 0
+    assert _one("SELECT count(*) FROM jobs")[0] == 4
 
 
 def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
