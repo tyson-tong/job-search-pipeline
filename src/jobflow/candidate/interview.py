@@ -10,7 +10,7 @@ from pathlib import Path
 from ..db import connect, fetch_job
 from ..llm import complete
 from ..settings import now
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_sources
+from .cvs import CV_CHAR_LIMIT, chosen_sources, job_prompt
 from .paths import job_directory
 from .research import NO_EMPLOYER, web_search
 
@@ -31,9 +31,7 @@ AGENTS = {
 
 def _agent(name: str, instruction: str, job: dict, cv_text: str,
            sources: list[dict]) -> tuple[str, str]:
-    payload = {"job": {"title": job["title"], "company": job["company"],
-                       "location": job["location"],
-                       "description": job["description"][:JOB_CHAR_LIMIT]},
+    payload = {"job": {**job_prompt(job), "location": job["location"]},
                "candidate_cv_sources": cv_text,
                "web_sources": sources,
                "task": instruction + " Use source URLs as inline citations where useful. "

@@ -11,7 +11,7 @@ import yaml
 from ..db import fetch_job
 from ..llm import complete, parse_json
 from . import documents
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, is_yaml
+from .cvs import check_cv_length, chosen_files, is_yaml, job_prompt
 from .factcheck import fact_check
 from .matching import best_variant, match_job
 from .paths import job_directory
@@ -63,18 +63,14 @@ def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict,
     if not isinstance(source_doc, dict) or not isinstance(source_doc.get("cv"), dict):
         raise RuntimeError(f"{name} has no cv mapping")
     source_yaml = yaml.safe_dump({"cv": source_doc["cv"]}, sort_keys=False, allow_unicode=True)
-    if len(source_yaml) > CV_CHAR_LIMIT:
-        raise RuntimeError(f"{name} cv section is {len(source_yaml)} characters; "
-                           f"over {CV_CHAR_LIMIT} it would be truncated and the draft would "
-                           "silently lose content")
+    check_cv_length(f"{name}'s cv section", source_yaml)
     return job, variant, reason, source_doc, source_yaml
 
 
 def _review(job: dict, source_yaml: str, cv_yaml: str, sources: list[dict]) -> tuple[dict, str]:
     """A hiring-manager reviewer critiques the draft and returns a revised version."""
     prompt = {
-        "job": {"title": job["title"], "company": job["company"],
-                "description": job["description"][:JOB_CHAR_LIMIT]},
+        "job": job_prompt(job),
         "source_cv_yaml": source_yaml, "tailored_cv_yaml": cv_yaml, "company_research": sources,
         "instructions": "Review the tailored CV as the hiring manager for this job would. Find "
         "missed requirements or keywords the source CV genuinely supports, angles from the "
@@ -166,8 +162,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
     job, variant, reason, source_doc, source_yaml = load_source(job_id, variant)
     researching = research_soon(job)
     prompt = {
-        "job": {"title": job["title"], "company": job["company"],
-                "description": job["description"][:JOB_CHAR_LIMIT]},
+        "job": job_prompt(job),
         "source_cv_yaml": source_yaml,
         "requirements": "Return the complete revised YAML with the single top-level key cv, "
         "without Markdown fences. Preserve all factual details, names, contact details, dates, "

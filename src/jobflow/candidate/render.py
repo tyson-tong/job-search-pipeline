@@ -15,7 +15,7 @@ import yaml
 from pypdf import PdfReader
 
 from ..llm import complete, parse_json
-from .cvs import JOB_CHAR_LIMIT
+from .cvs import job_prompt
 
 # A page (other than the last) this empty at the bottom gets a warning: RenderCV never
 # splits an entry, so one too long for the space left moves whole to the next page.
@@ -123,8 +123,7 @@ def without(cv: dict, cut: list[dict]) -> dict:
 
 def rank_bullets(job: dict, found: list[dict]) -> object:
     prompt = {
-        "job": {"title": job["title"], "company": job["company"],
-                "description": job["description"][:JOB_CHAR_LIMIT]},
+        "job": job_prompt(job),
         "bullets": [{"id": b["id"], "entry": b["label"], "text": b["text"]} for b in found],
         "instructions": "The CV is too long. Order every bullet id from least to most relevant "
         "to this job, so the least relevant can be cut first. Return JSON: "

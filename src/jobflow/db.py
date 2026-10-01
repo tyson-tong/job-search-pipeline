@@ -7,6 +7,8 @@ from importlib import resources
 import psycopg
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
+from .settings import LOCAL_HOSTS, timezone, today
+
 STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "offered",
             "accepted", "declined", "rejected", "withdrawn", "filtered", "archived")
 # Finished with, so no follow-up is due. "filtered" is set on import, or by
@@ -18,9 +20,6 @@ CLOSED_STATUSES = ["not_interested", "accepted", "declined", "rejected", "withdr
 # Statuses meaning you've applied; the first time a job reaches one sets applied_at.
 APPLIED_STATUSES = ["applied", "interviewing", "offered", "accepted", "declined"]
 
-
-# Database hosts on this machine, which may be reached without encryption.
-LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 # The sslmode values that never fall back to an unencrypted connection.
 ENCRYPTED_SSLMODES = ("require", "verify-ca", "verify-full")
 
@@ -48,8 +47,6 @@ def connect():
     """A connection in settings.timezone(), so the dates the database works out (a
     timestamp's day) and the timestamps it returns match the rest of jobflow's; encrypted
     unless the database is on this machine (encrypted_url)."""
-    from .settings import timezone
-
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL is required")
@@ -139,8 +136,6 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
     jobs.status is the single source of truth; the applications row mirrors it and
     holds the notes, follow-up date, and the first time the job was applied for.
     """
-    from .settings import today
-
     if status is not None and status not in STATUSES:
         raise RuntimeError(f"Unknown status {status!r}; choose from {', '.join(STATUSES)}")
     row = conn.execute("SELECT status FROM jobs WHERE id=%s FOR UPDATE", (job_id,)).fetchone()

@@ -10,6 +10,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = ROOT / "config"
+# Hosts on this machine: the only ones a database or LLM server may be reached at
+# unencrypted.
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 
 
 # Personal files created from the templates shipped with the repository, in the order

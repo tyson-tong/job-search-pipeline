@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 
 import requests
 
+from .settings import LOCAL_HOSTS
+
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 # A rate limit, a server error, or a network error is retried this many times, waiting as
 # long as the provider asks (Retry-After) up to MAX_WAIT seconds, or 2, 4, 8... seconds otherwise.
@@ -17,7 +19,6 @@ MAX_WAIT = 60
 READ_TIMEOUT = 300
 # Settings sent when the provider accepts them, and dropped when it rejects them.
 OPTIONAL = ("response_format", "temperature")
-LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 
 
 class LLMError(RuntimeError):

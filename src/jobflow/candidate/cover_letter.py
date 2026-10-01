@@ -7,7 +7,7 @@ from pathlib import Path
 from ..db import fetch_job
 from ..llm import complete, parse_json
 from . import documents
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, chosen_sources, is_yaml
+from .cvs import check_cv_length, chosen_files, chosen_sources, is_yaml, job_prompt
 from .factcheck import check_letter
 from .matching import best_variant, match_job
 from .paths import job_directory
@@ -38,16 +38,13 @@ def load_cv(job_id: int, variant: str | None) -> tuple[dict, str, str, dict | st
         job, _, _, source_doc, source_yaml = load_source(job_id, variant)
         return job, variant, reason, source_doc["cv"], source_yaml
     text = chosen_sources()[variant]
-    if len(text) > CV_CHAR_LIMIT:
-        raise RuntimeError(f"{files[variant].name} is {len(text)} characters; over "
-                           f"{CV_CHAR_LIMIT} it would be truncated")
+    check_cv_length(files[variant].name, text)
     return fetch_job(job_id), variant, reason, text, text
 
 
 def _draft(job: dict, cv: str, sources: list[dict]) -> tuple[str, str]:
     prompt = {
-        "job": {"title": job["title"], "company": job["company"],
-                "description": job["description"][:JOB_CHAR_LIMIT]},
+        "job": job_prompt(job),
         "candidate_cv": cv, "company_research": sources,
         "requirements": "Write a cover letter for this job as plain text, 250 to 400 words, "
         "without Markdown, with a blank line between paragraphs. Open with 'Dear <name>,' if the ad names a contact, otherwise "
@@ -66,8 +63,7 @@ def _draft(job: dict, cv: str, sources: list[dict]) -> tuple[str, str]:
 
 def _review(job: dict, cv: str, letter: str, sources: list[dict]) -> tuple[dict, str]:
     prompt = {
-        "job": {"title": job["title"], "company": job["company"],
-                "description": job["description"][:JOB_CHAR_LIMIT]},
+        "job": job_prompt(job),
         "candidate_cv": cv, "cover_letter": letter, "company_research": sources,
         "instructions": "Review the cover letter as the hiring manager for this job would. Find "
         "missed requirements the CV genuinely supports, angles from the company research, "

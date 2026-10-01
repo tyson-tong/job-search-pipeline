@@ -111,6 +111,21 @@ def cv_text(path: Path, mtime_ns: int = 0, size: int = 0) -> str:
     return text
 
 
+def job_prompt(job: dict) -> dict:
+    """The job as every prompt shows it: title, employer, and the ad, cut to JOB_CHAR_LIMIT."""
+    return {"title": job["title"], "company": job["company"],
+            "description": job["description"][:JOB_CHAR_LIMIT]}
+
+
+def check_cv_length(name: str, text: str) -> None:
+    """Stop rather than send only the start of a CV, which would silently lose the rest:
+    content dropped from a draft, or evidence later in it counted as missing."""
+    if len(text) > CV_CHAR_LIMIT:
+        raise RuntimeError(f"{name} is {len(text):,} characters; over {CV_CHAR_LIMIT:,} the LLM "
+                           "would see only its start, and everything after it would be lost "
+                           "or count as missing")
+
+
 def cv_digest(source: str) -> str:
     return hashlib.sha256(source.encode()).hexdigest()
 

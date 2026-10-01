@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from ..db import connect, fetch_job
 from ..llm import complete, parse_json
 from ..settings import matching_weights
-from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_sources, cv_digest, normalise_text
+from .cvs import check_cv_length, chosen_sources, cv_digest, job_prompt, normalise_text
 
 # Bump when the stored assessment shape changes.
 ASSESSMENT_FORMAT = 2
@@ -189,15 +189,11 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
     job = fetch_job(job_id)
     for variant, source in sources.items():
         # A score stands until the CV changes, so one from part of a CV would stand too.
-        if len(source) > CV_CHAR_LIMIT:
-            raise RuntimeError(f"CV {variant!r} is {len(source)} characters; over "
-                               f"{CV_CHAR_LIMIT} it would be truncated and evidence later in "
-                               "it would count as missing")
+        check_cv_length(f"CV {variant!r}", source)
 
     def assess(variant: str, source: str) -> dict:
         digest = cv_digest(source)
-        prompt = {"job": {"title": job["title"], "company": job["company"],
-                          "description": job["description"][:JOB_CHAR_LIMIT]},
+        prompt = {"job": job_prompt(job),
                   "cv_variant": variant, "cv_source": source,
                   "instructions": MATCH_INSTRUCTIONS}
         content, model = complete(
