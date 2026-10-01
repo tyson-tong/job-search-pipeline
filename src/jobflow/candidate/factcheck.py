@@ -11,6 +11,8 @@ from .cvs import normalise_text
 FREE_TEXT_FIELDS = ("sections", "headline")
 FACT_FIELDS = ("company", "position", "institution", "area", "degree", "start_date",
                "end_date", "date", "name", "title")
+# An entry's location may be left out, but not changed or made up.
+LOCATION = "location"
 
 
 def _entries(cv: dict):
@@ -36,21 +38,41 @@ def _numbers(value: object) -> set[str]:
             for n in re.findall(r"\d+(?:[.,]\d+)*", text)}
 
 
-def _terms(texts, skip_first: bool) -> set[str]:
-    """Capitalised or technical tokens (e.g. AWS, Node.js, C++), optionally ignoring
-    the first word of each sentence, which is capitalised anyway."""
+def _technical(token: str) -> bool:
+    """A token no ordinary word looks like: AWS, PyTorch, Node.js, C++."""
+    return bool(re.search(r"[+#]|\w\.\w|^.+[A-Z]", token))
+
+
+def _terms(texts, skip_first: bool, known: set[str] = frozenset()) -> set[str]:
+    """Capitalised or technical tokens (e.g. AWS, Node.js, C++). With skip_first, the
+    first word of a sentence, which is capitalised anyway, counts only if it is technical,
+    starts a list ("Kubernetes, Python, SQL"), or is one of `known` (casefolded terms, such
+    as the job ad's, which a draft is most tempted to claim)."""
     terms = set()
     for text in texts:
         for sentence in re.split(r"(?<=[.!?;:])\s+|\n", text):
-            tokens = [t.strip(".,;:()[]\"'*") for t in sentence.split()]
+            raw = sentence.split()
+            tokens = [t.strip(".,;:()[]\"'*") for t in raw]
             for position, token in enumerate(tokens):
-                if not token or (skip_first and position == 0):
+                if not token:
+                    continue
+                if skip_first and position == 0 and not (
+                        _technical(token) or raw[0].endswith(",") or token.casefold() in known):
                     continue
                 # Digits are left to the number check.
-                if not re.search(r"\d", token) and (token[0].isupper()
-                                                    or re.search(r"[+#]|\w\.\w", token)):
+                if not re.search(r"\d", token) and (token[0].isupper() or _technical(token)):
                     terms.add(token)
     return terms
+
+
+# What RenderCV passes to Typst as markup rather than text: commands such as
+# #text(fill: white)[...] or #read("..."), $$ math $$, and links, whose address the PDF
+# doesn't show. A draft must not add any (the job ad could ask the LLM for them).
+_MARKUP = re.compile(r"#[A-Za-z][^\s()\[]*(?:\([^)]*\))?(?:\[[^\]]*\])?|\$\$.*?\$\$|\]\([^)]*\)")
+
+
+def _markup(value: object) -> set[str]:
+    return {m.group(0) for text in _strings(value) for m in _MARKUP.finditer(text)}
 
 
 def _role(entry: dict) -> tuple[str, str, str]:
@@ -63,8 +85,10 @@ def _facts(entry: dict) -> tuple[str | None, ...]:
     return tuple(None if entry.get(f) is None else normalise_text(entry[f]) for f in FACT_FIELDS)
 
 
-def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
-    """Compare a tailored draft with its source CV.
+def fact_check(source_cv: dict, draft_cv: dict,
+               job_text: str = "") -> tuple[list[str], list[str]]:
+    """Compare a tailored draft with its source CV. job_text, the job's title and ad, names
+    the terms a draft is most tempted to add, so they're looked for everywhere.
 
     Errors are likely factual changes (render is skipped); warnings are wording
     changes a human should confirm.
@@ -79,8 +103,10 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
                     if e.get(f) is not None}
     # Each source entry's numbers, by its facts (entries with the same facts pooled).
     source_entries: dict[tuple, set[str]] = {}
+    source_locations: dict[tuple, set[str]] = {}
     for e in _entries(source_cv):
         source_entries.setdefault(_facts(e), set()).update(_numbers(e))
+        source_locations.setdefault(_facts(e), set()).add(normalise_text(e.get(LOCATION)))
     source_numbers = _numbers([source_cv.get("headline"), source_cv.get("sections")])
     for entry in _entries(draft_cv):
         altered = False
@@ -98,6 +124,10 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
             errors.append(f"Entry doesn't match any one entry in the source CV ({shown}): a date, "
                           "title, or detail was moved, added, or dropped.")
             continue
+        if entry.get(LOCATION) is not None \
+                and normalise_text(entry[LOCATION]) not in source_locations[facts]:
+            errors.append(f"Location changed ({shown}): {entry[LOCATION]!r} is not this entry's "
+                          "location in the source CV.")
         # A number from another entry ("cut costs 30%" at one job, given to another). Numbers
         # in no entry at all are reported below, for the whole CV.
         moved = sorted((_numbers(entry) - source_entries[facts]) & source_numbers)
@@ -125,9 +155,14 @@ def fact_check(source_cv: dict, draft_cv: dict) -> tuple[list[str], list[str]]:
     new_numbers = sorted(_numbers(draft_sections) - source_numbers)
     if new_numbers:
         errors.append("Numbers not in the source CV: " + ", ".join(new_numbers) + ".")
+    new_markup = sorted(_markup(draft_sections) - _markup(source_sections))
+    if new_markup:
+        errors.append("Markup not in the source CV, which RenderCV would run or hide in the "
+                      "PDF: " + ", ".join(new_markup) + ".")
     source_vocab = {t.casefold() for t in _terms(_strings(source_sections), skip_first=False)}
     source_words = set(normalise_text(" ".join(_strings(source_sections))).split())
-    new_terms = sorted(t for t in _terms(_strings(draft_sections), skip_first=True)
+    job_vocab = {t.casefold() for t in _terms([job_text], skip_first=False)}
+    new_terms = sorted(t for t in _terms(_strings(draft_sections), skip_first=True, known=job_vocab)
                        if t.casefold() not in source_vocab
                        and not set(normalise_text(t).split()) <= source_words)
     if new_terms:

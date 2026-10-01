@@ -176,7 +176,8 @@ def tailor_cv(job_id: int, variant: str | None = None,
         "You edit RenderCV YAML conservatively. Output only valid YAML; never add unsupported facts.",
         json.dumps(prompt, ensure_ascii=False))
     draft_cv = _parse_draft(content)
-    errors, warnings = fact_check(source_doc["cv"], draft_cv)
+    job_text = f"{job['title']}\n{job['description']}"
+    errors, warnings = fact_check(source_doc["cv"], draft_cv, job_text)
 
     sources, notes = researching.result()
     draft_cv, (errors, warnings), critique = revise(
@@ -184,7 +185,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
         lambda cv: _review(job, source_yaml, yaml.safe_dump(
             {"cv": cv}, sort_keys=False, allow_unicode=True), sources),
         lambda answer: _parse_draft(str(answer.get("cv_yaml") or "")),
-        lambda cv: fact_check(source_doc["cv"], cv), notes)
+        lambda cv: fact_check(source_doc["cv"], cv, job_text), notes)
 
     target_dir = output_dir or job_directory(job_id, job)
     target_dir.mkdir(parents=True, exist_ok=True)

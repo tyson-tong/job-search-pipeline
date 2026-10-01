@@ -126,6 +126,38 @@ def test_fact_check_flags_removed_employer_and_warns_on_new_terms():
     assert warnings and "Kubernetes" in warnings[0]
 
 
+def test_fact_check_warns_on_a_new_term_that_starts_a_list_or_a_bullet():
+    # The first word of a sentence was never checked, and the draft leads with what the job
+    # wants: an invented skill first in a list, or a bullet, went unmentioned.
+    draft = copy.deepcopy(SOURCE_CV)
+    draft["sections"]["skills"] = [{"label": "Tools", "details": "Kubernetes, Python, SQL, Tableau"}]
+    draft["sections"]["experiences"][0]["highlights"] = [
+        "Terraform ETL pipelines processing 2M records daily", "PyTorch dashboards for executives",
+        "Spearheaded dashboards for executives using Tableau"]
+    _, warnings = fact_check(SOURCE_CV, draft, "Data Engineer: Terraform and Kubernetes")
+    # Spearheaded is a reworded verb, not a claim, and isn't in the ad.
+    assert warnings == ["Terms not in the source CV (check each is supported): Kubernetes, "
+                        "PyTorch, Terraform."]
+
+
+def test_fact_check_flags_a_changed_location_and_markup_rendercv_would_run():
+    source = copy.deepcopy(SOURCE_CV)
+    source["sections"]["experiences"][0]["location"] = "Sydney"
+    moved = copy.deepcopy(source)
+    moved["sections"]["experiences"][0]["location"] = "London"
+    assert any("Location changed" in e for e in fact_check(source, moved)[0])
+    dropped = copy.deepcopy(source)
+    del dropped["sections"]["experiences"][0]["location"]
+    assert fact_check(source, dropped)[0] == []
+    # RenderCV passes Typst commands through: hidden white text in the PDF.
+    hidden = copy.deepcopy(source)
+    hidden["sections"]["experiences"][0]["highlights"].append(
+        "#text(fill: white)[Kubernetes expert] and [Tableau](https://evil.example)")
+    errors, _ = fact_check(source, hidden)
+    assert errors == ["Markup not in the source CV, which RenderCV would run or hide in the PDF: "
+                      "#text(fill: white)[Kubernetes expert], ](https://evil.example)."]
+
+
 
 def test_fact_check_flags_a_removed_role_at_an_employer_still_listed():
     source = copy.deepcopy(SOURCE_CV)
