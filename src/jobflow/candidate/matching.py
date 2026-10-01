@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 
-from ..db import connect, fetch_job
+from .. import db
+from ..db import fetch_job
 from ..llm import complete, parse_json
 from ..settings import matching_weights
 from .cvs import check_cv_length, chosen_sources, cv_digest, job_prompt, normalise_text
@@ -169,7 +170,7 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
     against CVs no longer named.
     """
     weights = matching_weights()
-    with connect() as conn:
+    with db.connect() as conn:
         assessed = _latest_digests(conn, job_id)
         status = conn.execute("SELECT status FROM jobs WHERE id=%s", (job_id,)).fetchone()
     if not status:
@@ -184,7 +185,7 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
             raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only interested "
                                "jobs are scored")
     if not sources:
-        with connect() as conn:
+        with db.connect() as conn:
             return stored_assessments(conn, job_id, weights)
     job = fetch_job(job_id)
     for variant, source in sources.items():
@@ -213,7 +214,7 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
     # Saved together, only once every CV is assessed: a job scored against only one of two
     # CVs would look as good as scored, so a failure part-way must save none. A rescore
     # adds a row; the latest row per CV is the job's score against it.
-    with connect() as conn:
+    with db.connect() as conn:
         # Another process (a second tracker, or tailor-cv) may have scored this job while
         # the LLM calls ran. Lock the job and keep whichever score was saved first.
         conn.execute("SELECT 1 FROM jobs WHERE id=%s FOR UPDATE", (job_id,))
@@ -251,7 +252,7 @@ UNSCORED_SQL = f"""FROM jobs j
 def jobs_needing_match(variants: list[str], only: list[int] | None = None) -> list[int]:
     """Interested jobs with no score against one of these CVs, newest first; limited to
     `only` when given."""
-    with connect() as conn:
+    with db.connect() as conn:
         rows = conn.execute(
             f"""SELECT j.id {UNSCORED_SQL} AND (%(only)s::bigint[] IS NULL OR j.id = ANY(%(only)s))
                 ORDER BY j.first_seen_at DESC""", {"variants": variants, "only": only}).fetchall()
@@ -259,7 +260,7 @@ def jobs_needing_match(variants: list[str], only: list[int] | None = None) -> li
 
 
 def count_needing_match(variants: list[str]) -> int:
-    with connect() as conn:
+    with db.connect() as conn:
         return conn.execute(f"SELECT count(*) {UNSCORED_SQL}", {"variants": variants}).fetchone()[0]
 
 
@@ -278,7 +279,7 @@ OUTDATED_SQL = """SELECT j.id, cv.variant FROM jobs j
 def outdated_scores(digests: dict[str, str], only: list[int] | None = None) -> list[tuple[int, str]]:
     """(job id, CV) for each Interested job's score made against an earlier version of
     that CV (digests: current_digests()), newest job first; limited to `only` when given."""
-    with connect() as conn:
+    with db.connect() as conn:
         return [tuple(row) for row in conn.execute(
             OUTDATED_SQL, {"variants": list(digests), "digests": list(digests.values()),
                            "only": only}).fetchall()]

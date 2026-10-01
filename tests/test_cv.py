@@ -6,7 +6,7 @@ from concurrent.futures import Future
 import pytest
 from docx import Document
 
-from jobflow.candidate import cover_letter, review
+from jobflow.candidate import cover_letter
 from jobflow.candidate.cover_letter import letter_fixed_by_hand
 from jobflow.candidate.factcheck import check_letter, fact_check
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
@@ -234,17 +234,11 @@ def test_letter_check_flags_numbers_and_terms_from_nowhere():
             in check_letter("Dear [Name], I built dashboards.", SOURCE_CV, JOB, [])[1])
 
 
-def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypatch):
-    class Conn:
-        def execute(self, *args): return self
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-
+def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypatch, no_database):
     letter = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
     monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
         JOB, "main", "CV variant main.", SOURCE_CV, ""))
     monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
-    monkeypatch.setattr(review, "connect", Conn)
     monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
         json.dumps({"critique": [], "cover_letter": letter}) if kw.get("reviewer")
         else letter, "m"))
@@ -256,18 +250,12 @@ def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypat
     assert letter in target.read_text()
 
 
-def test_a_revision_with_more_fact_check_errors_is_discarded(tmp_path, monkeypatch):
-    class Conn:
-        def execute(self, *args): return self
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-
+def test_a_revision_with_more_fact_check_errors_is_discarded(tmp_path, monkeypatch, no_database):
     draft = "Dear Hiring Manager,\n\nAt Example Corp I built Python ETL pipelines.\n\nAlex Example"
     revised = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
     monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
         JOB, "main", "CV variant main.", SOURCE_CV, ""))
     monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
-    monkeypatch.setattr(review, "connect", Conn)
     monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
         json.dumps({"critique": ["Add a metric"], "cover_letter": revised}) if kw.get("reviewer")
         else draft, "m"))
@@ -328,45 +316,6 @@ def test_shortening_never_empties_an_entry_or_rewrites_anything():
     assert cv["sections"]["experiences"][0]["highlights"][0].startswith("Built")  # input untouched
 
 
-def _assess(prompt: str) -> tuple[str, str]:
-    """The LLM's answer to a scoring prompt: evidence for CV dev, a failure for CV strat."""
-    if '"cv_variant": "strat"' in prompt:
-        raise RuntimeError("Read timed out")
-    return json.dumps({"requirements": [{"requirement": "Python", "status": "matched",
-                                         "evidence": ["Built Python ETL pipelines"]}]}), "m"
-
-
-@pytest.mark.parametrize("cvs, answer, message", [
-    # Saving an answer listing no requirements would fix the score at 0 until the CV changes.
-    (["dev"], lambda prompt: ('{"requirements": []}', "m"), "no requirements"),
-    # Saving the one CV that worked would leave the job scored without the other.
-    (["dev", "strat"], _assess, "timed out"),
-])
-def test_a_failed_assessment_saves_no_score(monkeypatch, cvs, answer, message):
-    # A score stands until you edit the CV and rescore, so nothing may be saved from a failure.
-    from jobflow.candidate import matching
-
-    class Conn:
-        sql = []
-        def execute(self, sql, *args):
-            self.sql.append(sql)
-            self.last = sql
-            return self
-        def fetchall(self): return []
-        def fetchone(self): return ("interested",) if "status" in self.last else (False,)
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-
-    monkeypatch.setattr(matching, "connect", Conn)
-    monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
-    monkeypatch.setattr(matching, "fetch_job", lambda job_id: JOB)
-    monkeypatch.setattr(matching, "chosen_sources", lambda: {cv: CV_TEXT for cv in cvs})
-    monkeypatch.setattr(matching, "complete", lambda system, user, **kw: answer(user))
-    with pytest.raises(RuntimeError, match=message):
-        matching.match_job(1)
-    assert not any("INSERT" in sql for sql in Conn.sql)
-
-
 def test_cutting_to_fit_cuts_the_fewest_least_relevant_bullets(tmp_path, monkeypatch):
     import yaml
 
@@ -423,16 +372,12 @@ def test_format_for_a_job_already_tailored_comes_from_its_checked_draft(tmp_path
         tailoring.add_format(folder, "latex")
 
 
-def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkeypatch):
+def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkeypatch,
+                                                               no_database):
     # A PDF, .docx, or .tex from an earlier run would look like this draft, checked.
     import yaml
 
     from jobflow.candidate import tailoring
-
-    class Conn:
-        def execute(self, *args): return self
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
 
     invented = copy.deepcopy(SOURCE_CV)
     invented["sections"]["experiences"][0]["position"] = "Head of Data"
@@ -442,7 +387,6 @@ def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkey
     researched = Future()
     researched.set_result(([], []))
     monkeypatch.setattr(tailoring, "research_soon", lambda job: researched)
-    monkeypatch.setattr(review, "connect", Conn)
     monkeypatch.setattr(tailoring, "complete", lambda system, user, **kw: (
         json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))
     for suffix in (".pdf", ".docx", ".tex"):

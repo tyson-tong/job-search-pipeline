@@ -6,8 +6,9 @@ import io
 import math
 from datetime import date, datetime, timedelta
 
+from .. import db
 from ..candidate.matching import score_sql, score_weights
-from ..db import CLOSED_STATUSES, STATUSES, connect, set_job_state
+from ..db import CLOSED_STATUSES, STATUSES, set_job_state
 from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
 from ..ingest.similar import IN_PROGRESS, similar_jobs
 from ..settings import today
@@ -134,7 +135,7 @@ def _like_escape(text: str) -> str:
 
 
 def list_jobs(filters: dict) -> list[dict]:
-    with connect() as conn:
+    with db.connect() as conn:
         rows = conn.execute(
             f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
                        j.status, j.salary_min, j.salary_max, best.score, best.cv_variant,
@@ -268,7 +269,7 @@ def countries(filters: dict) -> dict:
     """The countries among jobs with the chosen statuses, with job counts, for the Country
     filter to offer; and the number of those jobs on each site, for the Sites filter."""
     params = {"statuses": filters["statuses"], "unknown": UNKNOWN_COUNTRY}
-    with connect() as conn:
+    with db.connect() as conn:
         rows = conn.execute(
             """SELECT coalesce(country, %(unknown)s), count(*) FROM jobs
                WHERE status = ANY(%(statuses)s) GROUP BY 1 ORDER BY 1""", params).fetchall()
@@ -281,7 +282,7 @@ def countries(filters: dict) -> dict:
 
 
 def summary() -> dict:
-    with connect() as conn:
+    with db.connect() as conn:
         counts = dict(conn.execute("SELECT status, count(*) FROM jobs GROUP BY status").fetchall())
         overdue = conn.execute(
             """SELECT count(*) FROM applications a JOIN jobs j ON j.id = a.job_id
@@ -313,7 +314,7 @@ def summary() -> dict:
 
 
 def job_detail(job_id: int) -> dict | None:
-    with connect() as conn:
+    with db.connect() as conn:
         row = conn.execute(
             f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
                       j.status, j.salary_min, j.salary_max, j.description, j.filter_reason,
@@ -427,7 +428,7 @@ def save_changes(raw: object, force: bool = False) -> list[int]:
     """Validate, check for conflicting edits made elsewhere (unless force), then apply
     every change in one transaction: all are saved or none."""
     changes = validate_changes(raw)
-    with connect() as conn:
+    with db.connect() as conn:
         conflicts = [] if force else find_conflicts(conn, changes)
         if conflicts:
             raise Conflict(conflicts)  # leaving the block rolls back
@@ -449,7 +450,7 @@ def export_csv(filters: dict, ids: set[int] | None = None) -> str:
     jobs = list_jobs({**filters, "limit": None})   # LIMIT NULL: every job, however many
     if ids is not None:
         jobs = [job for job in jobs if job["id"] in ids]
-    with connect() as conn:
+    with db.connect() as conn:
         notes = dict(conn.execute("SELECT job_id, notes FROM applications WHERE job_id = ANY(%s)",
                                   ([j["id"] for j in jobs],)).fetchall())
     out = io.StringIO()

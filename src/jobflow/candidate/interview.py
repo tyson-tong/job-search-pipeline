@@ -7,7 +7,8 @@ import re
 import sys
 from pathlib import Path
 
-from ..db import connect, fetch_job
+from .. import db
+from ..db import fetch_job
 from ..llm import complete
 from ..settings import now
 from .cvs import CV_CHAR_LIMIT, chosen_sources, job_prompt
@@ -163,7 +164,7 @@ h1,h2,h3{{line-height:1.25}}code{{background:#eef1f4;padding:0 .25em;border-radi
 <footer><p>Generated with model {html.escape(model)}. Verify current facts and review every suggested answer against your own experience.</p></footer>
 </body></html>"""
     target.write_text(page)
-    with connect() as conn:
+    with db.connect() as conn:
         conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "
                      "VALUES (%s,'interview-prep','SUCCEEDED',%s,now())", (job_id, model))
     return target

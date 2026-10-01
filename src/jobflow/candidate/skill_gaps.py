@@ -11,7 +11,7 @@ import html
 import json
 from pathlib import Path
 
-from ..db import connect
+from .. import db
 from ..llm import complete, parse_json
 from ..settings import matching_weights, now, output_directory
 from .cvs import chosen_files
@@ -39,7 +39,7 @@ def collect_gaps() -> tuple[list[dict], int, int]:
     weights, chosen, digests = matching_weights(), chosen_files(), current_digests()
     gaps: list[dict] = []
     outdated = 0
-    with connect() as conn:
+    with db.connect() as conn:
         jobs = conn.execute(
             """SELECT j.id, j.title, j.company FROM jobs j
                WHERE j.status = 'interested'

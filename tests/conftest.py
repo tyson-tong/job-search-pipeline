@@ -34,3 +34,30 @@ def isolated_settings(monkeypatch, tmp_path_factory):
     monkeypatch.setenv("JOBFLOW_PROFILE", str(profile))
     # Nor your config/.env, with its real keys.
     monkeypatch.setattr(settings, "env_path", lambda: home / "config" / ".env")
+
+
+class NullConnection:
+    """A database connection that accepts every statement and returns no rows."""
+
+    def execute(self, *args):
+        return self
+
+    def fetchone(self):
+        return None
+
+    def fetchall(self):
+        return []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+
+@pytest.fixture
+def no_database(monkeypatch):
+    """For tests of code that only records its result: every connection is a NullConnection."""
+    from jobflow import db
+
+    monkeypatch.setattr(db, "connect", NullConnection)

@@ -11,7 +11,7 @@ from typing import Callable
 import psycopg
 import psycopg.types.json
 
-from .. import settings
+from .. import db, settings
 from .dedupe import (
     FUZZY_WINDOW_DAYS,
     fingerprint,
@@ -193,9 +193,7 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
              cost_usd: float | None = None, search_name: str | None = None,
              run_input: dict | None = None, job_filter: JobFilter | None = None,
              country: str | None = None) -> int:
-    from ..db import connect
-
-    with connect() as conn:
+    with db.connect() as conn:
         # Imports take turns, in this process (sites run in parallel) and across processes
         # (a manual jobflow ingest during the daily one): two copies of one job saved at
         # once would each miss the other and never merge. Held until this run commits.
@@ -239,9 +237,7 @@ def record_failed_run(actor_id: str, run_id: str | None, dataset_id: str | None,
                       error: str, started_at: datetime | None = None,
                       finished_at: datetime | None = None, cost_usd: float | None = None,
                       search_name: str | None = None, run_input: dict | None = None) -> None:
-    from ..db import connect
-
-    with connect() as conn:
+    with db.connect() as conn:
         conn.execute(
             """INSERT INTO scraper_runs(actor_id, apify_run_id, dataset_id, status,
                    started_at, finished_at, error, cost_usd, search_name, input)
@@ -290,10 +286,8 @@ def exclude_inbox_jobs(searches: list, dry_run: bool = False,
     to the Inbox from Filtered. A job whose search has since been renamed or removed is
     judged by `fallback` (the [defaults] exclusions), if given. Returns (the jobs matched,
     the number of Inbox jobs checked); with dry_run, nothing is changed."""
-    from ..db import connect
-
     by_name = {search.name: search for search in searches}
-    with connect() as conn:
+    with db.connect() as conn:
         rows = conn.execute(
             f"""SELECT j.id, j.title, j.company, r.search_name FROM jobs j {_FIRST_SEARCH_SQL}
                 WHERE j.status = 'new' AND NOT {_MOVED_BACK_SQL}
@@ -331,10 +325,8 @@ def restore_filtered_jobs(searches: list, dry_run: bool = False,
     was filtered by an excluded title term or employer, the only filters those have.
     Returns (the jobs brought back, with the reason they were filtered, and the number of
     Filtered jobs checked); with dry_run, nothing is changed."""
-    from ..db import connect
-
     by_name = {search.name: search for search in searches}
-    with connect() as conn:
+    with db.connect() as conn:
         rows = conn.execute(
             f"""SELECT j.id, j.title, j.company, j.filter_reason, j.raw_json, j.country,
                        r.search_name, split_part(r.actor_id, ':', 1)
@@ -371,10 +363,8 @@ def archive_old_jobs(today: date | None = None) -> int:
     never triaged, posted and in the Inbox for INBOX_ARCHIVE_AFTER. They stay in the database
     and still match as duplicates, so a repost stays out of the Inbox; the tracker shows
     them in no tab. Returns how many were archived."""
-    from ..db import connect
-
     today = today or settings.today()
-    with connect() as conn:
+    with db.connect() as conn:
         return conn.execute(
             """WITH moved AS (
                    UPDATE jobs j SET status='archived', status_updated_at=now()
@@ -399,9 +389,7 @@ def prune_sightings() -> int:
     sighting itself (which job, which run, when). Each job keeps its first copy's record
     in jobs.raw_json and every site's ID and link in job_sources; the other copies were
     only needed while they were new. Returns how many records were dropped."""
-    from ..db import connect
-
-    with connect() as conn:
+    with db.connect() as conn:
         return conn.execute(
             """UPDATE job_observations SET observed_json = NULL
                WHERE observed_json IS NOT NULL AND observed_at < now() - %s""",
@@ -412,9 +400,7 @@ def prune_archived_jobs() -> int:
     """Clear the description and scraped record of jobs archived more than
     KEEP_ARCHIVED_RECORDS ago. The job itself stays: its sites' IDs, its fingerprint, and
     its title, so a repost is still recognised. Returns how many jobs were cleared."""
-    from ..db import connect
-
-    with connect() as conn:
+    with db.connect() as conn:
         return conn.execute(
             """UPDATE jobs SET description = NULL, raw_json = NULL
                WHERE status = 'archived' AND status_updated_at < now() - %s

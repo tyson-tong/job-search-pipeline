@@ -186,6 +186,37 @@ def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, monke
     assert matching.outdated_scores(matching.current_digests()) == []
 
 
+@pytest.mark.parametrize("cvs, failure", [
+    # Saving an answer listing no requirements would fix the score at 0 until the CV changes.
+    (["dev"], "no requirements"),
+    # Saving the one CV that worked would leave the job scored without the other.
+    (["dev", "strat"], "timed out"),
+])
+def test_a_failed_assessment_saves_no_score(database, monkeypatch, cvs, failure):
+    import json
+
+    from jobflow.candidate import matching
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    job_id = _one("SELECT id FROM jobs")[0]
+    with connect() as conn:
+        set_job_state(conn, job_id, status="interested", via="test")
+
+    def complete(system, user, **kwargs):
+        if failure == "no requirements":
+            return '{"requirements": []}', "m"
+        if json.loads(user)["cv_variant"] == "strat":
+            raise RuntimeError("Read timed out")
+        return json.dumps({"requirements": [{"requirement": "SQL", "status": "matched",
+                                             "evidence": ["SQL"]}]}), "m"
+    monkeypatch.setattr(matching, "complete", complete)
+    monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
+    monkeypatch.setattr(matching, "chosen_sources", lambda: {cv: "I write SQL." for cv in cvs})
+    with pytest.raises(RuntimeError, match=failure):
+        matching.match_job(job_id)
+    assert _one("SELECT count(*) FROM match_assessments")[0] == 0
+
+
 def test_the_tracker_and_tailor_cv_rank_cvs_alike_after_the_weights_change(database, monkeypatch):
     # The tracker showed the score stored at scoring time while tailor-cv recomputed it with
     # the weights now, so after a weights change they could pick different CVs.
