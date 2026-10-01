@@ -440,6 +440,25 @@ def test_a_job_whose_search_was_renamed_is_judged_by_the_defaults(database):
     assert [job["reason"] for job in matched] == ["title contains 'Intern'"]
 
 
+def test_a_renamed_search_brings_back_only_jobs_its_defaults_can_judge(database):
+    # [defaults] has no salary minimum: judged by it, a job filtered for its salary would
+    # come back to the Inbox though the search that kept it out still would.
+    from jobflow.ingest.searches import defaults_search, parse_config
+    from jobflow.ingest.store import restore_filtered_jobs
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN, {**LINKEDIN, "id": "2", "title": "Quant",
+                                                   "descriptionText": "Price options."}],
+             search_name="old-name", country="AU")
+    with connect() as conn:
+        conn.execute("UPDATE jobs SET status='filtered', filter_reason=%s WHERE source_job_id='2'",
+                     ("salary 60,000-60,000/yr outside 100,000+/yr",))
+        conn.execute("UPDATE jobs SET status='filtered', filter_reason=%s WHERE source_job_id<>'2'",
+                     ("title contains 'Data'",))
+    text = '[[search]]\nname = "renamed"\nterms = ["a"]\nlocations = { AU = [] }\n'
+    restored, checked = restore_filtered_jobs(parse_config(text), fallback=defaults_search(text))
+    assert [job["title"] for job in restored] == ["Data Analyst"] and checked == 2
+
+
 def test_one_posting_that_cant_be_saved_does_not_lose_the_rest_of_a_paid_run(database):
     # A JSON "\ud800" escape is valid JSON, and PostgreSQL rejects it.
     broken = {**SEEK, "id": "999", "title": "Analyst \ud800", "jobLink": "https://www.seek.com.au/job/999"}
