@@ -132,11 +132,16 @@ def add_format(directory: Path, fmt: str) -> Path | None:
         raise RuntimeError(f"{draft_path.name} was drafted from CV {variant!r}, which isn't a "
                            "RenderCV YAML CV among those cvs in config/profile.toml names, so "
                            "it can't be checked")
-    source = yaml.safe_load(files[variant].read_text())
-    draft = yaml.safe_load(draft_path.read_text())
-    for name, doc in ((files[variant].name, source), (draft_path.name, draft)):
+    docs = []
+    for path in (files[variant], draft_path):
+        try:   # the draft may have been edited by hand
+            doc = yaml.safe_load(path.read_text())
+        except yaml.YAMLError as exc:
+            raise RuntimeError(f"{path.name} isn't valid YAML: {exc}") from None
         if not isinstance(doc, dict) or not isinstance(doc.get("cv"), dict):
-            raise RuntimeError(f"{name} has no cv mapping")
+            raise RuntimeError(f"{path.name} has no cv mapping")
+        docs.append(doc)
+    source, draft = docs
     errors, _ = fact_check(source["cv"], draft["cv"])
     if errors:
         kept = f" ({target.name} is from before your edit)" if stale else ""

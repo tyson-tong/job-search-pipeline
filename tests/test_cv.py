@@ -423,6 +423,10 @@ def test_format_for_a_job_already_tailored_comes_from_its_checked_draft(tmp_path
     with pytest.raises(RuntimeError, match="fails the fact check"):
         tailoring.add_format(folder, "latex")
     assert not (folder / "CV_dev_draft.tex").exists()
+    # A typo in a hand-edited draft once crashed the whole run before any job started.
+    draft.write_text("cv:\n  name: [Alex\n")
+    with pytest.raises(RuntimeError, match="isn't valid YAML"):
+        tailoring.add_format(folder, "latex")
 
 
 def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkeypatch):

@@ -160,7 +160,7 @@ def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
     for name, folder in done_jobs if done_one else []:
         try:
             line = done_one(folder)
-        except RuntimeError as exc:
+        except Exception as exc:   # one job's files (edited by hand, say) never stop the rest
             print(f"{name}: warning: {exc}", file=sys.stderr)
         else:
             if line:
