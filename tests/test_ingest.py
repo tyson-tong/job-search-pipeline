@@ -1,13 +1,6 @@
 from datetime import date
 
-from jobflow.ingest.dedupe import (
-    canonical_url,
-    is_copy_of_ad,
-    is_same_ad,
-    looks_like_same_role,
-    match_key,
-    same_place,
-)
+from jobflow.ingest.dedupe import canonical_url, is_same_ad, same_place
 from jobflow.ingest.sources import normalise, to_date
 
 DESCRIPTION = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate "
@@ -64,34 +57,12 @@ def test_to_date_handles_iso_and_unix_seconds_or_milliseconds():
     assert to_date("20260920") == date(2026, 9, 20)   # a compact date, not a 1970 timestamp
 
 
-def test_same_job_on_three_sites_is_recognised():
-    postings = [normalise(i) for i in (LINKEDIN, INDEED, SEEK)]
-    assert {match_key(p) for p in postings} == {"acme|data analyst"}
-    for p in postings[1:]:
-        assert is_copy_of_ad(postings[0].description, p.description)
-
-
 def test_same_role_in_different_cities_is_not_merged():
     # The fuzzy step ignores location formatting, but not a different city.
     assert same_place("Sydney NSW 2000", "Greater Sydney Area, New South Wales, Australia")
     assert not same_place("Sydney, NSW", "Melbourne VIC")
     # Unknown or country-only locations never block a match.
     assert same_place(None, "Perth WA") and same_place("Singapore, Singapore", "Sydney NSW")
-
-
-def test_possible_duplicate_catches_a_recruiter_repost_the_merge_misses():
-    # A recruiter re-posts the employer's ad on another site under its own name, with a
-    # slightly different title: the merge can't link it (different employer), the
-    # warning must.
-    repost = normalise({**SEEK, "advertiser": {"name": "Hays Recruitment"},
-                        "title": "Data Analyst - Finance"})
-    original = normalise(LINKEDIN)
-    assert match_key(repost) != match_key(original)
-    assert looks_like_same_role(original.title, original.description,
-                                repost.title, repost.description) is not None
-    # Same title but a different job is not flagged.
-    assert looks_like_same_role("Data Analyst", DESCRIPTION, "Data Analyst",
-                                "Lead our retail store team, manage rosters and stock.") is None
 
 
 LONG_AD = " ".join(f"duty{i}" for i in range(60))

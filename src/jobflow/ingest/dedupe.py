@@ -1,5 +1,5 @@
 """The rules for recognising one job in several postings: links without tracking
-parameters, employer and title keys, fingerprints, and how alike two ads or titles are.
+parameters, employer and title keys, fingerprints, and how alike two ads are.
 Pure functions, used when saving postings (store.py) and finding similar jobs (similar.py)."""
 from __future__ import annotations
 
@@ -126,10 +126,6 @@ def is_copy_of_ad(a: str | None, b: str | None) -> bool:
     return shorter >= SAME_AD_MIN_WORDS or jaccard(words_a, words_b) >= SHORT_AD_SHARE
 
 
-def title_similarity(a: str | None, b: str | None) -> float:
-    return jaccard(set(simplify(a).split()), set(simplify(b).split()))
-
-
 def title_words(title: str | None) -> list[str]:
     """The words that find titles like this one: those over 3 letters, or every word of a
     title with none."""
@@ -164,18 +160,8 @@ def is_same_ad(title_a: str | None, description_a: str | None,
     return description_similarity(description_a, description_b) >= SAME_AD
 
 
-def looks_like_same_role(title_a: str | None, description_a: str | None,
-                         title_b: str | None, description_b: str | None) -> float | None:
-    """Description similarity if two ads look like the same role whoever posted it and
-    wherever it is, else None."""
-    if title_similarity(title_a, title_b) < POSSIBLE_TITLE:
-        return None
-    similarity = description_similarity(description_a, description_b)
-    return similarity if similarity >= POSSIBLE_DESCRIPTION else None
-
-
 def similarity_level(title: float, description: float) -> str:
-    """How the tracker and tailor-cv describe a pair of similar jobs."""
+    """How the tracker describes a pair of similar jobs."""
     return ("highly similar" if title >= POSSIBLE_TITLE and description >= HIGHLY_SIMILAR
             else "similar")
 

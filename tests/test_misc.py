@@ -226,29 +226,6 @@ def test_llm_retries_a_dropped_connection_and_rejects_an_empty_reply(monkeypatch
         llm.complete("s", "u")
 
 
-class _Rows:
-    """A stand-in connection whose queries all return `rows`, recording what it runs."""
-
-    def __init__(self, rows):
-        self.rows, self.sql = rows, []
-
-    def __call__(self):
-        return self
-
-    def execute(self, sql, *args):
-        self.sql.append(sql)
-        return self
-
-    def fetchall(self):
-        return self.rows
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        pass
-
-
 def test_a_bad_key_stops_the_batch_instead_of_failing_every_job():
     # A bad key or an empty balance fails every request: tailor-cv, cover-letter,
     # interview-prep, and the tracker's scoring must stop, not try (and bill) each job.
@@ -272,27 +249,6 @@ def test_a_bad_key_stops_the_batch_instead_of_failing_every_job():
     # Any other failure doesn't stop the rest.
     tried.clear()
     assert run_each([3, 4, 5], work) == ([3], []) and sorted(tried) == [3, 4, 5]
-
-
-def test_a_job_counts_as_done_only_while_its_files_exist(monkeypatch, tmp_path):
-    # clean-up deletes folders but not the runs that made them: a job moved back to
-    # Interested must be drafted again, not skipped as done.
-    from jobflow import batch, db
-    from jobflow.candidate import paths
-
-    conn = _Rows([(1, "Acme", "Analyst", True, True),     # done, folder deleted
-                  (2, "Acme", "Engineer", True, True),    # done, folder there
-                  (3, "Beta", "Quant", False, True)])     # draft failed, fixed by hand
-    monkeypatch.setattr(db, "connect", conn)
-    monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
-    (tmp_path / "acme" / "engineer-2").mkdir(parents=True)
-    ran, extra = [], []
-    batch._run_jobs("interested", "tailor", "a tailored CV", ran.append,
-                  lambda folder: folder.exists(), lambda folder: folder.name == "quant-3",
-                  lambda folder: extra.append(folder.name))
-    assert ran == [1]
-    assert any("FIXED-BY-HAND" in sql for sql in conn.sql)
-    assert extra == ["engineer-2", "quant-3"]  # --format's extra file, for the jobs already done
 
 
 def test_clean_up_deletes_only_closed_jobs_folders_and_only_on_yes(tmp_path, monkeypatch):

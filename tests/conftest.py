@@ -7,7 +7,12 @@ REAL_SETTINGS = ("DATABASE_URL", "APIFY_TOKEN", "APIFY_MAX_WAIT_MINUTES", "JOBFL
                  "LLM_REVIEW_API_KEY", "LLM_REVIEW_MODEL", "LLM_REVIEW_BASE_URL",
                  "WEB_SEARCH_API_KEY",
                  # Paths that would point a test at your own CVs, output, or searches.
-                 "CV_DIRECTORY", "OUTPUT_DIRECTORY", "SEARCHES_FILE")
+                 "CV_DIRECTORY", "OUTPUT_DIRECTORY", "SEARCHES_FILE",
+                 # libpq's own settings: with no password in TEST_DATABASE_URL, PGPASSWORD
+                 # would be sent to the test server, and PGSSLMODE changes what
+                 # encrypted_url does.
+                 "PGHOST", "PGHOSTADDR", "PGPORT", "PGUSER", "PGPASSWORD", "PGPASSFILE",
+                 "PGDATABASE", "PGSERVICE", "PGSERVICEFILE", "PGSSLMODE", "PGOPTIONS")
 
 
 @pytest.fixture(autouse=True)

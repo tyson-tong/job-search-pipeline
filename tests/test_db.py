@@ -313,27 +313,43 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
     assert _one("SELECT status FROM jobs WHERE source_job_id='1'")[0] == "archived"
 
 
-def test_a_draft_failing_the_check_after_an_earlier_one_passed_is_drafted_again(database, tmp_path,
-                                                                                   monkeypatch):
+def test_a_job_is_done_only_while_its_output_exists_and_its_last_draft_passed(database, tmp_path,
+                                                                            monkeypatch):
+    # clean-up deletes folders but not the runs that made them: a job moved back to
+    # Interested must be drafted again, not skipped as done.
     from jobflow import batch
     from jobflow.candidate import paths
 
-    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
-    job_id = _one("SELECT id FROM jobs")[0]
+    titles = {"1": "Analyst", "2": "Engineer", "3": "Quant", "4": "Trader"}
+    save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "id": key, "title": title,
+                                         "descriptionText": f"{title} role"}
+                                        for key, title in titles.items()], country="AU")
+    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    runs = {"1": ["SUCCEEDED"],                # done, output deleted
+            "2": ["SUCCEEDED"],                # done, output there
+            "3": ["NEEDS-FIX"],                # failed the check, fixed by hand
+            "4": ["SUCCEEDED", "NEEDS-FIX"]}   # passed, output deleted, then failed
     with connect() as conn:
         conn.execute("UPDATE jobs SET status='interested'")
-        # It passed, its output was deleted, and the new draft failed the fact check.
-        for status in ("SUCCEEDED", "NEEDS-FIX"):
-            conn.execute("INSERT INTO workflow_runs(job_id, kind, status) VALUES (%s, 'tailor', %s)",
-                         (job_id, status))
+        for key, statuses in runs.items():
+            for status in statuses:
+                conn.execute("INSERT INTO workflow_runs(job_id, kind, status) "
+                             "VALUES (%s, 'tailor', %s)", (ids[key], status))
     monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
-    folder = paths.job_directory(job_id, {"company": LINKEDIN["companyName"], "title": LINKEDIN["title"]})
-    folder.mkdir(parents=True)
-    (folder / "CV_dev_draft.yaml").write_text("cv: {}")   # the failed draft
-    ran = []
+    for key in ("2", "3", "4"):
+        folder = paths.job_directory(ids[key], {"company": LINKEDIN["companyName"],
+                                                "title": titles[key]})
+        folder.mkdir(parents=True)
+        (folder / "CV_dev_draft.yaml").write_text("cv: {}")
+    ran, extra = [], []
     batch._run_jobs("interested", "tailor", "a tailored CV", ran.append,
-                  lambda folder: any(folder.glob("CV_*_draft.yaml")), lambda folder: False)
-    assert ran == [job_id]
+                    lambda folder: any(folder.glob("CV_*_draft.yaml")),
+                    lambda folder: folder.name.startswith("quant"),
+                    lambda folder: extra.append(folder.name))
+    assert sorted(ran) == sorted([ids["1"], ids["4"]])
+    assert _one("SELECT count(*) FROM workflow_runs WHERE status='FIXED-BY-HAND'")[0] == 1
+    # --format's extra file, for the jobs already done.
+    assert sorted(extra) == [f"engineer-{ids['2']}", f"quant-{ids['3']}"]
 
 
 def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database, tmp_path,
