@@ -429,9 +429,14 @@ def _words(text: str | None) -> str:
 
 
 def search_warnings(search: Search) -> list[str]:
-    """Settings that are allowed but probably not what you meant: a term listed twice, and
-    an excluded title term that never excludes anything because it contains a kept one."""
+    """Settings that are allowed but probably not what you meant: no cost cap, a term
+    listed twice, and an excluded title term that never excludes anything because it
+    contains a kept one."""
     warnings = []
+    if search.max_cost_usd is None:
+        warnings.append(f"no max_cost_usd: each run is capped only at {search.max_results} "
+                        "results, so a run that goes wrong can cost more than you expect; "
+                        "set one under [defaults]")
     for key in ("exclude_title_terms", "include_title_terms", "exclude_companies"):
         terms = [_words(t) for t in getattr(search, key)]
         repeated = sorted({t for t in terms if terms.count(t) > 1})
