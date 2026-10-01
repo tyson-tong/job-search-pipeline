@@ -287,6 +287,9 @@ def summary() -> dict:
             """SELECT count(*) FROM applications a JOIN jobs j ON j.id = a.job_id
                WHERE a.follow_up_on < %s AND NOT (j.status = ANY(%s))""",
             (today(), CLOSED_STATUSES)).fetchone()[0]
+        # The searches look back 24 hours, so a day the import didn't run loses its jobs.
+        last_import = conn.execute("SELECT max(finished_at) FROM scraper_runs "
+                                   "WHERE status = 'SUCCEEDED'").fetchone()[0]
     # Scoring reads your CV files; a missing CV folder shouldn't break the rest of the page.
     from ..candidate.cvs import chosen_sources
     from ..candidate.matching import count_needing_match, current_digests, outdated_scores
@@ -302,6 +305,7 @@ def summary() -> dict:
         variants, unscored, scoring_problem = [], None, str(exc)
         outdated = {"jobs": 0, "calls": 0}
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,
+            "last_import": last_import,
             "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,
             "default_statuses": DEFAULT_STATUSES, "cv_variants": variants, "unscored": unscored,
             "outdated": outdated,

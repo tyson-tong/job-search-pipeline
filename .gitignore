@@ -6,6 +6,8 @@ dist/
 build/
 *.egg-info/
 .DS_Store
+# Browser automation output (screenshots, page snapshots)
+.playwright-mcp/
 
 # Per-person data and generated files
 /config/profile.toml

@@ -245,14 +245,24 @@ function renderAll() {
   renderPipeline(); renderTabs(); renderSaveBar(); renderScoring();
   if (searching) renderSearches(); else { renderStatusMenu(); renderRows(); }
 }
-// Only an alert, when follow-ups are overdue; the status counts are in My jobs' menu.
+// The daily import searches the past 24 hours, so a day it missed is jobs never seen.
+const IMPORT_LATE_HOURS = 36;
+// Only alerts: follow-ups overdue, and an import that hasn't run lately; the status counts
+// are in My jobs' menu.
 function renderPipeline() {
   const box = document.getElementById("pipeline");
-  const { overdue } = state.summary;
+  const { overdue, last_import: lastImport } = state.summary;
+  const hours = lastImport ? (Date.now() - new Date(lastImport)) / 3.6e6 : Infinity;
   fill(box, [
     overdue ? el("button", { className: "chip alert", title: "Jobs with a follow-up date in the past",
       onclick: () => { state.view = "jobs"; sortInput.value = "follow_up"; remember(); refresh(); } },
-      "Follow-ups overdue ", el("b", {}, overdue)) : null]);
+      "Follow-ups overdue ", el("b", {}, overdue)) : null,
+    hours > IMPORT_LATE_HOURS ? el("span", { className: "chip alert",
+      title: "The daily import searches the past 24 hours, so jobs posted on a day it missed "
+        + "aren't imported. Run `uv run jobflow status` to see why, and `uv run jobflow ingest` "
+        + "(with a longer posted_within_days) to catch up." },
+      !lastImport ? "No import yet" : hours < 72 ? `Last import ${Math.floor(hours)} hours ago`
+        : `Last import ${Math.floor(hours / 24)} days ago`) : null]);
 }
 function renderTabs() {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("on", tab.dataset.view === state.view));
