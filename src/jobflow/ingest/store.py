@@ -46,7 +46,8 @@ KEEP_SIGHTING_RECORDS = timedelta(days=30)
 # How long an archived job keeps its description and scraped record (see
 # prune_archived_jobs). By then it is past the 90 days in which a repost with a new ID is
 # matched by its ad (FUZZY_WINDOW_DAYS), as it was archived at least 2 weeks after it was
-# first seen.
+# first seen. Similar-job notes look further back (similar.POSSIBLE_WINDOW_DAYS), but
+# only notes are lost: a cleared job has no ad to compare.
 KEEP_ARCHIVED_RECORDS = timedelta(days=90)
 
 

@@ -170,6 +170,9 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>candidate/tailoring.py</code></td><td>Tailored RenderCV draft, the reviewer pass, the fact check, and the files written.</td></tr>
   <tr><td><code>candidate/render.py</code></td><td>Rendering a draft with RenderCV, and cutting its least relevant bullets until it fits --max-pages.</td></tr>
   <tr><td><code>candidate/documents.py</code></td><td>CV layouts for --format docx and latex, and the cover letter .docx, all laid out in code from the checked text.</td></tr>
+  <tr><td><code>candidate/factcheck.py</code></td><td>The fact checks: a tailored CV against its source CV, and a cover letter against the CV, job ad, and research. Code, not the LLM.</td></tr>
+  <tr><td><code>candidate/review.py</code></td><td>What tailor-cv and cover-letter share: the hiring-manager reviewer's revision (kept only if it checks at least as well), the review file, and the run record.</td></tr>
+  <tr><td><code>candidate/research.py</code></td><td>Company research on the web (Tavily), started in the background while the CV is chosen and drafted.</td></tr>
   <tr><td><code>candidate/cover_letter.py</code></td><td>Optional cover letter, its reviewer pass and fact check.</td></tr>
   <tr><td><code>candidate/skill_gaps.py</code></td><td>Skill-gap report from stored match scores.</td></tr>
   <tr><td><code>candidate/interview.py</code></td><td>Company research, specialist agents, HTML briefing.</td></tr>
@@ -226,7 +229,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="tbl"><h3>job_observations</h3><p>Every sighting, with the original record for its first 30 days.</p><ul>
     <li><span class="k">job_id</span> → jobs</li><li><span class="k">scraper_run_id</span> → scraper_runs</li>
     <li>observed_json, observed_at</li></ul></div>
-  <div class="tbl"><h3>match_assessments</h3><p>One score per job and CV (by its short name), made once.</p><ul>
+  <div class="tbl"><h3>match_assessments</h3><p>Each score of a job against a CV (by its short name); a rescore after the CV is edited adds a row, and the latest counts.</p><ul>
     <li>job_id → jobs, cv_variant, cv_sha256</li><li>score, matched, partial, gaps</li>
     <li>evidence <span class="muted">rationale, weights, breakdown</span></li><li>model_name, created_at</li></ul></div>
   <div class="tbl"><h3>applications</h3><p>Your progress on a job.</p><ul>
@@ -236,7 +239,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, cover-letter, interview-prep; the last three skip jobs already logged, except a draft that failed the fact check (NEEDS-FIX), which is drafted again unless you fixed it by hand (FIXED-BY-HAND). A logged job whose output was deleted (its YAML draft, cover-letter.docx, or interview-prep.html) is done again.</p><ul>
     <li>job_id → jobs, kind, status</li><li>model_name, finished_at</li></ul></div>
 </div>
-<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered, archived. My jobs shows interested, applied, interviewing, offered, and accepted by default; not interested, filtered, and archived jobs never appear there. Only interested jobs are scored. Filtered is set by imports and <code>jobflow update-searches</code>; the tracker's Filtered tab marks a job Interested or Not interested, or moves several back to the Inbox; <code>update-searches</code> never filters a job you moved out of Filtered again. The Not interested tab marks a job Interested, or moves several back to the Inbox. Archived is set by <code>jobflow ingest</code> and <code>jobflow web</code> on filtered jobs more than 2 weeks past their posted date, on jobs marked not interested more than 2 weeks ago, and on Inbox jobs posted over 30 days ago and in the Inbox that long; they stay in the database and still match as duplicates, but are in no tab (a similar-job note may still mention one). 90 days after archiving, a job's description and <code>raw_json</code> are cleared to save space.</p>
+<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered, archived. My jobs shows interested, applied, interviewing, offered, and accepted by default; not interested, filtered, and archived jobs never appear there. Only interested jobs are scored. Filtered is set by imports and <code>jobflow update-searches</code>; the tracker's Filtered tab marks a job Interested or Not interested, or moves several back to the Inbox; <code>update-searches</code> never filters a job you moved out of Filtered again. The Not interested tab marks a job Interested, or moves several back to the Inbox. Archived is set by <code>jobflow ingest</code> and <code>jobflow web</code> on filtered jobs more than 2 weeks past their posted date (or the date first seen, if later), on jobs marked not interested more than 2 weeks ago, and on Inbox jobs posted over 30 days ago and in the Inbox that long; they stay in the database and still match as duplicates, but are in no tab (a similar-job note may still mention one). 90 days after archiving, a job's description and <code>raw_json</code> are cleared to save space.</p>
 
 <h2 id="cv">CV work</h2>
 <div class="grid">
@@ -253,7 +256,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
     <li>Errors (render skipped): a changed, added, or removed header field (the headline is checked like section text), new or altered employers, positions, dates, education; an entry whose employer, position, dates, and education details don't match one original entry together (a date or title moved between entries); a removed employer, role, or education entry; a changed entry location; new numbers; new Typst commands, math, or links, which RenderCV would run or hide. A draft with errors leaves no older PDF, .docx, or .tex beside it.</li>
     <li>Always the YAML draft and RenderCV's PDF of it (no PDF if the fact check found errors); <code>--format docx</code> or <code>latex</code> adds a .docx or a .tex.</li>
     <li>A PDF over 1 page (or <code>--max-pages N</code>): the fewest of the least relevant bullets that make it fit are cut, found by re-rendering in a binary search (never an entry's last bullet).</li>
-    <li>Warnings: new tool or skill names, and a page left mostly empty by an entry moved whole to the next page. Written to <code>CV_REVIEW.md</code>.</li>
+    <li>Warnings: new tool or skill names, and a page left at least 30% empty by an entry moved whole to the next page. Written to <code>CV_REVIEW.md</code>.</li>
     <li>Optional cover letter (<code>jobflow cover-letter</code>): reviewed the same way; numbers not in the CV, job ad, or research are errors; new terms and placeholders are warnings.</li></ul></div>
   <div class="card"><h3>Interview prep</h3>
     <ul><li>Tavily web search for company facts and news.</li>
