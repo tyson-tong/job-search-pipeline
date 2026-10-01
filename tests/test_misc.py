@@ -192,11 +192,12 @@ def test_llm_retries_a_dropped_connection_and_rejects_an_empty_reply(monkeypatch
     class Reply:
         ok, status_code, headers = True, 200, {}
 
-        def __init__(self, content):
-            self.content = content
+        def __init__(self, content, finish_reason="stop"):
+            self.content, self.finish_reason = content, finish_reason
 
         def json(self):
-            return {"choices": [{"message": {"content": self.content}}]}
+            return {"choices": [{"message": {"content": self.content},
+                                 "finish_reason": self.finish_reason}]}
 
     replies, waits = [], []
 
@@ -214,6 +215,14 @@ def test_llm_retries_a_dropped_connection_and_rejects_an_empty_reply(monkeypatch
     assert llm.complete("s", "u") == ("ok", "model") and waits == [2.0]
     replies[:] = [Reply(None)]
     with pytest.raises(llm.LLMError, match="no text"):
+        llm.complete("s", "u")
+    # A reply cut off at the length limit once passed as a complete letter or briefing.
+    replies[:] = [Reply("Dear Hiring Manager, I", "length")]
+    with pytest.raises(llm.LLMError, match="cut off"):
+        llm.complete("s", "u")
+    # A reply too slow may still be billed: asked for again once, not four times.
+    replies[:] = [requests.ReadTimeout(), requests.ReadTimeout(), Reply("ok")]
+    with pytest.raises(requests.ReadTimeout):
         llm.complete("s", "u")
 
 

@@ -12,6 +12,9 @@ DEFAULT_BASE_URL = "https://api.openai.com/v1"
 # long as the provider asks (Retry-After) up to MAX_WAIT seconds, or 2, 4, 8... seconds otherwise.
 RETRIES = 4
 MAX_WAIT = 60
+# Seconds to wait for a reply. A reply this slow may still be billed, so one that times out
+# is asked for again only once (a slow model would be slow again).
+READ_TIMEOUT = 300
 # Settings sent when the provider accepts them, and dropped when it rejects them.
 OPTIONAL = ("response_format", "temperature")
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
@@ -63,14 +66,16 @@ def complete(system: str, user: str, *, json_mode: bool = False,
              {"role": "user", "content": user}], "temperature": 0.1}
     if json_mode:
         body["response_format"] = {"type": "json_object"}
-    attempt = 0
+    attempt, timeouts = 0, 0
     while True:
         try:
             response = requests.post(f"{base_url(reviewer)}/chat/completions", json=body,
-                                     headers={"Authorization": f"Bearer {key}"}, timeout=180)
-        except (requests.ConnectionError, requests.Timeout):
+                                     headers={"Authorization": f"Bearer {key}"},
+                                     timeout=(30, READ_TIMEOUT))
+        except (requests.ConnectionError, requests.Timeout) as exc:
             # A dropped connection or a stalled provider may pass: retried like a rate limit.
-            if attempt == RETRIES:
+            timeouts += isinstance(exc, requests.ReadTimeout)
+            if attempt == RETRIES or timeouts > 1:
                 raise
             time.sleep(2.0 ** (attempt + 1))
             attempt += 1
@@ -100,13 +105,17 @@ def complete(system: str, user: str, *, json_mode: bool = False,
 
 
 def _content(response: requests.Response) -> str:
-    """The reply's text; LLMError if there is none (a refusal, or a reply cut off)."""
+    """The reply's text; LLMError if there is none (a refusal), or it was cut off."""
     try:
-        content = response.json()["choices"][0]["message"]["content"]
+        choice = response.json()["choices"][0]
+        content = choice["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError):
         raise LLMError("The LLM provider's reply wasn't a chat completion") from None
     if not isinstance(content, str) or not content.strip():
         raise LLMError("The LLM provider returned no text (it may have refused the request)")
+    # A cut-off cover letter or briefing would otherwise pass as complete.
+    if choice.get("finish_reason") == "length":
+        raise LLMError("The LLM provider's reply was cut off at its length limit")
     return content
 
 
