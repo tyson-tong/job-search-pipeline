@@ -5,6 +5,9 @@ from __future__ import annotations
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
 
 from .llm import LLMError
 
@@ -62,10 +65,26 @@ class _JobOutput:
         return getattr(self.stream, name)
 
 
-def for_jobs(status: str, kind: str, what: str, run_one, output_exists,
-             fixed_by_hand=None, done_one=None, only: list[int] | None = None,
-             redo: bool = False) -> None:
-    """_run_jobs (for the jobs in `only`, if given), unless the same command is already running (in another terminal, say),
+@dataclass(frozen=True)
+class JobCommand:
+    """One piece of work done per job: tailor-cv, cover-letter, or interview-prep.
+
+    status: the jobs it works on; kind: its workflow_runs kind; what: what it makes, for
+    messages ("a tailored CV"); run_one(job_id): does one job; output_exists(folder):
+    whether its marker file is still in the job's folder; fixed_by_hand(folder), if given:
+    whether you fixed a draft that failed the fact check; done_one(folder), if given: runs
+    for each job already done and returns a line to print, or None."""
+    status: str
+    kind: str
+    what: str
+    run_one: Callable[[int], None]
+    output_exists: Callable[[Path], bool]
+    fixed_by_hand: Callable[[Path], bool] | None = None
+    done_one: Callable[[Path], str | None] | None = None
+
+
+def for_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> None:
+    """_run_jobs, unless the same command is already running (in another terminal, say),
     which would draft the same jobs twice and write over its files.
 
     A Postgres advisory lock, held on its own connection, marks the command as running;
@@ -76,32 +95,31 @@ def for_jobs(status: str, kind: str, what: str, run_one, output_exists,
     with connect() as lock:
         lock.autocommit = True
         if not lock.execute("SELECT pg_try_advisory_lock(hashtext(%s))",
-                            (f"jobflow {kind}",)).fetchone()[0]:
-            raise SystemExit(f"{COMMANDS.get(kind, kind)} is already running (in another "
+                            (f"jobflow {command.kind}",)).fetchone()[0]:
+            raise SystemExit(f"{COMMANDS.get(command.kind, command.kind)} is already running (in another "
                              "terminal or window). Let it finish, then run it again for any "
                              "jobs it didn't do.")
-        _run_jobs(status, kind, what, run_one, output_exists, fixed_by_hand, done_one, only,
-                  redo)
+        _run_jobs(command, only, redo)
 
 
-def _plan_jobs(status: str, kind: str, output_exists, fixed_by_hand=None,
-               only: list[int] | None = None, redo: bool = False):
-    """The jobs with `status` (only those in `only`, if given) still to do, and those
+def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False):
+    """The jobs with the command's status (only those in `only`, if given) still to do, and those
     done: (all jobs, to do, done as (name, folder) pairs, how many are redrafted, how many
     are done again). A job in `only` without that status is an error. With redo, every
     job is to do, done or not.
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
     twice, and a failed job is retried next time. A job counts as done only while
-    output_exists(its folder) too, which checks the command's own marker file (a
+    command.output_exists(its folder) too, which checks the command's own marker file (a
     CV_*_draft.yaml, cover-letter.docx, or interview-prep.html): one whose marker was
     deleted (by clean-up, say) is done again. Deleting only a tailored CV's PDF doesn't
     count. A job whose latest draft failed the fact check (NEEDS-FIX) is done again, for a
-    fresh draft, unless fixed_by_hand(its folder) says you fixed that draft yourself: then
+    fresh draft, unless command.fixed_by_hand(its folder) says you fixed that draft yourself: then
     it's recorded as FIXED-BY-HAND and kept."""
     from .candidate.paths import job_directory
     from .db import connect
 
+    status, kind = command.status, command.kind
     with connect() as conn:
         if only:
             found = dict(conn.execute("SELECT id, status FROM jobs WHERE id = ANY(%s)",
@@ -132,12 +150,12 @@ def _plan_jobs(status: str, kind: str, output_exists, fixed_by_hand=None,
             if redo:
                 todo.append((job_id, company, title))
                 continue
-            if done and output_exists(folder):
+            if done and command.output_exists(folder):
                 done_jobs.append((name, folder))
                 continue
             elif done:
                 lost += 1
-            elif tried and fixed_by_hand and fixed_by_hand(folder):
+            elif tried and command.fixed_by_hand and command.fixed_by_hand(folder):
                 conn.execute("INSERT INTO workflow_runs(job_id,kind,status,finished_at) "
                              "VALUES (%s,%s,'FIXED-BY-HAND',now())", (job_id, kind))
                 print(f"{name}: you fixed its draft yourself, so it's kept and not drafted again")
@@ -149,25 +167,21 @@ def _plan_jobs(status: str, kind: str, output_exists, fixed_by_hand=None,
     return rows, todo, done_jobs, redrafted, lost
 
 
-def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
-              fixed_by_hand=None, done_one=None, only: list[int] | None = None,
-              redo: bool = False) -> None:
-    """Run run_one(job_id) for each job with `status` not yet done (see _plan_jobs),
-    JOBS_AT_ONCE at a time, printing each job's output in one piece when it finishes.
-    done_one(folder), if given, runs for each job already done and returns a line to
-    print, or None. One failure doesn't stop the rest, unless the LLM provider refuses
-    every request (no credit left, a bad key)."""
-    rows, todo, done_jobs, redrafted, lost = _plan_jobs(status, kind, output_exists,
-                                                        fixed_by_hand, only, redo)
+def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> None:
+    """Run command.run_one(job_id) for each job not yet done (see _plan_jobs), JOBS_AT_ONCE
+    at a time, printing each job's output in one piece when it finishes, and
+    command.done_one for each job already done. One failure doesn't stop the rest, unless
+    the LLM provider refuses every request (no credit left, a bad key)."""
+    rows, todo, done_jobs, redrafted, lost = _plan_jobs(command, only, redo)
     again = [f"{redrafted} drafted again: the last draft failed the fact check"] if redrafted \
         else []
     again += [f"{lost} done again: their output was deleted"] if lost else []
-    print(f"{len(rows)} {status.capitalize()} job{'s' if len(rows) != 1 else ''}: "
-          f"{len(rows) - len(todo)} already have {what}, {len(todo)} to do"
+    print(f"{len(rows)} {command.status.capitalize()} job{'s' if len(rows) != 1 else ''}: "
+          f"{len(rows) - len(todo)} already have {command.what}, {len(todo)} to do"
           + (f" ({'; '.join(again)})" if again else ""))
-    for name, folder in done_jobs if done_one else []:
+    for name, folder in done_jobs if command.done_one else []:
         try:
-            line = done_one(folder)
+            line = command.done_one(folder)
         except Exception as exc:   # one job's files (edited by hand, say) never stop the rest
             print(f"{name}: warning: {exc}", file=sys.stderr)
         else:
@@ -181,7 +195,7 @@ def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
         out.held.lines = err.held.lines = lines = []
         print(f"\n#{job_id} {title} ({company or 'unknown employer'})")
         try:
-            run_one(job_id)
+            command.run_one(job_id)
         except Exception as exc:
             print(f"error: {exc}", file=sys.stderr)
             raise

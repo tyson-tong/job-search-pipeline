@@ -342,18 +342,18 @@ def test_a_job_is_done_only_while_its_output_exists_and_its_last_draft_passed(da
         folder.mkdir(parents=True)
         (folder / "CV_dev_draft.yaml").write_text("cv: {}")
     ran, extra = [], []
-    batch._run_jobs("interested", "tailor", "a tailored CV", ran.append,
-                    lambda folder: any(folder.glob("CV_*_draft.yaml")),
-                    lambda folder: folder.name.startswith("quant"),
-                    lambda folder: extra.append(folder.name))
+    batch._run_jobs(batch.JobCommand("interested", "tailor", "a tailored CV", ran.append,
+                                     lambda folder: any(folder.glob("CV_*_draft.yaml")),
+                                     lambda folder: folder.name.startswith("quant"),
+                                     lambda folder: extra.append(folder.name)))
     assert sorted(ran) == sorted([ids["1"], ids["4"]])
     assert _one("SELECT count(*) FROM workflow_runs WHERE status='FIXED-BY-HAND'")[0] == 1
     # --format's extra file, for the jobs already done.
     assert sorted(extra) == [f"engineer-{ids['2']}", f"quant-{ids['3']}"]
     # --redo: the named job again, done or not; no other.
     ran.clear()
-    batch._run_jobs("interested", "tailor", "a tailored CV", ran.append,
-                    lambda folder: True, only=[ids["2"]], redo=True)
+    batch._run_jobs(batch.JobCommand("interested", "tailor", "a tailored CV", ran.append,
+                                     lambda folder: True), only=[ids["2"]], redo=True)
     assert ran == [ids["2"]]
 
 
@@ -372,12 +372,12 @@ def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database
         conn.execute("UPDATE jobs SET status='interested' WHERE source_job_id <> '3'")
     monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
     ran = []
-    batch._run_jobs("interested", "tailor", "a tailored CV", ran.append, lambda folder: False,
-                    only=[ids["2"]])
+    tailor = batch.JobCommand("interested", "tailor", "a tailored CV", ran.append,
+                              lambda folder: False)
+    batch._run_jobs(tailor, only=[ids["2"]])
     assert ran == [ids["2"]]
     with pytest.raises(RuntimeError, match=f"#{ids['3']} is new"):
-        batch._run_jobs("interested", "tailor", "a tailored CV", ran.append, lambda folder: False,
-                        only=[ids["3"]])
+        batch._run_jobs(tailor, only=[ids["3"]])
     assert ran == [ids["2"]]
 
 

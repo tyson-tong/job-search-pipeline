@@ -314,7 +314,7 @@ def check_redo(args: argparse.Namespace) -> None:
 
 
 def run_tailor_cv(args: argparse.Namespace) -> None:
-    from .batch import for_jobs
+    from .batch import JobCommand, for_jobs
     from .candidate.tailoring import add_format, cv_fixed_by_hand, tailor_cv
     from .db import migrate
     check_redo(args)
@@ -336,14 +336,14 @@ def run_tailor_cv(args: argparse.Namespace) -> None:
         written = add_format(folder, args.format)
         return f"wrote {written}" if written else None
 
-    for_jobs("interested", "tailor", "a tailored CV", tailor_one,
-             lambda folder: any(folder.glob("CV_*_draft.yaml")), cv_fixed_by_hand,
-             add_requested_format if args.format != "pdf" else None, only=args.job,
-             redo=args.redo)
+    for_jobs(JobCommand("interested", "tailor", "a tailored CV", tailor_one,
+                        lambda folder: any(folder.glob("CV_*_draft.yaml")), cv_fixed_by_hand,
+                        add_requested_format if args.format != "pdf" else None),
+             args.job, args.redo)
 
 
 def run_cover_letter(args: argparse.Namespace) -> None:
-    from .batch import for_jobs
+    from .batch import JobCommand, for_jobs
     from .candidate.cover_letter import letter_fixed_by_hand, write_letter
     from .db import migrate
     check_redo(args)
@@ -361,13 +361,14 @@ def run_cover_letter(args: argparse.Namespace) -> None:
                             f"{target.parent / 'COVER_LETTER_REVIEW.md'}, before you send it "
                             "with your application.")
 
-    for_jobs("interested", "cover-letter", "a cover letter", letter_one,
-             lambda folder: (folder / "cover-letter.docx").exists(), letter_fixed_by_hand,
-             only=args.job, redo=args.redo)
+    for_jobs(JobCommand("interested", "cover-letter", "a cover letter", letter_one,
+                        lambda folder: (folder / "cover-letter.docx").exists(),
+                        letter_fixed_by_hand),
+             args.job, args.redo)
 
 
 def run_interview_prep(args: argparse.Namespace) -> None:
-    from .batch import for_jobs
+    from .batch import JobCommand, for_jobs
     from .candidate.cvs import chosen_sources
     from .candidate.interview import prepare
     from .db import migrate
@@ -375,9 +376,10 @@ def run_interview_prep(args: argparse.Namespace) -> None:
     chosen_sources()  # a problem with cvs in config/profile.toml stops it now
     check_keys(web_search=True)
     migrate()
-    for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)),
-             lambda folder: (folder / "interview-prep.html").exists(), only=args.job,
-             redo=args.redo)
+    for_jobs(JobCommand("interviewing", "interview-prep", "a briefing",
+                        lambda job_id: print(prepare(job_id)),
+                        lambda folder: (folder / "interview-prep.html").exists()),
+             args.job, args.redo)
 
 
 def run_clean_up(args: argparse.Namespace) -> None:
