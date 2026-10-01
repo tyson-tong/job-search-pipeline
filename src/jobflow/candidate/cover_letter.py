@@ -11,7 +11,7 @@ from .cvs import CV_CHAR_LIMIT, JOB_CHAR_LIMIT, chosen_files, chosen_sources, is
 from .factcheck import check_letter
 from .matching import best_variant, match_job
 from .paths import job_directory
-from .research import research_soon
+from .research import research
 from .review import record_run, revise, write_review
 from .tailoring import load_source
 
@@ -91,9 +91,10 @@ def letter_fixed_by_hand(directory: Path) -> bool:
 
 def write_letter(job_id: int, variant: str | None = None,
                  output_dir: Path | None = None) -> tuple[Path, list[str], list[str]]:
-    researching = research_soon(job_id)
     job, variant, reason, source_cv, cv_for_llm = load_cv(job_id, variant)
-    sources, notes = researching.result()
+    # Only once the CV is chosen and checked: a job failing those checks would spend its
+    # web searches again on every run.
+    sources, notes = research(job)
     letter, model = _draft(job, cv_for_llm, sources)
     errors, warnings = check_letter(letter, source_cv, job, sources)
 

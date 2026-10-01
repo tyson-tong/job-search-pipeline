@@ -8,8 +8,6 @@ from concurrent.futures import Future, ThreadPoolExecutor
 
 import requests
 
-from ..db import fetch_job
-
 # A search for "the company" finds other companies, whose facts and figures would then
 # count as research: the cover letter's check allows numbers from it.
 NO_EMPLOYER = "No company research: the ad names no employer, so only the job ad is used."
@@ -60,10 +58,11 @@ def research(job: dict) -> tuple[list[dict], list[str]]:
                     "is used."]
 
 
-def research_soon(job_id: int) -> Future:
-    """Start research() for the job in the background: the web search then overlaps
-    choosing (maybe scoring) the CV and drafting. .result() gives what research() returns."""
+def research_soon(job: dict) -> Future:
+    """Start research() for the job in the background, so the web search overlaps drafting.
+    Started only once the CV is chosen and checked: a job that fails those checks would
+    spend its searches again on every run. .result() gives what research() returns."""
     pool = ThreadPoolExecutor(max_workers=1)
-    future = pool.submit(lambda: research(fetch_job(job_id)))
+    future = pool.submit(research, job)
     pool.shutdown(wait=False)
     return future

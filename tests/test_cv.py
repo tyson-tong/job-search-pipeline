@@ -243,9 +243,7 @@ def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypat
     letter = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
     monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
         JOB, "main", "CV variant main.", SOURCE_CV, ""))
-    researched = Future()
-    researched.set_result(([], []))
-    monkeypatch.setattr(cover_letter, "research_soon", lambda job_id: researched)
+    monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
     monkeypatch.setattr(review, "connect", Conn)
     monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
         json.dumps({"critique": [], "cover_letter": letter}) if kw.get("reviewer")
@@ -268,9 +266,7 @@ def test_a_revision_with_more_fact_check_errors_is_discarded(tmp_path, monkeypat
     revised = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
     monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
         JOB, "main", "CV variant main.", SOURCE_CV, ""))
-    researched = Future()
-    researched.set_result(([], []))
-    monkeypatch.setattr(cover_letter, "research_soon", lambda job_id: researched)
+    monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
     monkeypatch.setattr(review, "connect", Conn)
     monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
         json.dumps({"critique": ["Add a metric"], "cover_letter": revised}) if kw.get("reviewer")
@@ -293,9 +289,7 @@ def test_a_reviewer_every_job_would_fail_on_stops_the_batch(tmp_path, monkeypatc
         return "Dear Hiring Manager,\n\nI built Python ETL pipelines.\n\nAlex Example", "m"
     monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
         JOB, "main", "CV variant main.", SOURCE_CV, ""))
-    researched = Future()
-    researched.set_result(([], []))
-    monkeypatch.setattr(cover_letter, "research_soon", lambda job_id: researched)
+    monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
     monkeypatch.setattr(cover_letter, "complete", complete)
     with pytest.raises(LLMError) as caught:
         cover_letter.write_letter(1, output_dir=tmp_path)
@@ -447,7 +441,7 @@ def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkey
         JOB, "dev", "CV variant dev.", {"cv": SOURCE_CV}, yaml.safe_dump({"cv": SOURCE_CV})))
     researched = Future()
     researched.set_result(([], []))
-    monkeypatch.setattr(tailoring, "research_soon", lambda job_id: researched)
+    monkeypatch.setattr(tailoring, "research_soon", lambda job: researched)
     monkeypatch.setattr(review, "connect", Conn)
     monkeypatch.setattr(tailoring, "complete", lambda system, user, **kw: (
         json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))

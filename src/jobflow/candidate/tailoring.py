@@ -163,8 +163,8 @@ def tailor_cv(job_id: int, variant: str | None = None,
     if fmt not in FORMATS:
         raise RuntimeError(f"Unknown format {fmt!r}; choose from {', '.join(FORMATS)}")
     pages = f"{max_pages} page{'s' if max_pages != 1 else ''}"
-    researching = research_soon(job_id)
     job, variant, reason, source_doc, source_yaml = load_source(job_id, variant)
+    researching = research_soon(job)
     prompt = {
         "job": {"title": job["title"], "company": job["company"],
                 "description": job["description"][:JOB_CHAR_LIMIT]},
