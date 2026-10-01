@@ -5,7 +5,8 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from jobflow.web.queries import InvalidChange, _csv_cell, validate_changes
+from jobflow.web.export import _csv_cell
+from jobflow.web.saving import InvalidChange, validate_changes
 from jobflow.web.server import make_handler
 
 

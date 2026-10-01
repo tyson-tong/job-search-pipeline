@@ -180,7 +180,8 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>candidate/interview.py</code></td><td>Company research, specialist agents, HTML briefing.</td></tr>
   <tr><td><code>web/server.py</code></td><td>Local-only HTTP server for <code>jobflow web</code>; a per-start token and host check keep other websites out.</td></tr>
   <tr><td><code>web/scoring.py</code></td><td>Runs match scoring in a background thread, one run at a time, with progress for the page.</td></tr>
-  <tr><td><code>web/queries.py</code></td><td>Job list, pipeline counts, job details, validated all-or-nothing saves, CSV export.</td></tr>
+  <tr><td><code>web/queries.py</code></td><td>Job list, its filters, pipeline counts, job details.</td></tr>
+  <tr><td><code>web/saving.py</code> · <code>web/export.py</code></td><td>Validated all-or-nothing saves that never overwrite a change made elsewhere; the CSV export.</td></tr>
   <tr><td><code>web/static/index.html</code> · <code>app.js</code></td><td>The page: Inbox, My jobs, Filtered, Not interested, and Searches tabs, job panel, unsaved-changes tracking. Its script is only in <code>app.js</code>, so the page's security policy lets no other script run.</td></tr>
 </table></div>
 

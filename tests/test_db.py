@@ -10,7 +10,8 @@ from psycopg.conninfo import make_conninfo
 
 from jobflow.db import connect, migrate, migration_files, set_job_state
 from jobflow.ingest.store import archive_old_jobs, prune_archived_jobs, prune_sightings, save_run
-from jobflow.web.queries import Conflict, list_jobs, parse_filters, save_changes
+from jobflow.web.queries import list_jobs, parse_filters
+from jobflow.web.saving import Conflict, save_changes
 
 AD = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate reporting in "
       "Python for our finance and operations teams across the region.")

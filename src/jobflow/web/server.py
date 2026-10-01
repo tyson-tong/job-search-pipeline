@@ -18,7 +18,7 @@ from importlib import resources
 from urllib.parse import parse_qs, urlsplit
 
 from ..settings import today
-from . import queries, scoring
+from . import export, queries, saving, scoring
 
 MAX_BODY = 1_000_000
 
@@ -115,7 +115,7 @@ def make_handler(token: str, port: int):
                 if url.path == "/api/export.csv":
                     # With id=..., only those jobs: the rows on the page being viewed.
                     ids = ({int(i) for i in query["id"] if i.isdigit()} if "id" in query else None)
-                    body = queries.export_csv(queries.parse_filters(query), ids).encode()
+                    body = export.export_csv(queries.parse_filters(query), ids).encode()
                     name = f"jobs-{'filtered-' if ids is not None else ''}{today()}.csv"
                     return self._send(200, body, "text/csv; charset=utf-8",
                                       {"Content-Disposition": f'attachment; filename="{name}"'})
@@ -148,12 +148,12 @@ def make_handler(token: str, port: int):
             try:
                 payload = json.loads(self.rfile.read(length) or b"null")
                 if not isinstance(payload, dict):
-                    raise queries.InvalidChange("Send an object with changes")
-                saved = queries.save_changes(payload.get("changes"),
+                    raise saving.InvalidChange("Send an object with changes")
+                saved = saving.save_changes(payload.get("changes"),
                                              force=payload.get("force") is True)
-            except (json.JSONDecodeError, queries.InvalidChange) as exc:
+            except (json.JSONDecodeError, saving.InvalidChange) as exc:
                 return self._error(HTTPStatus.BAD_REQUEST, str(exc))
-            except queries.Conflict as exc:
+            except saving.Conflict as exc:
                 return self._json({"error": str(exc), "conflicts": exc.conflicts},
                                   HTTPStatus.CONFLICT)
             except Exception as exc:  # the transaction was rolled back
