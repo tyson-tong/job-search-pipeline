@@ -86,12 +86,16 @@ def test_two_different_jobs_are_never_merged(database):
     # too, even when its location names no city to tell the two apart.
     assert save_run("linkedin:a", "r3", "d3", [ad("3", "Melbourne, VIC", payments)], country="AU") == 1
     assert save_run("linkedin:a", "r4", "d4", [ad("4", "Hong Kong", payments)], country="HK") == 1
+    # Word for word with no location at all, in two countries: the exact-copy rule too.
+    markets = standard + [f"markets{i}" for i in range(20)]
+    assert save_run("linkedin:a", "r6", "d6", [ad("6", None, markets)], country="AU") == 1
+    assert save_run("linkedin:a", "r7", "d7", [ad("7", None, markets)], country="SG") == 1
     # The check: another site's cut-down copy of the first ad, in the same city, is that job.
     seek = {"id": "5", "jobLink": "https://www.seek.com.au/job/5", "title": "Software Engineer",
             "advertiser": {"name": "Big Bank Limited"}, "joblocationInfo": {"displayLocation": "Sydney NSW"},
             "content": {"unEditedContent": " ".join(payments[:80] + payments[90:])}}
     assert save_run("seek:a", "r5", "d5", [seek], country="AU") == 0
-    assert _one("SELECT count(*) FROM jobs")[0] == 4
+    assert _one("SELECT count(*) FROM jobs")[0] == 6
 
 
 def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):

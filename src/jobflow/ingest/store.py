@@ -57,7 +57,7 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str 
 
     is_first_copy is True when this is the copy the jobs row was created from.
     Tried in order: this site's ID/URL on any known copy (job_sources), exact content
-    fingerprint, the same employer and title seen recently in the same place and country
+    fingerprint in the same country, the same employer and title seen recently in the same place and country
     with one ad a cut-down or padded copy of the other (another site's copy, or a repost;
     see is_copy_of_ad), then a recent job with the same title and a near-identical ad
     under any employer, in the same city and country (is_same_ad).
@@ -68,10 +68,12 @@ def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str 
     if row:
         return row[0], row[1]
     if fp:
-        row = conn.execute("SELECT id FROM jobs WHERE fingerprint=%s ORDER BY id LIMIT 1",
-                           (fp,)).fetchone()
-        if row:
-            return row[0], False
+        # The fingerprint has the location but not the country, and a location may name
+        # none ("Remote", or missing): one employer's ad for two countries is two jobs.
+        for job_pk, existing_country in conn.execute(
+                "SELECT id, country FROM jobs WHERE fingerprint=%s ORDER BY id", (fp,)).fetchall():
+            if same_country(country, existing_country):
+                return job_pk, False
     if mkey and description:
         candidates = conn.execute(
             """SELECT id, description, location, country FROM jobs
