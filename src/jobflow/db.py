@@ -147,8 +147,10 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
     if not row:
         raise RuntimeError(f"No job with database id {job_id}")
     if status is not None and status != row[0]:
-        conn.execute("UPDATE jobs SET status=%s, status_updated_at=now() WHERE id=%s",
-                     (status, job_id))
+        # A job you move out of Filtered no longer has a reason to be filtered.
+        conn.execute("""UPDATE jobs SET status=%s, status_updated_at=now(),
+                            filter_reason=CASE WHEN %s = 'filtered' THEN filter_reason END
+                        WHERE id=%s""", (status, status, job_id))
         conn.execute("""INSERT INTO status_history(job_id, from_status, to_status, via)
                         VALUES (%s,%s,%s,%s)""", (job_id, row[0], status, via))
     note_line = f"{today().isoformat()}: {note.strip()}" if note and note.strip() else None

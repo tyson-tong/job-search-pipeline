@@ -240,6 +240,23 @@ def test_a_status_change_keeps_the_first_applied_date_and_every_note(database):
     assert _one("SELECT count(*) FROM status_history WHERE job_id=%s", job_id)[0] == 2
 
 
+def test_a_save_changes_only_what_it_names(database):
+    from datetime import date
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    job_id = _one("SELECT id FROM jobs")[0]
+    with connect() as conn:
+        conn.execute("UPDATE jobs SET status='filtered', filter_reason=%s WHERE id=%s",
+                     ("title contains 'Data'", job_id))
+    save_changes([{"id": job_id, "status": "new", "follow_up_on": "2026-10-09"}])
+    # Moved to the Inbox, a job kept its old reason, and the panel still said "filtered".
+    assert _one("SELECT status, filter_reason FROM jobs") == ("new", None)
+    save_changes([{"id": job_id, "note": "Called the recruiter"}])   # a note alone
+    assert _one("SELECT follow_up_on FROM applications")[0] == date(2026, 10, 9)
+    save_changes([{"id": job_id, "follow_up_on": None}])             # cleared on purpose
+    assert _one("SELECT follow_up_on FROM applications")[0] is None
+
+
 def test_a_save_over_a_change_made_elsewhere_writes_nothing(database):
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     job = list_jobs(parse_filters({"status": ["new"]}))[0]
