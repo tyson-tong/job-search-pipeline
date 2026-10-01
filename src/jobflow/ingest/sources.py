@@ -125,9 +125,15 @@ def to_date(value: object) -> date | None:
 
 
 def _period_from_amount(amount: float, country: str | None = None) -> str:
-    """The period of an amount with no period stated, from its size and the job's country."""
-    return "hourly" if amount < 300 else "daily" if amount < 3000 else \
-        "monthly" if amount < MONTHLY_BELOW.get(country or "", MONTHLY_BELOW_ELSEWHERE) else "annual"
+    """The period of an amount with no period stated, from its size and the job's country.
+    Where pay is quoted by the month (Hong Kong, Singapore), S$2,500 is a month's pay,
+    not a day's."""
+    monthly_below = MONTHLY_BELOW.get(country or "")
+    if amount < 300:
+        return "hourly"
+    if amount < (1000 if monthly_below else 3000):
+        return "daily"
+    return "monthly" if amount < (monthly_below or MONTHLY_BELOW_ELSEWHERE) else "annual"
 
 
 def _period(text: str, amounts: tuple[int, int], amount: float,
@@ -189,6 +195,10 @@ def parse_salary(value: object, country: str | None = None) -> tuple[float, floa
             kept = None
             continue
         amount = float(m["num"].replace(",", "")) * (1000 if m["k"] else 1)
+        # "$60 - $80k": the k is the whole range's, not just its top.
+        if range_end and m["k"] and not kept["k"] and amounts and spans[-1] == kept.span() \
+                and amounts[-1] < 1000:
+            amounts[-1] *= 1000
         if amount >= 5:
             amounts.append(amount)
             spans.append(m.span())

@@ -37,7 +37,7 @@ Seek has no UK or US site, so it skips those countries. The lists are `CITIES` i
 
 ## Salary in different currencies
 
-For different salary cutoffs in AUD, SGD, and HKD, make one `[[search]]` entry per country and put `salary_min`, `salary_max`, and `salary_period` inside that country’s entry. The amounts are in the posting’s local currency and are not converted. A posting's salary with no period stated counts as monthly when it's under 200,000 in Hong Kong, 30,000 in Singapore, or 20,000 elsewhere, and as annual otherwise. (The tracker's own minimum-salary filter is different: it converts each job's salary to US dollars.) Leave salary fields out to disable salary filtering for that country. Separate searches may increase LinkedIn scraper runs because LinkedIn runs once per search.
+For different salary cutoffs in AUD, SGD, and HKD, make one `[[search]]` entry per country and put `salary_min`, `salary_max`, and `salary_period` inside that country’s entry. The amounts are in the posting’s local currency and are not converted. A posting's salary with no period stated is read by its size: under 300 is hourly pay; then, in Hong Kong and Singapore, under 1,000 is daily and under 200,000 (Hong Kong) or 30,000 (Singapore) monthly; elsewhere, under 3,000 is daily and under 20,000 monthly; anything larger is annual. A range written "$60 - $80k" is 60,000 to 80,000. (The tracker's own minimum-salary filter is different: it converts each job's salary to US dollars.) Leave salary fields out to disable salary filtering for that country. Separate searches may increase LinkedIn scraper runs because LinkedIn runs once per search.
 
 ## Job sites
 

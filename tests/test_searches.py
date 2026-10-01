@@ -216,6 +216,12 @@ def test_parse_salary_formats():
     assert parse_salary("$8,000 - $10,000", "SG") == (96000, 120000)
     assert parse_salary("HK$600,000", "HK") == (600000, 600000)
     assert parse_salary("$35,000") == (35000, 35000)   # elsewhere, still annual
+    # Under 3,000 was daily pay everywhere: S$2,500 a month read as S$650,000 a year.
+    assert parse_salary("$2,000 - $2,800", "SG") == (24000, 33600)
+    assert parse_salary("$800") == (800 * 260, 800 * 260)   # elsewhere, still a day rate
+    # The k is the range's: read as 60 to 80,000.
+    assert parse_salary("$60 - $80k") == (60000, 80000)
+    assert parse_salary("$60-80K + super") == (60000, 80000)
     # Too large to be a salary: one such value once failed the import of a whole paid run.
     assert parse_salary("Up to $1,000,000,000 per month") is None
 
