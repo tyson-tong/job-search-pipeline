@@ -116,10 +116,34 @@ def _cached_assessments(conn, job_id: int) -> dict[str, dict]:
 
 
 def _latest_digests(conn, job_id: int) -> dict[str, str]:
-    """{CV: the digest of the CV text its latest assessment used}, in any format."""
+    """{CV: the digest of the CV text its latest assessment used}. An assessment in an
+    older format can't be scored now, so it counts as none: the job is scored again."""
     return dict(conn.execute(
         """SELECT DISTINCT ON (cv_variant) cv_variant, cv_sha256 FROM match_assessments
-           WHERE job_id=%s ORDER BY cv_variant, created_at DESC""", (job_id,)).fetchall())
+           WHERE job_id=%s AND evidence->>'format' = %s
+           ORDER BY cv_variant, created_at DESC""", (job_id, str(ASSESSMENT_FORMAT))).fetchall())
+
+
+def score_sql(evidence: str, score: str) -> str:
+    """SQL for an assessment's score with the profile weights now (the parameters
+    score_weights gives), worked out from its stored breakdown as score_requirements does,
+    so the tracker ranks a job's CVs as tailor-cv and cover-letter pick them. `evidence`
+    and `score` name the row's columns; an assessment in an older format keeps its score."""
+    weighted, total = [], []
+    for group in ("required", "preferred"):
+        weight = f"%({group}_weight)s::float8"
+        credit = f"({evidence}->'breakdown'->'{group}'->>'credit')::float8"
+        weighted.append(f"coalesce({weight} * {credit}, 0)")
+        total.append(f"CASE WHEN {evidence}->'breakdown' ? '{group}' THEN {weight} ELSE 0 END")
+    return (f"CASE WHEN {evidence}->>'format' = '{ASSESSMENT_FORMAT}' THEN coalesce(round("
+            f"100 * (({' + '.join(weighted)}) / nullif({' + '.join(total)}, 0)))::int, 0) "
+            f"ELSE {score} END")
+
+
+def score_weights() -> dict[str, float]:
+    """The parameters score_sql reads."""
+    required, preferred = matching_weights()
+    return {"required_weight": required, "preferred_weight": preferred}
 
 
 def current_digests() -> dict[str, str]:
@@ -161,12 +185,7 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
                                "jobs are scored")
     if not sources:
         with connect() as conn:
-            stored = stored_assessments(conn, job_id, weights)
-        if not stored:
-            # Only assessments in an older format: still scored, so never scored again.
-            raise RuntimeError(f"Job {job_id} was scored by an earlier version; it isn't "
-                               "scored again")
-        return stored
+            return stored_assessments(conn, job_id, weights)
     job = fetch_job(job_id)
     for variant, source in sources.items():
         # A score stands until the CV changes, so one from part of a CV would stand too.
@@ -223,13 +242,14 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
         return stored_assessments(conn, job_id, weights)
 
 
-# Interested jobs without a score against one of the CVs named (%(variants)s): each job is
-# scored once against each CV.
-UNSCORED_SQL = """FROM jobs j
+# Interested jobs without a score against one of the CVs named (%(variants)s), in the
+# current format: each job is scored once against each CV.
+UNSCORED_SQL = f"""FROM jobs j
     WHERE j.status = 'interested'
       AND EXISTS (SELECT 1 FROM unnest(%(variants)s::text[]) AS cv(variant)
                   WHERE NOT EXISTS (SELECT 1 FROM match_assessments m
-                                    WHERE m.job_id = j.id AND m.cv_variant = cv.variant))"""
+                                    WHERE m.job_id = j.id AND m.cv_variant = cv.variant
+                                      AND m.evidence->>'format' = '{ASSESSMENT_FORMAT}'))"""
 
 
 def jobs_needing_match(variants: list[str], only: list[int] | None = None) -> list[int]:

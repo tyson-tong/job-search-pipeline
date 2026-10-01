@@ -186,6 +186,45 @@ def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, monke
     assert matching.outdated_scores(matching.current_digests()) == []
 
 
+def test_the_tracker_and_tailor_cv_rank_cvs_alike_after_the_weights_change(database, monkeypatch):
+    # The tracker showed the score stored at scoring time while tailor-cv recomputed it with
+    # the weights now, so after a weights change they could pick different CVs.
+    import json
+
+    from jobflow.candidate import matching
+    from jobflow.web.queries import job_detail
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    job_id = _one("SELECT id FROM jobs")[0]
+    with connect() as conn:
+        set_job_state(conn, job_id, status="interested", via="test")
+        # Scored by an earlier version, in a format that can't be recomputed.
+        conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score, evidence)
+                        VALUES (%s, 'dev', 'old', 90, '{"format": 1}')""", (job_id,))
+
+    def complete(system, user, **kwargs):
+        dev = json.loads(user)["cv_variant"] == "dev"
+        # dev shows the required skill but not the preferred one; strat the other way round.
+        return json.dumps({"requirements": [
+            {"requirement": "SQL", "importance": "required",
+             "status": "matched" if dev else "not_evidenced", "evidence": ["SQL"]},
+            {"requirement": "Tableau", "importance": "preferred",
+             "status": "not_evidenced" if dev else "matched", "evidence": ["Tableau"]}]}), "m"
+    monkeypatch.setattr(matching, "complete", complete)
+    monkeypatch.setattr(matching, "chosen_sources", lambda: {"dev": "SQL", "strat": "Tableau"})
+    weights = [(0.75, 0.25)]
+    monkeypatch.setattr(matching, "matching_weights", lambda: weights[0])
+    # An old-format score once made the job unscorable, so tailor-cv refused it for good.
+    assert sorted(job_id for job_id in matching.jobs_needing_match(["dev", "strat"])) == [job_id]
+    assert matching.best_variant(matching.match_job(job_id))["variant"] == "dev"
+    weights[0] = (0.2, 0.8)   # now the preferred skill matters most
+    best = matching.best_variant(matching.match_job(job_id))
+    listed = list_jobs(parse_filters({"status": ["interested"]}))[0]
+    assert (best["variant"], best["score"]) == (listed["cv_variant"], listed["score"]) == ("strat", 80)
+    assert [(m["variant"], m["score"]) for m in job_detail(job_id)["matches"]] == [
+        ("strat", 80), ("dev", 20)]
+
+
 def test_a_status_change_keeps_the_first_applied_date_and_every_note(database):
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     job_id = _one("SELECT id FROM jobs")[0]

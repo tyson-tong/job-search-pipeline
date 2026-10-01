@@ -6,6 +6,7 @@ import io
 import math
 from datetime import date, datetime, timedelta
 
+from ..candidate.matching import score_sql, score_weights
 from ..db import CLOSED_STATUSES, STATUSES, connect, set_job_state
 from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
 from ..ingest.similar import IN_PROGRESS, similar_jobs
@@ -37,6 +38,8 @@ MAX_NOTE = 2000
 UNKNOWN_COUNTRY = "none"
 # The most similar jobs, and same ads in other countries, the job panel lists.
 SIMILAR_SHOWN = 5
+# An assessment's score with the profile's weights now, as tailor-cv works it out.
+SCORE = score_sql("evidence", "score")
 # A job's tracking version: when its status, notes, or follow-up last changed (in
 # microseconds). Imports never change these, so they can't cause false conflicts.
 VERSION_SQL = """(extract(epoch from greatest(j.status_updated_at,
@@ -52,6 +55,15 @@ def _digests_now() -> dict[str, str]:
         return current_digests()
     except Exception:
         return {}
+
+
+def _weights() -> dict[str, float]:
+    """The profile's scoring weights for score_sql; the defaults when they can't be read
+    (the page explains that problem separately)."""
+    try:
+        return score_weights()
+    except Exception:
+        return {"required_weight": 0.75, "preferred_weight": 0.25}
 
 
 def _outdated(conn, job_ids: list[int], digests: dict[str, str]) -> dict[int, list[str]]:
@@ -141,10 +153,11 @@ def list_jobs(filters: dict) -> list[dict]:
                     WHERE fx.code = j.country) usd ON true
                 LEFT JOIN LATERAL (
                     SELECT latest.score, latest.cv_variant FROM (
-                        SELECT DISTINCT ON (cv_variant) cv_variant, score
+                        SELECT DISTINCT ON (cv_variant) cv_variant, {SCORE} AS score
                         FROM match_assessments WHERE job_id = j.id
                         ORDER BY cv_variant, created_at DESC) latest
-                    ORDER BY latest.score DESC LIMIT 1) best ON true
+                    -- The same CV tailor-cv picks for this job (best_variant).
+                    ORDER BY latest.score DESC, latest.cv_variant DESC LIMIT 1) best ON true
                 WHERE j.status = ANY(%(statuses)s)
                   AND (%(q)s = '' OR j.title ILIKE %(pattern)s OR j.company ILIKE %(pattern)s
                        OR j.location ILIKE %(pattern)s)
@@ -164,7 +177,8 @@ def list_jobs(filters: dict) -> list[dict]:
                        < %(today)s::date - %(older_than_days)s::int)
                 ORDER BY {SORTS[filters['sort']]}
                 LIMIT %(limit)s""",
-            {**filters, "pattern": f"%{_like_escape(filters['q'])}%", "unknown": UNKNOWN_COUNTRY,
+            {**filters, **_weights(), "pattern": f"%{_like_escape(filters['q'])}%",
+             "unknown": UNKNOWN_COUNTRY,
              "fx_codes": FX_CODES, "fx_rates": FX_RATES,
              # Today in your timezone, as the rows' overdue flags use.
              "today": today(),
@@ -277,6 +291,7 @@ def summary() -> dict:
     from ..candidate.cvs import chosen_sources
     from ..candidate.matching import count_needing_match, current_digests, outdated_scores
     try:
+        score_weights()   # a bad weight in config/profile.toml would rank every job wrongly
         variants = list(chosen_sources())
         unscored, scoring_problem = count_needing_match(variants), None
         # Scores against a CV edited since, which Rescore edited CVs updates: one LLM
@@ -316,11 +331,12 @@ def job_detail(job_id: int) -> dict | None:
              "not_evidenced": gaps, "rationale": (evidence or {}).get("rationale", ""),
              "assessed_at": created}
             for v, score, matched, partial, gaps, evidence, created in conn.execute(
-                """SELECT DISTINCT ON (cv_variant) cv_variant, score, matched, partial, gaps,
-                          evidence, created_at
-                   FROM match_assessments WHERE job_id=%s
-                   ORDER BY cv_variant, created_at DESC""", (job_id,)).fetchall()]
-        job["matches"].sort(key=lambda m: m["score"], reverse=True)
+                f"""SELECT DISTINCT ON (cv_variant) cv_variant, {SCORE}, matched, partial,
+                           gaps, evidence, created_at
+                    FROM match_assessments WHERE job_id=%(job_id)s
+                    ORDER BY cv_variant, created_at DESC""",
+                {"job_id": job_id, **_weights()}).fetchall()]
+        job["matches"].sort(key=lambda m: (m["score"], m["variant"]), reverse=True)
         stale = _outdated(conn, [job_id], _digests_now()).get(job_id, [])
         for match in job["matches"]:
             match["outdated"] = match["variant"] in stale
