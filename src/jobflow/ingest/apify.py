@@ -10,7 +10,9 @@ from functools import partial
 
 from apify_client import ApifyClient
 
-from .searches import PlannedRun, filter_reason, load_searches, plan
+from .filters import filter_reason
+from .runs import PlannedRun, plan
+from .searches import load_searches
 
 # The longest APIFY_MAX_WAIT_MINUTES may be, and its default. Each site's runs go one after
 # another in a daily GitHub job stopped at 180 minutes, where a run cut off keeps charging

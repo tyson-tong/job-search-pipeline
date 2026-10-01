@@ -116,13 +116,13 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="lane-sub">00:30 Sydney time · <code>jobflow ingest</code></div>
     <div class="step"><b>Your searches</b><span class="mod">JOBFLOW_SEARCHES variable (= config/searches.toml)</span>
       <div class="what">Terms, countries and cities, sites, salary, job type, work arrangement, Seek classifications, posted window, excluded title terms, kept titles that override them, and excluded employers.</div></div>
-    <div class="step"><b>Plan runs per site</b><span class="mod">ingest/searches.py · ingest/options.py</span>
+    <div class="step"><b>Plan runs per site</b><span class="mod">ingest/searches.py · ingest/runs.py · ingest/options.py</span>
       <div class="what">Validates values and translates each search into each actor's input. LinkedIn: one run per search; Indeed and Seek: one per term and location.</div></div>
     <div class="step"><b>Run Apify actors</b><span class="mod">ingest/apify.py</span>
       <div class="what">Calls the LinkedIn, Indeed, and Seek scrapers at the same time (one run per site at a time), with a result cap and optional cost cap. Results are imported one run at a time. A failed run is recorded and the rest continue.</div></div>
     <div class="step"><b>Normalise</b><span class="mod">ingest/sources.py</span>
       <div class="what">Maps each scraper's fields to one shape: company, title, location, date, description, salary (annualised), job type, arrangement.</div></div>
-    <div class="step"><b>Filter, dedupe, store</b><span class="mod">ingest/store.py · ingest/dedupe.py</span>
+    <div class="step"><b>Filter, dedupe, store</b><span class="mod">ingest/filters.py · ingest/store.py · ingest/dedupe.py</span>
       <div class="what">Applies filters the site couldn't, matches duplicates within and across sites, and saves every sighting.</div></div>
   </div>
 
@@ -157,7 +157,9 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>batch.py</code></td><td>Working through jobs two at a time: which jobs tailor-cv, cover-letter, and interview-prep still have to do, one run of each at a time, and each job's output printed in one piece; also the tracker's scoring runs.</td></tr>
   <tr><td><code>github.py</code></td><td>The daily import seen from your machine, with the GitHub CLI: <code>update-searches</code> publishes your searches and timezone, <code>status</code> reads back what it uses.</td></tr>
   <tr><td><code>ingest/options.py</code></td><td>Constants: allowed search values (including the countries and their cities) and how each site's actor expresses them.</td></tr>
-  <tr><td><code>ingest/searches.py</code></td><td>Loads and validates searches, builds actor inputs, and applies filters after import.</td></tr>
+  <tr><td><code>ingest/searches.py</code></td><td>Loads and validates your searches.</td></tr>
+  <tr><td><code>ingest/runs.py</code></td><td>Translates each search into each site's actor input, and works out the country a run covers.</td></tr>
+  <tr><td><code>ingest/filters.py</code></td><td>The filters a site can't apply, applied after import: excluded title terms and employers, salary, job type, work arrangement, widened date windows.</td></tr>
   <tr><td><code>ingest/apify.py</code></td><td>Runs each planned search on Apify and hands the results to the store.</td></tr>
   <tr><td><code>ingest/sources.py</code></td><td>Converts LinkedIn, Indeed, and Seek records to one <code>Posting</code> shape.</td></tr>
   <tr><td><code>ingest/store.py</code></td><td>Saving jobs and sightings, merging copies, run records, filtering the Inbox after a searches change, archiving, and pruning old records.</td></tr>

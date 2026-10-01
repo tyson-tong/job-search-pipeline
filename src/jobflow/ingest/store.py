@@ -24,13 +24,8 @@ from .dedupe import (
     simplify,
     title_patterns,
 )
-from .searches import (
-    country_from_location,
-    excluded_reason,
-    filter_reason,
-    run_country,
-    search_url_country,
-)
+from .filters import excluded_reason, filter_reason
+from .runs import country_from_location, run_country, search_url_country
 from .sources import Posting, normalise, seek_url
 
 JobFilter = Callable[[Posting], "str | None"]

@@ -6,15 +6,9 @@ import os
 from itertools import groupby
 
 from . import options as opt
-from .searches import (
-    POSTED_WITHIN,
-    WINDOW_NAMES,
-    SearchConfigError,
-    load_searches,
-    local_filters,
-    plan,
-    search_warnings,
-)
+from .filters import local_filters, search_warnings
+from .runs import POSTED_WITHIN, WINDOW_NAMES, plan
+from .searches import SearchConfigError, load_searches
 
 
 def _run_max_results(run_input: dict) -> int:

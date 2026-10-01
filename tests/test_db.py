@@ -439,7 +439,8 @@ def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
     # Dropping an excluded term used to leave the jobs it had filtered hidden until archived.
     from functools import partial
 
-    from jobflow.ingest.searches import filter_reason, parse_config
+    from jobflow.ingest.filters import filter_reason
+    from jobflow.ingest.searches import parse_config
     from jobflow.ingest.store import exclude_inbox_jobs, restore_filtered_jobs
 
     base = ('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'

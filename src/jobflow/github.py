@@ -37,7 +37,8 @@ def update_searches(dry_run: bool = False) -> None:
     back Filtered jobs its filters would now keep. An invalid file stops before anything
     is published, so a typo never reaches the daily import."""
     from .db import migrate
-    from .ingest.searches import defaults_search, parse_config, search_warnings
+    from .ingest.filters import search_warnings
+    from .ingest.searches import defaults_search, parse_config
     from .ingest.store import exclude_inbox_jobs, restore_filtered_jobs
     from .settings import searches_file, timezone
 
