@@ -106,8 +106,11 @@ def to_date(value: object) -> date | None:
     if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()
                                            and len(value) >= 10):
         number = float(value)
-        return datetime.fromtimestamp(number / 1000 if number > 1e11 else number,
-                                      tz=settings.timezone()).date()
+        try:
+            return datetime.fromtimestamp(number / 1000 if number > 1e11 else number,
+                                          tz=settings.timezone()).date()
+        except (OverflowError, OSError, ValueError):   # out of range, or nan
+            return None
     text = str(value)
     try:
         moment = datetime.fromisoformat(text)

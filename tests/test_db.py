@@ -364,11 +364,19 @@ def test_a_job_whose_search_was_renamed_is_judged_by_the_defaults(database):
     assert [job["reason"] for job in matched] == ["title contains 'Intern'"]
 
 
-def test_one_posting_the_database_rejects_does_not_lose_the_rest_of_a_paid_run(database):
+def test_one_posting_that_cant_be_saved_does_not_lose_the_rest_of_a_paid_run(database):
     # A JSON "\ud800" escape is valid JSON, and PostgreSQL rejects it.
     broken = {**SEEK, "id": "999", "title": "Analyst \ud800", "jobLink": "https://www.seek.com.au/job/999"}
-    assert save_run("seek:a", "r1", "d1", [broken, LINKEDIN], country="AU") == 1
-    assert _one("SELECT title FROM jobs")[0] == "Data Analyst"
+    # A timestamp out of range once failed the whole run, and was recorded as IMPORT_FAILED.
+    far_future = {**LINKEDIN, "id": "998", "link": None, "title": "Quant", "postedAt": 1e20}
+    assert save_run("seek:a", "r1", "d1", [broken, LINKEDIN, "not a record", far_future],
+                    country="AU") == 2
+    assert sorted(_rows("SELECT title, posted_at FROM jobs")) == [("Data Analyst", None),
+                                                                  ("Quant", None)]
+    # Every posting failing isn't one posting's fault: the import fails, to be retried.
+    with pytest.raises(RuntimeError, match="none of the run's 2 postings"):
+        save_run("seek:a", "r3", "d3", [broken, "not a record"], country="AU")
+    assert _one("SELECT count(*) FROM scraper_runs WHERE apify_run_id='r3'")[0] == 0
 
 
 def test_old_sightings_lose_only_their_scraped_record(database):

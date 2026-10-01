@@ -210,10 +210,10 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
             (actor_id, run_id, dataset_id, started_at, finished_at, len(jobs), cost_usd,
              search_name, psycopg.types.json.Jsonb(run_input) if run_input else None)
         ).fetchone()[0]
-        added = 0
+        added, skipped = 0, 0
         for job in jobs:
-            # The run is paid for: a posting the database rejects is skipped, not allowed to
-            # fail the import of every other posting in it.
+            # The run is paid for: a posting that can't be read or that the database rejects
+            # is skipped, not allowed to fail the import of every other posting in it.
             # A lost connection isn't the posting's fault, and fails every posting after it:
             # it fails the import, which is then recorded as IMPORT_FAILED.
             try:
@@ -221,9 +221,14 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
                     added += save_job(conn, run_pk, job, job_filter, country)
             except (psycopg.OperationalError, psycopg.InterfaceError):
                 raise
-            except (psycopg.Error, UnicodeEncodeError) as exc:
+            except Exception as exc:
                 title = job.get("title") if isinstance(job, dict) else None
                 print(f"skipped a posting that can't be saved ({title!r}): {exc}", file=sys.stderr)
+                skipped += 1
+        # Every posting failing is no one posting's fault (a scraper that changed its output,
+        # say): fail the import, so it's recorded as IMPORT_FAILED with its dataset to retry.
+        if jobs and skipped == len(jobs):
+            raise RuntimeError(f"none of the run's {len(jobs)} postings could be saved")
         return added
 
 
