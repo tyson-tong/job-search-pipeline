@@ -104,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
         each_job.add_argument("--job", type=positive_int, action="append", metavar="ID",
                               help="Only this job, by the number the tracker's job panel shows "
                               "(#42); repeat for several")
+        each_job.add_argument("--redo", action="store_true",
+                              help="With --job: do those jobs again even if they're done, "
+                              "replacing their files (and any fix you made by hand)")
     command("skill-gaps", run_skill_gaps, "Report the skills your CVs don't show that scored "
             "Interested jobs ask for most, with how to close each gap")
     command("clean-up", run_clean_up, "Delete the output folders of Not interested, Withdrawn, "
@@ -304,10 +307,17 @@ def _print_draft_result(target, errors: list[str], warnings: list[str], if_error
     print(if_errors if errors else if_checked)
 
 
+def check_redo(args: argparse.Namespace) -> None:
+    """--redo replaces finished work, so only for the jobs --job names."""
+    if args.redo and not args.job:
+        raise RuntimeError("--redo needs --job ID, naming the jobs to do again")
+
+
 def run_tailor_cv(args: argparse.Namespace) -> None:
     from .batch import for_jobs
     from .candidate.tailoring import add_format, cv_fixed_by_hand, tailor_cv
     from .db import migrate
+    check_redo(args)
     variant = check_variant(args.cv, yaml_only=True)
     check_keys(reviewer=True)
     migrate()
@@ -328,13 +338,15 @@ def run_tailor_cv(args: argparse.Namespace) -> None:
 
     for_jobs("interested", "tailor", "a tailored CV", tailor_one,
              lambda folder: any(folder.glob("CV_*_draft.yaml")), cv_fixed_by_hand,
-             add_requested_format if args.format != "pdf" else None, only=args.job)
+             add_requested_format if args.format != "pdf" else None, only=args.job,
+             redo=args.redo)
 
 
 def run_cover_letter(args: argparse.Namespace) -> None:
     from .batch import for_jobs
     from .candidate.cover_letter import letter_fixed_by_hand, write_letter
     from .db import migrate
+    check_redo(args)
     variant = check_variant(args.cv, yaml_only=False)
     check_keys(reviewer=True)
     migrate()
@@ -351,7 +363,7 @@ def run_cover_letter(args: argparse.Namespace) -> None:
 
     for_jobs("interested", "cover-letter", "a cover letter", letter_one,
              lambda folder: (folder / "cover-letter.docx").exists(), letter_fixed_by_hand,
-             only=args.job)
+             only=args.job, redo=args.redo)
 
 
 def run_interview_prep(args: argparse.Namespace) -> None:
@@ -359,11 +371,13 @@ def run_interview_prep(args: argparse.Namespace) -> None:
     from .candidate.cvs import chosen_sources
     from .candidate.interview import prepare
     from .db import migrate
+    check_redo(args)
     chosen_sources()  # a problem with cvs in config/profile.toml stops it now
     check_keys(web_search=True)
     migrate()
     for_jobs("interviewing", "interview-prep", "a briefing", lambda job_id: print(prepare(job_id)),
-             lambda folder: (folder / "interview-prep.html").exists(), only=args.job)
+             lambda folder: (folder / "interview-prep.html").exists(), only=args.job,
+             redo=args.redo)
 
 
 def run_clean_up(args: argparse.Namespace) -> None:

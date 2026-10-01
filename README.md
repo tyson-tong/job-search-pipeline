@@ -44,7 +44,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
 6. **Prepare for an interview**, once a job is **Interviewing**: `uv run jobflow interview-prep` writes `interview-prep.html` to the same folder for each: the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps, questions to ask, and a 30-minute checklist. Unlike scoring and drafting, it doesn't refuse a CV over 28,000 characters: it uses the start of it, and warns.
 
-   These commands work through every job at that status and skip jobs they've already done, so run them whenever jobs move along. A job that fails (a network error, say) is retried the next time you run the command, and so is one whose output you deleted (with `clean-up`, say): its `CV_<variant>_draft.yaml`, `cover-letter.docx`, or `interview-prep.html`. Deleting only a CV's PDF doesn't count; render it again from the YAML. So is a CV or letter that failed the fact check, for a fresh draft, unless you've fixed it yourself: edited the `CV_<variant>_draft.yaml`, or saved the letter as `cover-letter.docx` in its folder. Then your version is kept. A draft that fails the check never leaves an older PDF, `.docx`, or `cover-letter.docx` beside it.
+   These commands work through every job at that status and skip jobs they've already done, so run them whenever jobs move along. A job that fails (a network error, say) is retried the next time you run the command, and so is one whose output you deleted (with `clean-up`, say): its `CV_<variant>_draft.yaml`, `cover-letter.docx`, or `interview-prep.html`. Deleting only a CV's PDF doesn't count; render it again from the YAML. So is a CV or letter that failed the fact check, for a fresh draft, unless you've fixed it yourself: edited the `CV_<variant>_draft.yaml`, or saved the letter as `cover-letter.docx` in its folder. Then your version is kept. To do a job again anyway, name it with `--job ID --redo`; that replaces its files, a fix of yours included. A draft that fails the check never leaves an older PDF, `.docx`, or `cover-letter.docx` beside it.
 
 7. **See your skill gaps** now and then: `uv run jobflow skill-gaps` writes `output/skill-gaps-<date>.html`, ranking the skills your scored Interested jobs ask for that your best-matching CVs don't show, with how to close each gap. It uses your stored scores and one LLM call. "Not shown" means the CV lacks evidence, so if you have the skill, the fix may be adding it to your CV; then click **Rescore edited CVs** in the tracker before running `skill-gaps` again, since scores aren't redone by themselves (the report and the command say how many of its jobs have scores from an earlier version of a CV).
 
@@ -72,9 +72,9 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | Command | What it does |
 |---|---|
 | `jobflow web [--port N]` | The job tracker in your browser |
-| `jobflow tailor-cv [--job ID] [--cv VARIANT] [--max-pages N] [--format pdf\|docx\|latex]` | A reviewed, fact-checked CV (YAML and PDF) for each Interested job without one |
-| `jobflow cover-letter [--job ID] [--cv VARIANT]` | Optional: a reviewed, fact-checked cover letter for each Interested job without one |
-| `jobflow interview-prep [--job ID]` | An interview briefing for each Interviewing job without one |
+| `jobflow tailor-cv [--job ID [--redo]] [--cv VARIANT] [--max-pages N] [--format pdf\|docx\|latex]` | A reviewed, fact-checked CV (YAML and PDF) for each Interested job without one |
+| `jobflow cover-letter [--job ID [--redo]] [--cv VARIANT]` | Optional: a reviewed, fact-checked cover letter for each Interested job without one |
+| `jobflow interview-prep [--job ID [--redo]]` | An interview briefing for each Interviewing job without one |
 | `jobflow skill-gaps` | The skills your scored Interested jobs ask for that your CVs don't show |
 | `jobflow clean-up` | Delete the output folders of Not interested, Withdrawn, Declined, Rejected, and Archived jobs, after you confirm (the jobs stay in the tracker) |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check, publish to GitHub, filter the Inbox, bring back Filtered jobs your searches now keep |

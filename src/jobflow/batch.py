@@ -63,7 +63,8 @@ class _JobOutput:
 
 
 def for_jobs(status: str, kind: str, what: str, run_one, output_exists,
-             fixed_by_hand=None, done_one=None, only: list[int] | None = None) -> None:
+             fixed_by_hand=None, done_one=None, only: list[int] | None = None,
+             redo: bool = False) -> None:
     """_run_jobs (for the jobs in `only`, if given), unless the same command is already running (in another terminal, say),
     which would draft the same jobs twice and write over its files.
 
@@ -79,14 +80,16 @@ def for_jobs(status: str, kind: str, what: str, run_one, output_exists,
             raise SystemExit(f"{COMMANDS.get(kind, kind)} is already running (in another "
                              "terminal or window). Let it finish, then run it again for any "
                              "jobs it didn't do.")
-        _run_jobs(status, kind, what, run_one, output_exists, fixed_by_hand, done_one, only)
+        _run_jobs(status, kind, what, run_one, output_exists, fixed_by_hand, done_one, only,
+                  redo)
 
 
 def _plan_jobs(status: str, kind: str, output_exists, fixed_by_hand=None,
-               only: list[int] | None = None):
+               only: list[int] | None = None, redo: bool = False):
     """The jobs with `status` (only those in `only`, if given) still to do, and those
     done: (all jobs, to do, done as (name, folder) pairs, how many are redrafted, how many
-    are done again). A job in `only` without that status is an error.
+    are done again). A job in `only` without that status is an error. With redo, every
+    job is to do, done or not.
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
     twice, and a failed job is retried next time. A job counts as done only while
@@ -122,14 +125,17 @@ def _plan_jobs(status: str, kind: str, output_exists, fixed_by_hand=None,
                                   ORDER BY r.id DESC LIMIT 1) last ON true
                WHERE j.status = %s AND (%s::bigint[] IS NULL OR j.id = ANY(%s))
                ORDER BY j.id""", (kind, status, only, only)).fetchall()
-        todo, done_jobs, redo, lost = [], [], 0, 0
+        todo, done_jobs, redrafted, lost = [], [], 0, 0
         for job_id, company, title, done, tried in rows:
             name = f"#{job_id} {title} ({company or 'unknown employer'})"
             folder = job_directory(job_id, {"company": company, "title": title})
+            if redo:
+                todo.append((job_id, company, title))
+                continue
             if done and output_exists(folder):
                 done_jobs.append((name, folder))
                 continue
-            if done:
+            elif done:
                 lost += 1
             elif tried and fixed_by_hand and fixed_by_hand(folder):
                 conn.execute("INSERT INTO workflow_runs(job_id,kind,status,finished_at) "
@@ -138,21 +144,23 @@ def _plan_jobs(status: str, kind: str, output_exists, fixed_by_hand=None,
                 done_jobs.append((name, folder))
                 continue
             elif tried:
-                redo += 1
+                redrafted += 1
             todo.append((job_id, company, title))
-    return rows, todo, done_jobs, redo, lost
+    return rows, todo, done_jobs, redrafted, lost
 
 
 def _run_jobs(status: str, kind: str, what: str, run_one, output_exists,
-              fixed_by_hand=None, done_one=None, only: list[int] | None = None) -> None:
+              fixed_by_hand=None, done_one=None, only: list[int] | None = None,
+              redo: bool = False) -> None:
     """Run run_one(job_id) for each job with `status` not yet done (see _plan_jobs),
     JOBS_AT_ONCE at a time, printing each job's output in one piece when it finishes.
     done_one(folder), if given, runs for each job already done and returns a line to
     print, or None. One failure doesn't stop the rest, unless the LLM provider refuses
     every request (no credit left, a bad key)."""
-    rows, todo, done_jobs, redo, lost = _plan_jobs(status, kind, output_exists, fixed_by_hand,
-                                                   only)
-    again = [f"{redo} drafted again: the last draft failed the fact check"] if redo else []
+    rows, todo, done_jobs, redrafted, lost = _plan_jobs(status, kind, output_exists,
+                                                        fixed_by_hand, only, redo)
+    again = [f"{redrafted} drafted again: the last draft failed the fact check"] if redrafted \
+        else []
     again += [f"{lost} done again: their output was deleted"] if lost else []
     print(f"{len(rows)} {status.capitalize()} job{'s' if len(rows) != 1 else ''}: "
           f"{len(rows) - len(todo)} already have {what}, {len(todo)} to do"

@@ -350,6 +350,11 @@ def test_a_job_is_done_only_while_its_output_exists_and_its_last_draft_passed(da
     assert _one("SELECT count(*) FROM workflow_runs WHERE status='FIXED-BY-HAND'")[0] == 1
     # --format's extra file, for the jobs already done.
     assert sorted(extra) == [f"engineer-{ids['2']}", f"quant-{ids['3']}"]
+    # --redo: the named job again, done or not; no other.
+    ran.clear()
+    batch._run_jobs("interested", "tailor", "a tailored CV", ran.append,
+                    lambda folder: True, only=[ids["2"]], redo=True)
+    assert ran == [ids["2"]]
 
 
 def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database, tmp_path,
