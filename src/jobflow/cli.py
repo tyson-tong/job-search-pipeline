@@ -285,10 +285,11 @@ def run_status(args: argparse.Namespace) -> None:
 
 
 def run_web(args: argparse.Namespace) -> None:
-    from .db import migrate
+    from .db import migrate, use_pool
     from .ingest.store import archive_old_jobs, prune_archived_jobs, prune_sightings
     from .web.server import serve
     migrate()
+    use_pool()   # the page makes several queries a refresh
     # The daily import does these too; this covers days it didn't run.
     archive_old_jobs()
     prune_sightings()
