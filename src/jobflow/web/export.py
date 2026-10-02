@@ -5,7 +5,7 @@ import csv
 import io
 
 from .. import db
-from .queries import list_jobs
+from .queries import job_rows
 
 
 def _csv_cell(value: object) -> str:
@@ -17,10 +17,11 @@ def _csv_cell(value: object) -> str:
 
 def export_csv(filters: dict, ids: set[int] | None = None) -> str:
     """The jobs the filters find as CSV, or only those of them in ids (a page's rows)."""
-    jobs = list_jobs({**filters, "limit": None})   # LIMIT NULL: every job, however many
-    if ids is not None:
-        jobs = [job for job in jobs if job["id"] in ids]
     with db.connect() as conn:
+        # LIMIT NULL: every job, however many. Not list_jobs: similar jobs aren't exported.
+        jobs = job_rows(conn, {**filters, "limit": None})
+        if ids is not None:
+            jobs = [job for job in jobs if job["id"] in ids]
         notes = dict(conn.execute("SELECT job_id, notes FROM applications WHERE job_id = ANY(%s)",
                                   ([j["id"] for j in jobs],)).fetchall())
     out = io.StringIO()

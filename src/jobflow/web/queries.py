@@ -121,64 +121,72 @@ def _like_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def job_rows(conn, filters: dict) -> list[dict]:
+    """The jobs the filters find, in their sort order, with what each row shows."""
+    rows = conn.execute(
+        f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
+                   j.status, j.salary_min, j.salary_max, best.score, best.cv_variant,
+                   coalesce((SELECT array_agg(DISTINCT s.source ORDER BY s.source)
+                             FROM job_sources s WHERE s.job_id = j.id), '{{}}') AS sites,
+                   (SELECT s.url FROM job_sources s WHERE s.job_id = j.id
+                    ORDER BY s.first_seen_at LIMIT 1) AS url,
+                   a.follow_up_on, a.applied_at, a.notes IS NOT NULL AS has_notes,
+                   j.filter_reason, j.country, {VERSION_SQL} AS version
+            FROM jobs j
+            LEFT JOIN applications a ON a.job_id = j.id
+            -- The job's salary in US dollars; NULL when its country (so currency) is unknown.
+            LEFT JOIN LATERAL (
+                SELECT j.salary_max * fx.rate AS salary_max
+                FROM unnest(%(fx_codes)s::text[], %(fx_rates)s::numeric[]) AS fx(code, rate)
+                WHERE fx.code = j.country) usd ON true
+            LEFT JOIN LATERAL (
+                SELECT latest.score, latest.cv_variant FROM (
+                    SELECT DISTINCT ON (cv_variant) cv_variant, {SCORE} AS score
+                    FROM match_assessments WHERE job_id = j.id
+                    ORDER BY cv_variant, created_at DESC) latest
+                -- The same CV tailor-cv picks for this job (best_variant).
+                ORDER BY latest.score DESC, latest.cv_variant DESC LIMIT 1) best ON true
+            WHERE j.status = ANY(%(statuses)s)
+              AND (%(q)s = '' OR j.title ILIKE %(pattern)s OR j.company ILIKE %(pattern)s
+                   OR j.location ILIKE %(pattern)s)
+              AND (cardinality(%(countries)s::text[]) = 0
+                   OR coalesce(j.country, %(unknown)s) = ANY(%(countries)s::text[]))
+              AND (cardinality(%(sites)s::text[]) = 0
+                   OR EXISTS (SELECT 1 FROM job_sources s
+                              WHERE s.job_id = j.id AND s.source = ANY(%(sites)s::text[])))
+              -- Jobs without a salary, or without a known currency, are always kept.
+              AND (%(salary_min_usd)s::numeric IS NULL OR usd.salary_max IS NULL
+                   OR usd.salary_max >= %(salary_min_usd)s::numeric)
+              AND (%(score_min)s::numeric IS NULL OR best.score >= %(score_min)s::numeric)
+              -- The Posted column shows the posted date, else the date first seen.
+              AND (%(within_days)s::int IS NULL OR coalesce(j.posted_at, j.first_seen_at::date)
+                   >= %(today)s::date - %(within_days)s::int)
+              AND (%(older_than_days)s::int IS NULL OR coalesce(j.posted_at, j.first_seen_at::date)
+                   < %(today)s::date - %(older_than_days)s::int)
+            ORDER BY {SORTS[filters['sort']]}
+            LIMIT %(limit)s""",
+        {**filters, **_weights(), "pattern": f"%{_like_escape(filters['q'])}%",
+         "unknown": UNKNOWN_COUNTRY,
+         "fx_codes": FX_CODES, "fx_rates": FX_RATES,
+         # Today in your timezone, as the rows' overdue flags use.
+         "today": today(),
+         "within_days": POSTED_WITHIN.get(filters["posted"]),
+         "older_than_days": POSTED_OLDER_THAN if filters["posted"] == "older" else None}
+    ).fetchall()
+    keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
+            "salary_min", "salary_max", "score", "cv_variant", "sites", "url",
+            "follow_up_on", "applied_at", "has_notes", "filter_reason", "country", "version")
+    jobs = [dict(zip(keys, row, strict=True)) for row in rows]
+    for job in jobs:
+        job["currency"] = CURRENCIES.get(job["country"])
+    return jobs
+
+
 def list_jobs(filters: dict) -> list[dict]:
+    """job_rows, with each job's similar jobs, outdated scores, and flags, and similar
+    jobs placed together."""
     with db.connect() as conn:
-        rows = conn.execute(
-            f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
-                       j.status, j.salary_min, j.salary_max, best.score, best.cv_variant,
-                       coalesce((SELECT array_agg(DISTINCT s.source ORDER BY s.source)
-                                 FROM job_sources s WHERE s.job_id = j.id), '{{}}') AS sites,
-                       (SELECT s.url FROM job_sources s WHERE s.job_id = j.id
-                        ORDER BY s.first_seen_at LIMIT 1) AS url,
-                       a.follow_up_on, a.applied_at, a.notes IS NOT NULL AS has_notes,
-                       j.filter_reason, j.country, {VERSION_SQL} AS version
-                FROM jobs j
-                LEFT JOIN applications a ON a.job_id = j.id
-                -- The job's salary in US dollars; NULL when its country (so currency) is unknown.
-                LEFT JOIN LATERAL (
-                    SELECT j.salary_max * fx.rate AS salary_max
-                    FROM unnest(%(fx_codes)s::text[], %(fx_rates)s::numeric[]) AS fx(code, rate)
-                    WHERE fx.code = j.country) usd ON true
-                LEFT JOIN LATERAL (
-                    SELECT latest.score, latest.cv_variant FROM (
-                        SELECT DISTINCT ON (cv_variant) cv_variant, {SCORE} AS score
-                        FROM match_assessments WHERE job_id = j.id
-                        ORDER BY cv_variant, created_at DESC) latest
-                    -- The same CV tailor-cv picks for this job (best_variant).
-                    ORDER BY latest.score DESC, latest.cv_variant DESC LIMIT 1) best ON true
-                WHERE j.status = ANY(%(statuses)s)
-                  AND (%(q)s = '' OR j.title ILIKE %(pattern)s OR j.company ILIKE %(pattern)s
-                       OR j.location ILIKE %(pattern)s)
-                  AND (cardinality(%(countries)s::text[]) = 0
-                       OR coalesce(j.country, %(unknown)s) = ANY(%(countries)s::text[]))
-                  AND (cardinality(%(sites)s::text[]) = 0
-                       OR EXISTS (SELECT 1 FROM job_sources s
-                                  WHERE s.job_id = j.id AND s.source = ANY(%(sites)s::text[])))
-                  -- Jobs without a salary, or without a known currency, are always kept.
-                  AND (%(salary_min_usd)s::numeric IS NULL OR usd.salary_max IS NULL
-                       OR usd.salary_max >= %(salary_min_usd)s::numeric)
-                  AND (%(score_min)s::numeric IS NULL OR best.score >= %(score_min)s::numeric)
-                  -- The Posted column shows the posted date, else the date first seen.
-                  AND (%(within_days)s::int IS NULL OR coalesce(j.posted_at, j.first_seen_at::date)
-                       >= %(today)s::date - %(within_days)s::int)
-                  AND (%(older_than_days)s::int IS NULL OR coalesce(j.posted_at, j.first_seen_at::date)
-                       < %(today)s::date - %(older_than_days)s::int)
-                ORDER BY {SORTS[filters['sort']]}
-                LIMIT %(limit)s""",
-            {**filters, **_weights(), "pattern": f"%{_like_escape(filters['q'])}%",
-             "unknown": UNKNOWN_COUNTRY,
-             "fx_codes": FX_CODES, "fx_rates": FX_RATES,
-             # Today in your timezone, as the rows' overdue flags use.
-             "today": today(),
-             "within_days": POSTED_WITHIN.get(filters["posted"]),
-             "older_than_days": POSTED_OLDER_THAN if filters["posted"] == "older" else None}
-        ).fetchall()
-        keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
-                "salary_min", "salary_max", "score", "cv_variant", "sites", "url",
-                "follow_up_on", "applied_at", "has_notes", "filter_reason", "country", "version")
-        jobs = [dict(zip(keys, row, strict=True)) for row in rows]
-        for job in jobs:
-            job["currency"] = CURRENCIES.get(job["country"])
+        jobs = job_rows(conn, filters)
         duplicates = similar_jobs(conn, [job["id"] for job in jobs])
         outdated = _outdated(conn, [job["id"] for job in jobs if job["score"] is not None],
                              _digests_now())
