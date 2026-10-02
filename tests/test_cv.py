@@ -394,3 +394,19 @@ def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkey
     target, errors, _ = tailoring.tailor_cv(1, output_dir=tmp_path, fmt="docx")
     assert errors and target == tmp_path / "CV_dev_draft.yaml"
     assert sorted(p.name for p in tmp_path.glob("CV_dev_draft.*")) == ["CV_dev_draft.yaml"]
+
+
+def test_a_cv_photo_is_copied_beside_the_draft_and_never_outside_it(tmp_path):
+    # RenderCV reads cv.photo relative to the YAML, so every draft of a CV with a photo
+    # failed to render: no PDF, and its length never checked.
+    from jobflow.candidate.render import copy_photo
+
+    cv_folder, draft_folder = tmp_path / "cv", tmp_path / "out" / "acme" / "analyst-1"
+    (cv_folder / "img").mkdir(parents=True)
+    draft_folder.mkdir(parents=True)
+    (cv_folder / "img" / "me.png").write_bytes(b"png")
+    copy_photo({"photo": "img/me.png"}, cv_folder, draft_folder)
+    assert (draft_folder / "img" / "me.png").read_bytes() == b"png"
+    (tmp_path / "secret.png").write_bytes(b"x")
+    copy_photo({"photo": "../../../secret.png"}, cv_folder / "img", draft_folder)
+    assert not (tmp_path / "out" / "secret.png").exists()

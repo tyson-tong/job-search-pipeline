@@ -14,7 +14,7 @@ from pathlib import Path
 import yaml
 from pypdf import PdfReader
 
-from ..llm import complete, parse_json
+from ..llm import LLMError, complete, parse_json
 from .cvs import job_prompt
 
 # A page (other than the last) this empty at the bottom gets a warning: RenderCV never
@@ -34,6 +34,19 @@ def write_cv(target: Path, source_doc: dict, cv: dict) -> None:
     settings copied from the source, never from the LLM."""
     doc = {key: (cv if key == "cv" else value) for key, value in source_doc.items()}
     target.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=1000))
+
+
+def copy_photo(cv: dict, source_dir: Path, dest: Path) -> None:
+    """RenderCV reads cv.photo relative to the YAML file, and a draft is rendered away from
+    your CV: copy a photo given that way from beside your CV to beside the draft. A path
+    leading out of `dest` is left alone."""
+    photo = cv.get("photo")
+    if not isinstance(photo, str) or "://" in photo or Path(photo).is_absolute():
+        return
+    source, target = source_dir / photo, dest / photo
+    if source.is_file() and target.resolve().is_relative_to(dest.resolve()):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(source, target)
 
 
 def render(source: Path) -> Path:
@@ -134,13 +147,17 @@ def rank_bullets(job: dict, found: list[dict]) -> object:
 
 
 def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
-        warnings: list[str], keep_pdf: Path | None = None) -> tuple[dict, list[dict], Path | None]:
+        warnings: list[str], keep_pdf: Path | None = None,
+        cv_folder: Path | None = None) -> tuple[dict, list[dict], Path | None]:
     """Render the CV with RenderCV and, if it runs past max_pages, cut the fewest of its
     least relevant bullets that makes it fit. Only removal, so the fact check still holds.
-    Returns the CV, the bullets cut, and the final PDF, copied to keep_pdf if given."""
+    Returns the CV, the bullets cut, and the final PDF, copied to keep_pdf if given.
+    cv_folder, your CV's, is where a photo it names is found."""
     pages_text = f"{max_pages} page{'s' if max_pages != 1 else ''}"
     with tempfile.TemporaryDirectory() as scratch:
         source = Path(scratch) / name
+        if cv_folder:
+            copy_photo(cv, cv_folder, Path(scratch))
 
         def pages_for(candidate: dict) -> int:
             write_cv(source, source_doc, candidate)
@@ -148,9 +165,20 @@ def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
 
         pages = pages_for(cv)
         cut: list[dict] = []
+        ranked = False
         if pages > max_pages:
             found = bullets(cv)
-            order = cut_order(found, rank_bullets(job, found))
+            try:
+                ranking, ranked = rank_bullets(job, found), True
+            except Exception as exc:
+                # The draft is done and reviewed: keep it, long, rather than fail the job.
+                if isinstance(exc, LLMError) and exc.fatal:
+                    raise
+                warnings.append(f"The CV is {pages} pages, over {pages_text}, and wasn't "
+                                f"shortened: ranking its bullets failed ({exc}). Cut some by "
+                                "hand, or tailor it again with --job and --redo.")
+        if ranked:
+            order = cut_order(found, ranking)
             # Binary search over how many to cut: low doesn't fit; high is tried first.
             low, high = 0, len(order)
             if order and pages_for(without(cv, order)) <= max_pages:

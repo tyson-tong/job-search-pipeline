@@ -10,12 +10,13 @@ import yaml
 
 from ..db import fetch_job
 from ..llm import complete, parse_json
+from ..settings import cv_directory
 from . import documents
 from .cvs import check_cv_length, chosen_files, is_yaml, job_prompt
 from .factcheck import fact_check
 from .matching import best_variant, match_job
 from .paths import job_directory
-from .render import RenderFailed, fit, write_cv
+from .render import RenderFailed, copy_photo, fit, write_cv
 from .research import research_soon
 from .review import record_run, revise, write_review
 
@@ -195,6 +196,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
     for suffix in (".pdf", ".docx", ".tex"):
         target.with_suffix(suffix).unlink(missing_ok=True)
     write_cv(target, source_doc, draft_cv)
+    copy_photo(draft_cv, cv_directory(), target_dir)   # so it renders in its folder too
     render_it = f"`uv run rendercv render {target.name}` in its folder"
     rendered = ""
     cut: list[dict] = []
@@ -208,7 +210,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
     else:
         try:
             draft_cv, cut, pdf = fit(job, source_doc, draft_cv, target.name, max_pages,
-                                      warnings, keep_pdf=target_dir)
+                                      warnings, keep_pdf=target_dir, cv_folder=cv_directory())
         except RenderFailed as exc:
             pdf = None
             warnings.append(f"RenderCV couldn't render the draft, so its length wasn't checked: "
