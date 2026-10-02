@@ -143,6 +143,8 @@ def job_rows(conn, filters: dict) -> list[dict]:
                 SELECT latest.score, latest.cv_variant FROM (
                     SELECT DISTINCT ON (cv_variant) cv_variant, {SCORE} AS score
                     FROM match_assessments WHERE job_id = j.id
+                      -- Only the CVs named in cvs, which tailor-cv picks from.
+                      AND (%(variants)s::text[] IS NULL OR cv_variant = ANY(%(variants)s))
                     ORDER BY cv_variant, created_at DESC) latest
                 -- The same CV tailor-cv picks for this job (best_variant).
                 ORDER BY latest.score DESC, latest.cv_variant DESC LIMIT 1) best ON true
@@ -165,7 +167,8 @@ def job_rows(conn, filters: dict) -> list[dict]:
                    < %(today)s::date - %(older_than_days)s::int)
             ORDER BY {SORTS[filters['sort']]}
             LIMIT %(limit)s""",
-        {**filters, **_weights(), "pattern": f"%{_like_escape(filters['q'])}%",
+        {**filters, **_weights(), "variants": list(_digests_now()) or None,
+         "pattern": f"%{_like_escape(filters['q'])}%",
          "unknown": UNKNOWN_COUNTRY,
          "fx_codes": FX_CODES, "fx_rates": FX_RATES,
          # Today in your timezone, as the rows' overdue flags use.
@@ -309,6 +312,9 @@ def summary() -> dict:
 
 
 def job_detail(job_id: int) -> dict | None:
+    """Everything the job panel shows. Its scores are against the CVs named in cvs only
+    (all of them when those can't be read), as tailor-cv chooses from."""
+    digests = _digests_now()
     with db.connect() as conn:
         row = conn.execute(
             f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
@@ -334,10 +340,11 @@ def job_detail(job_id: int) -> dict | None:
                 f"""SELECT DISTINCT ON (cv_variant) cv_variant, {SCORE}, matched, partial,
                            gaps, evidence, created_at
                     FROM match_assessments WHERE job_id=%(job_id)s
+                      AND (%(variants)s::text[] IS NULL OR cv_variant = ANY(%(variants)s))
                     ORDER BY cv_variant, created_at DESC""",
-                {"job_id": job_id, **_weights()}).fetchall()]
+                {"job_id": job_id, **_weights(), "variants": list(digests) or None}).fetchall()]
         job["matches"].sort(key=lambda m: (m["score"], m["variant"]), reverse=True)
-        stale = _outdated(conn, [job_id], _digests_now()).get(job_id, [])
+        stale = _outdated(conn, [job_id], digests).get(job_id, [])
         for match in job["matches"]:
             match["outdated"] = match["variant"] in stale
         job["history"] = [dict(zip(("from_status", "to_status", "via", "changed_at"), r, strict=True))

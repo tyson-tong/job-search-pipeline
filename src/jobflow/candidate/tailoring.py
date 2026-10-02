@@ -43,7 +43,8 @@ def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict,
                            "CV_main.yaml), and none of the CVs cvs in config/profile.toml names is one")
     reason = f"CV variant {variant!r} chosen manually."
     if variant is None:
-        results = match_job(job_id)
+        # Scores against a CV no longer named in cvs don't count.
+        results = [r for r in match_job(job_id) if r["variant"] in files]
         usable = [r for r in results if r["variant"] in yaml_variants]
         if not usable:
             raise RuntimeError("None of this job's scored CVs is a RenderCV YAML file; "

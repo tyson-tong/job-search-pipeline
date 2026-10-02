@@ -253,7 +253,13 @@ def test_the_tracker_and_tailor_cv_rank_cvs_alike_after_the_weights_change(datab
     assert sorted(job_id for job_id in matching.jobs_needing_match(["dev", "strat"])) == [job_id]
     assert matching.best_variant(matching.match_job(job_id))["variant"] == "dev"
     weights[0] = (0.2, 0.8)   # now the preferred skill matters most
-    best = matching.best_variant(matching.match_job(job_id))
+    # A perfect score against a CV no longer named in cvs isn't the best, either.
+    with connect() as conn:
+        conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score, evidence)
+                        VALUES (%s, 'retired', 'x', 100, %s)""", (job_id, json.dumps(
+            {"format": 2, "breakdown": {"required": {"count": 1, "weight": 1, "credit": 1.0}}})))
+    monkeypatch.setattr(matching, "current_digests", lambda: {"dev": "d", "strat": "s"})
+    best = matching.best_variant([r for r in matching.match_job(job_id) if r["variant"] != "retired"])
     listed = list_jobs(parse_filters({"status": ["interested"]}))[0]
     assert (best["variant"], best["score"]) == (listed["cv_variant"], listed["score"]) == ("strat", 80)
     assert [(m["variant"], m["score"]) for m in job_detail(job_id)["matches"]] == [
