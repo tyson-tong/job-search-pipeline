@@ -49,7 +49,7 @@ DESCRIPTION = ("First time: init. Everyday: web (job tracker, including your sea
 
 def build_parser() -> argparse.ArgumentParser:
     """The jobflow command line: each command's parser runs its function (args.func)."""
-    from .ingest.options import SITES
+    from .ingest.options import POSTED_WITHIN_DAYS, SITES
 
     parser = argparse.ArgumentParser(prog="jobflow", description=DESCRIPTION)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -66,6 +66,9 @@ def build_parser() -> argparse.ArgumentParser:
                      "and import the results (the daily Action runs this; costs Apify credits)")
     ingest.add_argument("--search", help="Only this search name")
     ingest.add_argument("--site", choices=SITES, help="Only this job site")
+    ingest.add_argument("--posted-within-days", type=int, choices=POSTED_WITHIN_DAYS,
+                        metavar="DAYS", help="Override every search's posted window for this "
+                        "import only (1, 7, 14, or 30 days; does not change your saved searches)")
     update = command("update-searches", run_update_searches, "After editing config/searches.toml: "
                      "check it, update the GitHub copy the daily import reads (with your "
                      "timezone), filter Inbox jobs from its exclude_companies or matching "
@@ -216,7 +219,7 @@ def run_ingest(args: argparse.Namespace) -> None:
     from .db import migrate
     from .ingest.apify import ingest_searches
     migrate()
-    ingest_searches(args.search, args.site)
+    ingest_searches(args.search, args.site, args.posted_within_days)
 
 
 def run_update_searches(args: argparse.Namespace) -> None:

@@ -248,7 +248,12 @@ def backfill_sources(conn) -> int:
     rows = conn.execute("SELECT job_id, observed_json FROM job_observations").fetchall()
     before = conn.execute("SELECT count(*) FROM job_sources").fetchone()[0]
     for job_pk, raw in rows:
-        posting = normalise(raw or {})
+        # Older observations may already have had their full records pruned. An empty
+        # placeholder would normalize to the same synthetic "unknown" identity for every
+        # such row, incorrectly attaching one fake source to an arbitrary job.
+        if not isinstance(raw, dict) or not raw:
+            continue
+        posting = normalise(raw)
         key, url = identity(posting)
         conn.execute(
             """INSERT INTO job_sources(source_key, job_id, source, url)
@@ -418,4 +423,3 @@ def backfill_countries(conn) -> int:
             conn.execute("UPDATE jobs SET country=%s WHERE id=%s", (country, job_pk))
             filled += 1
     return filled
-

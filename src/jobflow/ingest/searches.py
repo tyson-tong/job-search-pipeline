@@ -135,6 +135,8 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     sites = _choices(f"{where} sites", merged.get("sites"), opt.SITES)
     if not sites:
         raise SearchConfigError(f"{where}: sites must list at least one of {list(opt.SITES)}")
+    if len(set(sites)) != len(sites):
+        raise SearchConfigError(f"{where}: sites lists a site more than once")
     days = merged.get("posted_within_days")
     # true == 1 in Python, so a boolean would otherwise pass as 1 day.
     if isinstance(days, bool) or days not in opt.POSTED_WITHIN_DAYS:

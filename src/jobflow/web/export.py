@@ -10,9 +10,13 @@ from .queries import job_rows
 
 def _csv_cell(value: object) -> str:
     """Text for a CSV cell. Scraped text starting with = + - @ would run as a formula in
-    a spreadsheet, so it's prefixed with an apostrophe."""
+    a spreadsheet, even after leading whitespace or control characters, so it's prefixed
+    with an apostrophe."""
     text = "" if value is None else str(value)
-    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+    first_visible = next((char for char in text if not char.isspace() and ord(char) > 32), "")
+    dangerous = text[:1] in ("=", "+", "-", "@", "\t", "\r") or first_visible in (
+        "=", "+", "-", "@")
+    return "'" + text if dangerous else text
 
 
 def export_csv(filters: dict, ids: set[int] | None = None) -> str:

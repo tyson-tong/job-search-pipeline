@@ -4,6 +4,7 @@ import math
 import os
 import sys
 import threading
+from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 from functools import partial
@@ -11,6 +12,7 @@ from functools import partial
 from apify_client import ApifyClient
 
 from .filters import filter_reason
+from .options import POSTED_WITHIN_DAYS
 from .runs import PlannedRun, plan
 from .searches import load_searches
 
@@ -100,8 +102,18 @@ def wait_minutes() -> float:
     return minutes
 
 
-def ingest_searches(only_search: str | None = None, only_site: str | None = None) -> None:
-    runs = plan(load_searches(), only_search, only_site)
+def ingest_searches(only_search: str | None = None, only_site: str | None = None,
+                    posted_within_days: int | None = None) -> None:
+    searches = load_searches()
+    if posted_within_days is not None:
+        if (isinstance(posted_within_days, bool) or not isinstance(posted_within_days, int)
+                or posted_within_days not in POSTED_WITHIN_DAYS):
+            raise RuntimeError("posted_within_days must be one of "
+                               f"{list(POSTED_WITHIN_DAYS)} (24 hours, 1 week, 2 weeks, 1 month)")
+        # This is a one-off override. Keep the saved local file and published Actions
+        # variable unchanged; only this import plans runs with the selected window.
+        searches = [replace(search, posted_within_days=posted_within_days) for search in searches]
+    runs = plan(searches, only_search, only_site)
     if not runs:
         raise RuntimeError("No runs to do: check the search's sites and countries")
     max_wait = timedelta(minutes=wait_minutes())
