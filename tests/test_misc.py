@@ -113,6 +113,13 @@ def test_a_database_on_another_machine_is_only_reached_encrypted():
     assert "secret" not in str(caught.value)
     local = "postgresql://postgres:pw@127.0.0.1:5432/postgres"
     assert encrypted_url(local) == local   # a test database on this machine
+    # A hostaddr is where libpq connects, even with no host or a local one.
+    for url in ("postgresql://u:secret@/db?hostaddr=203.0.113.5",
+                "postgresql://u:secret@localhost/db?hostaddr=203.0.113.5"):
+        assert conninfo_to_dict(encrypted_url(url))["sslmode"] == "require"
+        with pytest.raises(RuntimeError, match="sslmode=prefer") as caught:
+            encrypted_url(url + "&sslmode=prefer")
+        assert "secret" not in str(caught.value)
 
 
 def test_llm_retries_rate_limits_but_not_an_empty_balance(monkeypatch):

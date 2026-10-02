@@ -33,8 +33,11 @@ def encrypted_url(url: str) -> str:
     it; so a missing sslmode becomes require, and a weaker one is refused."""
     params = conninfo_to_dict(url)
     hosts = (params.get("host") or os.environ.get("PGHOST") or "").split(",")
+    # libpq connects over TCP to a hostaddr whatever the host says, so one counts too.
+    addrs = (params.get("hostaddr") or os.environ.get("PGHOSTADDR") or "").split(",")
     # No host, or a folder, is a Unix socket on this machine.
-    if all(not host or host.startswith("/") or host in LOCAL_HOSTS for host in hosts):
+    if (all(not host or host.startswith("/") or host in LOCAL_HOSTS for host in hosts)
+            and all(not addr or addr in LOCAL_HOSTS for addr in addrs)):
         return url
     mode = params.get("sslmode") or os.environ.get("PGSSLMODE")
     if mode is None:
