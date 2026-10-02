@@ -252,7 +252,7 @@ def test_a_bad_key_stops_the_batch_instead_of_failing_every_job():
 
 
 def test_clean_up_deletes_only_closed_jobs_folders_and_only_on_yes(tmp_path, monkeypatch):
-    from jobflow import cli, db, settings
+    from jobflow import cleanup, db, settings
 
     class Conn:
         def execute(self, *args): return self
@@ -269,8 +269,8 @@ def test_clean_up_deletes_only_closed_jobs_folders_and_only_on_yes(tmp_path, mon
         folder.mkdir(parents=True)
         (folder / "CV_REVIEW.md").write_text("x")
     monkeypatch.setattr("builtins.input", lambda prompt: "n")
-    cli.clean_up()
+    cleanup.clean_up()
     assert closed.exists()
     monkeypatch.setattr("builtins.input", lambda prompt: "Y")
-    cli.clean_up()
+    cleanup.clean_up()
     assert not closed.exists() and all(folder.exists() for folder in others)
