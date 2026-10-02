@@ -9,6 +9,7 @@ import pytest
 from psycopg.conninfo import make_conninfo
 
 from jobflow.db import connect, migrate, migration_files, set_job_state
+from jobflow.ingest import similar
 from jobflow.ingest.store import archive_old_jobs, prune_archived_jobs, prune_sightings, save_run
 from jobflow.web.queries import list_jobs, parse_filters
 from jobflow.web.saving import Conflict, save_changes
@@ -36,6 +37,8 @@ def database(monkeypatch):
     with psycopg.connect(url, autocommit=True) as conn:
         conn.execute(f"CREATE SCHEMA {schema}")
     monkeypatch.setenv("DATABASE_URL", make_conninfo(url, options=f"-c search_path={schema}"))
+    # Ads read in another test's schema, whose job ids this one's reuse.
+    monkeypatch.setattr(similar, "_AD_WORDS", {})
     try:
         migrate()
         yield

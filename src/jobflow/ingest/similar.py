@@ -3,6 +3,8 @@
 Only reported, never merged."""
 from __future__ import annotations
 
+import threading
+
 from .dedupe import (
     POSSIBLE_DESCRIPTION,
     POSSIBLE_TITLE,
@@ -18,6 +20,31 @@ from .dedupe import (
 POSSIBLE_WINDOW_DAYS = 180
 # A similar job at one of these may be a role you've already applied for.
 IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
+# Each ad's words, by job id, with the ad's length when they were read: the tracker asks
+# for similar jobs on every refresh, and fetching every ad each time is slow from a
+# database far away. An ad changes only by being replaced with a longer one, or cleared.
+_AD_WORDS: dict[int, tuple[int, set[str]]] = {}
+_AD_WORDS_MAX = 20_000
+_ad_words_lock = threading.Lock()
+
+
+def _ad_words(conn, job_ids: list[int]) -> dict[int, tuple[set[str], str, str | None]]:
+    """{job id: (its ad's words, status, country)}, fetching only ads not read before."""
+    rows = conn.execute("""SELECT id, status, country, coalesce(length(description), 0)
+                           FROM jobs WHERE id = ANY(%s)""", (job_ids,)).fetchall()
+    with _ad_words_lock:
+        missing = [pk for pk, _, _, length in rows if _AD_WORDS.get(pk, (None,))[0] != length]
+    if missing:
+        fetched = conn.execute("""SELECT id, coalesce(length(description), 0), description
+                                  FROM jobs WHERE id = ANY(%s)""", (missing,)).fetchall()
+        with _ad_words_lock:
+            if len(_AD_WORDS) + len(fetched) > _AD_WORDS_MAX:
+                _AD_WORDS.clear()
+            for pk, length, description in fetched:
+                _AD_WORDS[pk] = (length, description_words(description))
+    with _ad_words_lock:
+        return {pk: (_AD_WORDS[pk][1] if pk in _AD_WORDS else set(), status, country)
+                for pk, status, country, _ in rows}
 
 
 def similar_jobs(conn, job_ids: list[int]) -> dict[int, list[dict]]:
@@ -48,10 +75,7 @@ def similar_jobs(conn, job_ids: list[int]) -> dict[int, list[dict]]:
     if not pairs:
         return {}
     needed = sorted({pk for pair in pairs for pk in pair})
-    details = {pk: (description_words(description), status, country)
-               for pk, description, status, country in conn.execute(
-                   "SELECT id, description, status, country FROM jobs WHERE id = ANY(%s)",
-                   (needed,)).fetchall()}
+    details = _ad_words(conn, needed)
     found: dict[int, list[dict]] = {}
     for (pk, other), titles_alike in pairs.items():
         ads_alike = jaccard(details[pk][0], details[other][0])
