@@ -49,8 +49,8 @@ def _ad_words(conn, job_ids: list[int]) -> dict[int, tuple[set[str], str, str | 
 
 def similar_jobs(conn, job_ids: list[int]) -> dict[int, list[dict]]:
     """Similar ads for each of these jobs, most alike first: {job id: [{id, status,
-    country, same_country, level, title_similarity, similarity}]}. Two queries in all:
-    titles first, then ads only for jobs with a close title. Only same_country matches
+    country, same_country, level, title_similarity, similarity}]}. Titles first, then
+    ads only for jobs with a close title (only those not read before: _ad_words). Only same_country matches
     are similar jobs; the others are one role advertised in several countries."""
     if not job_ids:
         return {}
