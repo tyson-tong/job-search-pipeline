@@ -42,3 +42,7 @@ ALTER TABLE jobs ALTER COLUMN raw_json DROP NOT NULL;
 -- Migration ID: 04
 -- Tracker search matches titles, companies, and locations with ILIKE; nothing searched descriptions.
 DROP INDEX IF EXISTS jobs_description_fts_idx;
+
+-- Migration ID: 05
+-- Never read: with a 24-hour search window a job is rarely seen twice.
+ALTER TABLE jobs DROP COLUMN IF EXISTS last_seen_at;

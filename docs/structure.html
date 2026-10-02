@@ -214,7 +214,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
 job_sources       linkedin:4012345678 → 42   https://au.linkedin.com/jobs/view/4012345678
                   seek:81234567       → 42   https://www.seek.com.au/job/81234567
 job_observations  42 × run 118 (LinkedIn), 42 × run 119 (Seek)   original records
-applications      42   applied   2026-09-25: Applied via referral</div>
+applications      42   notes "2026-09-25: Applied via referral"</div>
 
 <h2 id="database">Database</h2>
 <p>Defined by the SQL files in <code>migrations/</code>; each file can hold ordered, file-scoped migration IDs (starting at <code>01</code>). Every command except <code>init</code>, <code>help</code>, and <code>status</code> applies each file/ID once on start (one command at a time, under a lock), in filename and ID order, tracking it in <code>schema_migrations</code>.</p>
@@ -225,10 +225,10 @@ applications      42   applied   2026-09-25: Applied via referral</div>
   <div class="tbl"><h3>jobs</h3><p>One per real job, whatever the site.</p><ul>
     <li><span class="k">id</span>, canonical_key <span class="muted">first copy</span></li><li>title, company, location, posted_at</li>
     <li>description, raw_json, source</li><li>fingerprint, match_key</li><li>salary_min, salary_max <span class="muted">annual</span></li>
-    <li>country <span class="muted">ISO code</span></li><li>status, filter_reason</li><li>first_seen_at, last_seen_at</li></ul></div>
+    <li>country <span class="muted">ISO code</span></li><li>status, filter_reason</li><li>first_seen_at</li></ul></div>
   <div class="tbl"><h3>job_sources</h3><p>Every site's copy of a job.</p><ul>
     <li><span class="k">source_key</span> <span class="muted">e.g. seek:8123…</span></li><li>job_id → jobs</li>
-    <li>source, source_job_id, url</li><li>first_seen_at, last_seen_at</li></ul></div>
+    <li>source, url</li><li>first_seen_at</li></ul></div>
   <div class="tbl"><h3>job_observations</h3><p>Every sighting, with the original record for its first 30 days.</p><ul>
     <li><span class="k">job_id</span> → jobs</li><li><span class="k">scraper_run_id</span> → scraper_runs</li>
     <li>observed_json, observed_at</li></ul></div>
@@ -236,7 +236,7 @@ applications      42   applied   2026-09-25: Applied via referral</div>
     <li>job_id → jobs, cv_variant, cv_sha256</li><li>score, matched, partial, gaps</li>
     <li>evidence <span class="muted">rationale, weights, breakdown</span></li><li>model_name, created_at</li></ul></div>
   <div class="tbl"><h3>applications</h3><p>Your progress on a job.</p><ul>
-    <li><span class="k">job_id</span> → jobs</li><li>status, notes <span class="muted">dated</span></li><li>applied_at, follow_up_on, updated_at</li></ul></div>
+    <li><span class="k">job_id</span> → jobs</li><li>notes <span class="muted">dated</span></li><li>applied_at, follow_up_on, updated_at</li></ul></div>
   <div class="tbl"><h3>status_history</h3><p>Every status change.</p><ul>
     <li>job_id → jobs</li><li>from_status, to_status</li><li>via, changed_at</li></ul></div>
   <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, cover-letter, interview-prep; the last three skip jobs already logged, except a draft that failed the fact check (NEEDS-FIX), which is drafted again unless you fixed it by hand (FIXED-BY-HAND). A logged job whose output was deleted (its YAML draft, cover-letter.docx, or interview-prep.html) is done again.</p><ul>

@@ -133,8 +133,8 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
     """Change a job's status, add a dated note, and/or set its follow-up date, within
     the caller's transaction. Status changes are recorded in status_history.
 
-    jobs.status is the single source of truth; the applications row mirrors it and
-    holds the notes, follow-up date, and the first time the job was applied for.
+    jobs.status is the single source of truth; the applications row holds the notes,
+    the follow-up date, and the first time the job was applied for.
     """
     if status is not None and status not in STATUSES:
         raise RuntimeError(f"Unknown status {status!r}; choose from {', '.join(STATUSES)}")
@@ -153,10 +153,10 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
     if status is None and not note_line and not set_follow_up:
         return
     conn.execute(
-        """INSERT INTO applications(job_id, status, notes, applied_at, follow_up_on, updated_at)
-           SELECT id, status, %s, CASE WHEN status = ANY(%s) THEN now() END, %s, now()
+        """INSERT INTO applications(job_id, notes, applied_at, follow_up_on, updated_at)
+           SELECT id, %s, CASE WHEN status = ANY(%s) THEN now() END, %s, now()
            FROM jobs WHERE id=%s
-           ON CONFLICT (job_id) DO UPDATE SET status=EXCLUDED.status,
+           ON CONFLICT (job_id) DO UPDATE SET
                notes=nullif(concat_ws(chr(10), applications.notes, EXCLUDED.notes), ''),
                applied_at=coalesce(applications.applied_at, EXCLUDED.applied_at),
                follow_up_on=CASE WHEN %s THEN EXCLUDED.follow_up_on

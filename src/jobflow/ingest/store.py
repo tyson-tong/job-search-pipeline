@@ -151,8 +151,7 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
         # Another site's copy keeps the first site's record; its own copy is kept in
         # job_sources and as an observation. A longer description from any site is preferred.
         conn.execute(
-            """UPDATE jobs SET last_seen_at=now(),
-                   raw_json=CASE WHEN %s THEN %s ELSE raw_json END,
+            """UPDATE jobs SET raw_json=CASE WHEN %s THEN %s ELSE raw_json END,
                    description=CASE WHEN length(coalesce(%s, '')) > length(coalesce(description, ''))
                                     THEN %s ELSE description END,
                    canonical_url=coalesce(canonical_url, %s),
@@ -176,11 +175,9 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
 
 def record_source(conn, job_pk: int, key: str, posting: Posting, url: str | None) -> None:
     conn.execute(
-        """INSERT INTO job_sources(source_key, job_id, source, source_job_id, url)
-           VALUES (%s,%s,%s,%s,%s)
-           ON CONFLICT (source_key) DO UPDATE SET last_seen_at=now(),
-               url=coalesce(EXCLUDED.url, job_sources.url)""",
-        (key, job_pk, posting.source, posting.source_id, url))
+        """INSERT INTO job_sources(source_key, job_id, source, url) VALUES (%s,%s,%s,%s)
+           ON CONFLICT (source_key) DO UPDATE SET url=coalesce(EXCLUDED.url, job_sources.url)""",
+        (key, job_pk, posting.source, url))
 
 
 def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict], *,
@@ -254,9 +251,9 @@ def backfill_sources(conn) -> int:
         posting = normalise(raw or {})
         key, url = identity(posting)
         conn.execute(
-            """INSERT INTO job_sources(source_key, job_id, source, source_job_id, url)
-               VALUES (%s,%s,%s,%s,%s) ON CONFLICT (source_key) DO NOTHING""",
-            (key, job_pk, posting.source, posting.source_id, url))
+            """INSERT INTO job_sources(source_key, job_id, source, url)
+               VALUES (%s,%s,%s,%s) ON CONFLICT (source_key) DO NOTHING""",
+            (key, job_pk, posting.source, url))
     return conn.execute("SELECT count(*) FROM job_sources").fetchone()[0] - before
 
 

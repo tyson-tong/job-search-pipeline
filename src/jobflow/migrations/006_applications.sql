@@ -8,3 +8,7 @@ CREATE TABLE IF NOT EXISTS applications (
     follow_up_on DATE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migration ID: 02
+-- A copy of jobs.status that nothing read, and that could only drift from it.
+ALTER TABLE applications DROP COLUMN IF EXISTS status;
