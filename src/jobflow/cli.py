@@ -109,8 +109,9 @@ def build_parser() -> argparse.ArgumentParser:
         each_job.add_argument("--redo", action="store_true",
                               help="With --job: do those jobs again even if they're done, "
                               "replacing their files (and any fix you made by hand)")
-    command("skill-gaps", run_skill_gaps, "Report the skills your CVs don't show that scored "
-            "Interested jobs ask for most, with how to close each gap")
+    command("skill-gaps", run_skill_gaps, "Report the skills your CVs don't show that the "
+            "scored jobs you're pursuing (interested, applied, interviewing, offered) ask for "
+            "most, with how to close each gap")
     command("clean-up", run_clean_up, "Delete the output folders of Not interested, Withdrawn, "
             "Declined, Rejected, and Archived jobs, after asking you to confirm (the jobs stay "
             "in the database)")

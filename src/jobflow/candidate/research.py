@@ -2,8 +2,8 @@
 reviews and cover letters when a key is set."""
 from __future__ import annotations
 
-import concurrent.futures
 import os
+import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 
 import requests
@@ -18,20 +18,20 @@ def web_search(company: str, title: str) -> list[dict]:
     if not key:
         raise RuntimeError("Set WEB_SEARCH_API_KEY for current company research (Tavily)")
 
-    def search(query: str) -> list[dict]:
+    def search(query: str, topic: str) -> list[dict]:
         response = requests.post("https://api.tavily.com/search",
             headers={"Authorization": f"Bearer {key}"},
-            json={"query": query, "topic": "news" if "latest" in query else "general",
-                  "search_depth": "basic", "max_results": 5,
+            json={"query": query, "topic": topic, "search_depth": "basic", "max_results": 5,
                   "include_answer": False}, timeout=45)
         response.raise_for_status()
         return response.json().get("results", [])
 
-    # The two searches are independent, so they run side by side.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+    # The two searches are independent, so they run side by side: what the company does,
+    # and its news.
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = [row for rows in pool.map(search, (
-            f'"{company}" official company products about', f'"{company}" latest news {title}'))
-            for row in rows]
+            f'"{company}" official company products about', f'"{company}" latest news {title}'),
+            ("general", "news")) for row in rows]
     seen = set()
     unique = []
     for row in results:
@@ -62,7 +62,12 @@ def research_soon(job: dict) -> Future:
     """Start research() for the job in the background, so the web search overlaps drafting.
     Started only once the CV is chosen and checked: a job that fails those checks would
     spend its searches again on every run. .result() gives what research() returns."""
-    pool = ThreadPoolExecutor(max_workers=1)
-    future = pool.submit(research, job)
-    pool.shutdown(wait=False)
+    future: Future = Future()
+
+    def run() -> None:
+        try:
+            future.set_result(research(job))
+        except BaseException as exc:   # research() catches its own errors; this is a backstop
+            future.set_exception(exc)
+    threading.Thread(target=run, name="research", daemon=True).start()
     return future

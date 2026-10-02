@@ -92,23 +92,17 @@ def _current_names(raw: dict, where: str) -> dict:
     return raw
 
 
-def parse_search(raw: dict, defaults: dict) -> Search:
-    name = str(raw.get("name") or "").strip()
-    where = f"search {name!r}" if name else "a [[search]] entry"
-    raw = _current_names(raw, where)
-    unknown = set(raw) - SEARCH_KEYS
-    if unknown:
-        raise SearchConfigError(f"{where}: unknown setting(s) {sorted(unknown)}")
-    if not name:
-        raise SearchConfigError(f"{where}: name is required")
-    merged = {**defaults, **raw}
-    terms = merged.get("terms")
+def _search_terms(terms: object, where: str) -> list[str]:
     if isinstance(terms, str):
         terms = [terms]
     if not isinstance(terms, list) or not terms \
             or not all(isinstance(t, str) and t.strip() for t in terms):
         raise SearchConfigError(f"{where}: terms must be a non-empty list of strings")
-    raw_locations = merged.get("locations")
+    return terms
+
+
+def _locations(raw_locations: object, where: str) -> dict[str, tuple[str, ...]]:
+    """{country code: cities}, as CITIES spells them; no cities means the whole country."""
     if not isinstance(raw_locations, dict) or not raw_locations:
         raise SearchConfigError(f"{where}: locations must map country codes to city lists, "
                                 'e.g. locations = { AU = ["Sydney"], NZ = [] }')
@@ -132,17 +126,41 @@ def parse_search(raw: dict, defaults: dict) -> Search:
                                     "or [] for the whole country")
         # A city listed twice would be searched, and paid for, twice.
         locations[code] = tuple(dict.fromkeys(known[c.strip().casefold()] for c in cities))
-    sites = _choices(f"{where} sites", merged.get("sites"), opt.SITES)
+    return locations
+
+
+def _sites(raw: object, where: str) -> tuple[str, ...]:
+    sites = _choices(f"{where} sites", raw, opt.SITES)
     if not sites:
         raise SearchConfigError(f"{where}: sites must list at least one of {list(opt.SITES)}")
     if len(set(sites)) != len(sites):
         raise SearchConfigError(f"{where}: sites lists a site more than once")
-    days = merged.get("posted_within_days")
+    return sites
+
+
+def _posted_within_days(days: object, where: str) -> int:
     # true == 1 in Python, so a boolean would otherwise pass as 1 day.
     if isinstance(days, bool) or days not in opt.POSTED_WITHIN_DAYS:
         raise SearchConfigError(f"{where}: posted_within_days must be one of "
                                 f"{list(opt.POSTED_WITHIN_DAYS)} (24 hours, 1 week, 2 weeks, "
                                 f"1 month), not {days!r}")
+    return days
+
+
+def parse_search(raw: dict, defaults: dict) -> Search:
+    name = str(raw.get("name") or "").strip()
+    where = f"search {name!r}" if name else "a [[search]] entry"
+    raw = _current_names(raw, where)
+    unknown = set(raw) - SEARCH_KEYS
+    if unknown:
+        raise SearchConfigError(f"{where}: unknown setting(s) {sorted(unknown)}")
+    if not name:
+        raise SearchConfigError(f"{where}: name is required")
+    merged = {**defaults, **raw}
+    terms = _search_terms(merged.get("terms"), where)
+    locations = _locations(merged.get("locations"), where)
+    sites = _sites(merged.get("sites"), where)
+    days = _posted_within_days(merged.get("posted_within_days"), where)
     max_results = int(_number(merged, "max_results", where, whole=True) or 0)
     if max_results < 1:
         raise SearchConfigError(f"{where}: max_results must be at least 1")

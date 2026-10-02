@@ -35,7 +35,8 @@ def make_handler(token: str, port: int):
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
     static = resources.files("jobflow.web") / "static"
     page = (static / "index.html").read_text().replace("__JOBFLOW_TOKEN__", token)
-    script = (static / "app.js").read_bytes()
+    # The page's scripts, by path: app.js, and searches.js for the Searches tab.
+    scripts = {f"/{name}": (static / name).read_bytes() for name in ("app.js", "searches.js")}
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "jobflow"
@@ -82,20 +83,20 @@ def make_handler(token: str, port: int):
             if url.path == "/":
                 if self.headers.get("Host") not in allowed_hosts:
                     return self._error(HTTPStatus.FORBIDDEN, "Unexpected host")
-                # Scripts only from app.js, so text that reached the page (a scraped ad,
-                # say) could never run as script. No framing: another site could otherwise
-                # load the tracker in a hidden frame and trick you into clicking Save
-                # (clickjacking).
+                # Scripts only from app.js and searches.js, so text that reached the page (a
+                # scraped ad, say) could never run as script. No framing: another site could
+                # otherwise load the tracker in a hidden frame and trick you into clicking
+                # Save (clickjacking).
                 return self._send(200, page.encode(), "text/html; charset=utf-8",
                                   {"Content-Security-Policy":
                                    "default-src 'self'; style-src 'unsafe-inline'; "
                                    "script-src 'self'; img-src 'self' data:; "
                                    "frame-ancestors 'none'",
                                    "X-Frame-Options": "DENY"})
-            if url.path == "/app.js":
+            if url.path in scripts:
                 if self.headers.get("Host") not in allowed_hosts:
                     return self._error(HTTPStatus.FORBIDDEN, "Unexpected host")
-                return self._send(200, script, "text/javascript; charset=utf-8")
+                return self._send(200, scripts[url.path], "text/javascript; charset=utf-8")
             if not url.path.startswith("/api/"):
                 return self._error(HTTPStatus.NOT_FOUND, "Not found")
             if not self._allowed():

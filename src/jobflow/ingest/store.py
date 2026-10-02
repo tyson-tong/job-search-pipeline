@@ -46,58 +46,85 @@ KEEP_SIGHTING_RECORDS = timedelta(days=30)
 KEEP_ARCHIVED_RECORDS = timedelta(days=90)
 
 
-def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str | None,
-                   description: str | None, location: str | None,
-                   country: str | None = None) -> tuple[int, bool] | None:
-    """Return (job id, is_first_copy) for an existing copy of this posting, if any.
-
-    is_first_copy is True when this is the copy the jobs row was created from.
-    Tried in order: this site's ID/URL on any known copy (job_sources), exact content
-    fingerprint in the same country, the same employer and title seen recently in the same place and country
-    with one ad a cut-down or padded copy of the other (another site's copy, or a repost;
-    see is_copy_of_ad), then a recent job with the same title and a near-identical ad
-    under any employer, in the same city and country (is_same_ad).
-    """
+def _same_copy(conn, key: str) -> tuple[int, bool] | None:
+    """Rule 1: this site's ID (or URL) on any known copy of a job."""
     row = conn.execute("""SELECT s.job_id, j.canonical_key = s.source_key
                           FROM job_sources s JOIN jobs j ON j.id = s.job_id
                           WHERE s.source_key=%s""", (key,)).fetchone()
-    if row:
-        return row[0], row[1]
-    if fp:
-        # The fingerprint has the location but not the country, and a location may name
-        # none ("Remote", or missing): one employer's ad for two countries is two jobs.
-        for job_pk, existing_country in conn.execute(
-                "SELECT id, country FROM jobs WHERE fingerprint=%s ORDER BY id", (fp,)).fetchall():
-            if same_country(country, existing_country):
-                return job_pk, False
-    if mkey and description:
-        candidates = conn.execute(
-            """SELECT id, description, location, country FROM jobs
-               WHERE match_key=%s AND first_seen_at > now() - make_interval(days => %s)
-               ORDER BY first_seen_at DESC LIMIT 20""", (mkey, FUZZY_WINDOW_DAYS)).fetchall()
-        for job_pk, existing, existing_location, existing_country in candidates:
-            # A location naming no city ("Hong Kong", "Singapore") never rules out a match,
-            # so the country must: one employer's ad for two countries is two jobs.
-            if same_country(country, existing_country) and same_place(location, existing_location) \
-                    and is_copy_of_ad(description, existing):
-                return job_pk, False
-    patterns = title_patterns(title)
-    if description and patterns and title != "Untitled":
-        # Titles first; descriptions are only loaded for the same title.
-        rows = conn.execute(
-            """SELECT id, title FROM jobs
-               WHERE first_seen_at > now() - make_interval(days => %s) AND title ILIKE ANY(%s)
-               ORDER BY first_seen_at DESC""", (FUZZY_WINDOW_DAYS, patterns)).fetchall()
-        close = [pk for pk, other in rows if simplify(other) == simplify(title)]
-        if close:
-            candidates = conn.execute(
-                """SELECT id, title, description, country, location FROM jobs WHERE id = ANY(%s)
-                   ORDER BY first_seen_at DESC""", (close[:50],)).fetchall()
-            for job_pk, other_title, existing, other_country, other_location in candidates:
-                if is_same_ad(title, description, other_title, existing, country, other_country,
-                              location, other_location):
-                    return job_pk, False
+    return (row[0], row[1]) if row else None
+
+
+def _same_content(conn, fp: str | None, country: str | None) -> int | None:
+    """Rule 2: the exact content fingerprint, in the same country. The fingerprint has the
+    location but not the country, and a location may name none ("Remote", or missing):
+    one employer's ad for two countries is two jobs."""
+    if not fp:
+        return None
+    for job_pk, existing_country in conn.execute(
+            "SELECT id, country FROM jobs WHERE fingerprint=%s ORDER BY id", (fp,)).fetchall():
+        if same_country(country, existing_country):
+            return job_pk
     return None
+
+
+def _same_employer_and_title(conn, mkey: str | None, description: str | None,
+                             location: str | None, country: str | None) -> int | None:
+    """Rule 3: the same employer and title seen recently in the same place and country,
+    with one ad a cut-down or padded copy of the other (see is_copy_of_ad)."""
+    if not (mkey and description):
+        return None
+    candidates = conn.execute(
+        """SELECT id, description, location, country FROM jobs
+           WHERE match_key=%s AND first_seen_at > now() - make_interval(days => %s)
+           ORDER BY first_seen_at DESC LIMIT 20""", (mkey, FUZZY_WINDOW_DAYS)).fetchall()
+    for job_pk, existing, existing_location, existing_country in candidates:
+        # A location naming no city ("Hong Kong", "Singapore") never rules out a match,
+        # so the country must: one employer's ad for two countries is two jobs.
+        if same_country(country, existing_country) and same_place(location, existing_location) \
+                and is_copy_of_ad(description, existing):
+            return job_pk
+    return None
+
+
+def _same_ad(conn, title: str | None, description: str | None, location: str | None,
+             country: str | None) -> int | None:
+    """Rule 4: a recent job with the same title and a near-identical ad under any employer,
+    in the same city and country (is_same_ad)."""
+    patterns = title_patterns(title)
+    if not (description and patterns and title != "Untitled"):
+        return None
+    # Titles first; descriptions are only loaded for the same title.
+    rows = conn.execute(
+        """SELECT id, title FROM jobs
+           WHERE first_seen_at > now() - make_interval(days => %s) AND title ILIKE ANY(%s)
+           ORDER BY first_seen_at DESC""", (FUZZY_WINDOW_DAYS, patterns)).fetchall()
+    close = [pk for pk, other in rows if simplify(other) == simplify(title)]
+    if not close:
+        return None
+    candidates = conn.execute(
+        """SELECT id, title, description, country, location FROM jobs WHERE id = ANY(%s)
+           ORDER BY first_seen_at DESC""", (close[:50],)).fetchall()
+    for job_pk, other_title, existing, other_country, other_location in candidates:
+        if is_same_ad(title, description, other_title, existing, country, other_country,
+                      location, other_location):
+            return job_pk
+    return None
+
+
+def find_duplicate(conn, key: str, fp: str | None, mkey: str | None, title: str | None,
+                   description: str | None, location: str | None,
+                   country: str | None = None) -> tuple[int, bool] | None:
+    """Return (job id, is_first_copy) for an existing copy of this posting, if any, by the
+    first of the rules in docs/rules.md that matches (_same_copy, _same_content,
+    _same_employer_and_title, _same_ad). is_first_copy is True when this is the copy the
+    jobs row was created from."""
+    found = _same_copy(conn, key)
+    if found:
+        return found
+    job_pk = (_same_content(conn, fp, country)
+              or _same_employer_and_title(conn, mkey, description, location, country)
+              or _same_ad(conn, title, description, location, country))
+    return (job_pk, False) if job_pk else None
 
 
 def without_nul(value: object) -> object:

@@ -306,7 +306,8 @@ def summary() -> dict:
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,
             "last_import": last_import,
             "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,
-            "default_statuses": DEFAULT_STATUSES, "cv_variants": variants, "unscored": unscored,
+            "default_statuses": DEFAULT_STATUSES, "in_progress": list(IN_PROGRESS),
+            "cv_variants": variants, "unscored": unscored,
             "outdated": outdated,
             "scoring_problem": scoring_problem, "max_rows": MAX_ROWS}
 

@@ -30,8 +30,8 @@ def status() -> dict:
 
 
 def start(job_ids: list[int] | None = None, rescore: bool = False) -> dict:
-    """Score the given jobs, or every Interested job, against each CV it has no score for
-    yet; with rescore, instead against each CV edited since the job was scored against it
+    """Score the given jobs (Inbox or Interested ones), or every Interested job, against
+    each CV it has no score for yet; with rescore, instead against each CV edited since the job was scored against it
     (and any it has no score for). Checks the LLM settings and CV files first, so a
     configuration problem fails now rather than on every job."""
     credentials()
@@ -46,8 +46,9 @@ def start(job_ids: list[int] | None = None, rescore: bool = False) -> dict:
         else:
             ids = jobs_needing_match(variants, job_ids)
         if job_ids and not ids:
-            raise ValueError("Only interested jobs with a CV they have no score against (or, "
-                             "to rescore, a CV edited since) can be scored")
+            raise ValueError("Only Inbox and interested jobs with a CV they have no score "
+                             "against (or, to rescore, an interested job with a CV edited since) "
+                             "can be scored")
         _state.update(running=bool(ids), total=len(ids), done=0, errors=[],
                       scored=[], started_at=datetime.now(timezone.utc), finished_at=None)
     if ids:

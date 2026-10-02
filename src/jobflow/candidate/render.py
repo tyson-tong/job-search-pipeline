@@ -134,6 +134,21 @@ def without(cv: dict, cut: list[dict]) -> dict:
     return trimmed
 
 
+def fewest_cuts(cv: dict, order: list[dict], fits) -> list[dict]:
+    """The shortest start of `order` (bullets, least relevant first) whose removal makes
+    fits(cv without them) true, found by binary search (about log2(len(order)) renders);
+    all of `order` if even that doesn't fit. Called only for a CV that doesn't fit."""
+    low, high = 0, len(order)   # cutting low bullets doesn't fit; high is tried first
+    if order and fits(without(cv, order)):
+        while high - low > 1:
+            middle = (low + high) // 2
+            if fits(without(cv, order[:middle])):
+                high = middle
+            else:
+                low = middle
+    return order[:high]
+
+
 def rank_bullets(job: dict, found: list[dict]) -> object:
     prompt = {
         "job": job_prompt(job),
@@ -178,17 +193,8 @@ def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
                                 f"shortened: ranking its bullets failed ({exc}). Cut some by "
                                 "hand, or tailor it again with --job and --redo.")
         if ranked:
-            order = cut_order(found, ranking)
-            # Binary search over how many to cut: low doesn't fit; high is tried first.
-            low, high = 0, len(order)
-            if order and pages_for(without(cv, order)) <= max_pages:
-                while high - low > 1:
-                    middle = (low + high) // 2
-                    if pages_for(without(cv, order[:middle])) <= max_pages:
-                        high = middle
-                    else:
-                        low = middle
-            cut = order[:high]
+            cut = fewest_cuts(cv, cut_order(found, ranking),
+                              lambda trimmed: pages_for(trimmed) <= max_pages)
             cv = without(cv, cut)
             pages = pages_for(cv)
             if pages > max_pages:

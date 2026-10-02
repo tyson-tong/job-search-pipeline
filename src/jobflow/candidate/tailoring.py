@@ -23,9 +23,6 @@ from .review import record_run, revise, write_review
 # A rendered CV longer than this (unless tailor-cv --max-pages says otherwise) is
 # shortened by cutting its least relevant bullets.
 DEFAULT_MAX_PAGES = 1
-# What tailor-cv writes besides the review and the YAML draft: RenderCV's PDF always, and
-# with docx or latex also a .docx or a .tex.
-FORMATS = ("pdf", "docx", "latex")
 
 
 def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict, str]:
@@ -149,20 +146,8 @@ def add_format(directory: Path, fmt: str) -> Path | None:
     return target
 
 
-def tailor_cv(job_id: int, variant: str | None = None,
-              output_dir: Path | None = None,
-              max_pages: int = DEFAULT_MAX_PAGES,
-              fmt: str | None = None) -> tuple[Path, list[str], list[str]]:
-    """Draft, review, and check a tailored CV, cut it to `max_pages` as RenderCV lays it
-    out, and write the YAML draft and RenderCV's PDF, plus a .docx or .tex for `fmt`."""
-    if max_pages < 1:
-        raise RuntimeError("--max-pages must be at least 1")
-    fmt = fmt or "pdf"
-    if fmt not in FORMATS:
-        raise RuntimeError(f"Unknown format {fmt!r}; choose from {', '.join(FORMATS)}")
-    pages = f"{max_pages} page{'s' if max_pages != 1 else ''}"
-    job, variant, reason, source_doc, source_yaml = load_source(job_id, variant)
-    researching = research_soon(job)
+def _draft(job: dict, source_yaml: str) -> tuple[dict, str]:
+    """The LLM's first draft of the CV for this job (its cv mapping), and the model."""
     prompt = {
         "job": job_prompt(job),
         "source_cv_yaml": source_yaml,
@@ -177,7 +162,58 @@ def tailor_cv(job_id: int, variant: str | None = None,
     content, model = complete(
         "You edit RenderCV YAML conservatively. Output only valid YAML; never add unsupported facts.",
         json.dumps(prompt, ensure_ascii=False))
-    draft_cv = _parse_draft(content)
+    return _parse_draft(content), model
+
+
+def _render_command(target: Path) -> str:
+    return f"`uv run rendercv render {target.name}` in its folder"
+
+
+def _write_checked(job: dict, source_doc: dict, draft_cv: dict, target: Path, max_pages: int,
+                   fmt: str, warnings: list[str]) -> tuple[dict, list[dict], str, str]:
+    """For a draft that passed the fact check: fit it to max_pages as RenderCV lays it out,
+    write the YAML, RenderCV's PDF, and fmt's .docx or .tex beside it. Adds any warnings to
+    `warnings`. Returns the CV as written, the bullets cut, what was rendered, and what to
+    read before sending it, for the review."""
+    pages = f"{max_pages} page{'s' if max_pages != 1 else ''}"
+    cut: list[dict] = []
+    try:
+        draft_cv, cut, pdf = fit(job, source_doc, draft_cv, target.name, max_pages,
+                                  warnings, keep_pdf=target.parent, cv_folder=cv_directory())
+    except RenderFailed as exc:
+        pdf = None
+        warnings.append(f"RenderCV couldn't render the draft, so its length wasn't checked: "
+                        f"{exc}")
+    write_cv(target, source_doc, draft_cv)
+    rendered = (f"Rendered by RenderCV as {pdf.name}." if pdf
+                else "Not rendered as a PDF (see the warnings).")
+    if fmt == "docx":
+        documents.write_docx(draft_cv, target.with_suffix(".docx"))
+        rendered += (f" Also written as {target.with_suffix('.docx').name}; it was fitted to "
+                     f"{pages} as RenderCV lays it out, so check the page count in your word "
+                     "processor.")
+    elif fmt == "latex":
+        documents.write_latex(draft_cv, target.with_suffix(".tex"))
+        rendered += (f" Also written as {target.with_suffix('.tex').name}; compile it with "
+                     f"lualatex (or pdflatex for plain Western text). It was fitted to {pages} "
+                     "as RenderCV lays it out, so check the page count of yours.")
+    shown = pdf.name if pdf else target.name
+    read_it = (f"Read {shown} line by line against your source CV before you send it with an "
+               f"application. If you edit {target.name}, render it again with "
+               f"{_render_command(target)}.")
+    return draft_cv, cut, rendered, read_it
+
+
+def tailor_cv(job_id: int, variant: str | None = None,
+              output_dir: Path | None = None,
+              max_pages: int = DEFAULT_MAX_PAGES,
+              fmt: str = "pdf") -> tuple[Path, list[str], list[str]]:
+    """Draft, review, and check a tailored CV, cut it to `max_pages` as RenderCV lays it
+    out, and write the YAML draft and RenderCV's PDF, plus a .docx or .tex for `fmt`
+    ("pdf", "docx", or "latex"; tailor-cv's --format)."""
+    job, variant, reason, source_doc, source_yaml = load_source(job_id, variant)
+    researching = research_soon(job)
+    draft_cv, model = _draft(job, source_yaml)
     job_text = f"{job['title']}\n{job['description']}"
     errors, warnings = fact_check(source_doc["cv"], draft_cv, job_text)
 
@@ -198,40 +234,19 @@ def tailor_cv(job_id: int, variant: str | None = None,
         target.with_suffix(suffix).unlink(missing_ok=True)
     write_cv(target, source_doc, draft_cv)
     copy_photo(draft_cv, cv_directory(), target_dir)   # so it renders in its folder too
-    render_it = f"`uv run rendercv render {target.name}` in its folder"
-    rendered = ""
     cut: list[dict] = []
     if errors:
         rendered = ("Not rendered as a PDF" + ("" if fmt == "pdf" else f" or written as {fmt}")
-                    + f": fix the fact-check errors in the YAML draft first, then run {render_it}.")
+                    + ": fix the fact-check errors in the YAML draft first, then run "
+                    f"{_render_command(target)}.")
         read_it = (f"Read {target.name} line by line against your source CV and fix the errors "
                    "before you render it and send the CV with an application. Once you've "
                    "edited it, tailor-cv keeps your version; if you leave it, the next tailor-cv "
                    "drafts this job again, replacing this draft.")
     else:
-        try:
-            draft_cv, cut, pdf = fit(job, source_doc, draft_cv, target.name, max_pages,
-                                      warnings, keep_pdf=target_dir, cv_folder=cv_directory())
-        except RenderFailed as exc:
-            pdf = None
-            warnings.append(f"RenderCV couldn't render the draft, so its length wasn't checked: "
-                            f"{exc}")
-        write_cv(target, source_doc, draft_cv)
-        rendered = (f"Rendered by RenderCV as {pdf.name}." if pdf
-                    else "Not rendered as a PDF (see the warnings).")
-        if fmt == "docx":
-            documents.write_docx(draft_cv, target.with_suffix(".docx"))
-            rendered += (f" Also written as {target.with_suffix('.docx').name}; it was fitted to "
-                         f"{pages} as RenderCV lays it out, so check the page count in your word "
-                         "processor.")
-        elif fmt == "latex":
-            documents.write_latex(draft_cv, target.with_suffix(".tex"))
-            rendered += (f" Also written as {target.with_suffix('.tex').name}; compile it with "
-                         f"lualatex (or pdflatex for plain Western text). It was fitted to {pages} "
-                         "as RenderCV lays it out, so check the page count of yours.")
-        shown = pdf.name if pdf else target.name
-        read_it = (f"Read {shown} line by line against your source CV before you send it with an "
-                   f"application. If you edit {target.name}, render it again with {render_it}.")
+        draft_cv, cut, rendered, read_it = _write_checked(job, source_doc, draft_cv, target,
+                                                          max_pages, fmt, warnings)
+    pages = f"{max_pages} page{'s' if max_pages != 1 else ''}"
     cuts = (["", f"## Bullets cut to fit {pages} ({len(cut)})", "",
              "The least relevant to this job, cut in this order. Copy one back from your "
              "source CV if you want it.", ""] + [f"- {b['label']}: {b['text']}" for b in cut]

@@ -26,8 +26,8 @@ def load_cv(job_id: int, variant: str | None) -> tuple[dict, str, str, dict | st
     if variant is None:
         usable = [r for r in match_job(job_id) if r["variant"] in files]
         if not usable:
-            raise RuntimeError("None of this job's scored CVs is in your CV folder; choose "
-                               "one with --cv")
+            raise RuntimeError("This job has no score against the CVs cvs in "
+                               "config/profile.toml names; choose one with --cv")
         best = best_variant(usable)
         variant = best["variant"]
         reason = (f"CV variant {variant!r} chosen automatically: highest match score "

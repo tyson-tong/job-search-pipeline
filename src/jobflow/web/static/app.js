@@ -8,7 +8,8 @@ const SITE_NAMES = { linkedin: "LinkedIn", indeed: "Indeed", seek: "Seek" };
 const AUTO_REFRESH_MS = 3 * 60 * 1000;
 // versions: each edited job's tracking version when you started editing it, sent with
 // Save so changes made elsewhere in the meantime are caught instead of overwritten.
-const state = { view: "jobs", statuses: new Set(["interested", "applied", "interviewing", "offered", "accepted"]), jobs: [], summary: null,
+// statuses: My jobs' chosen statuses; null until recalled, or set to the server's defaults.
+const state = { view: "jobs", statuses: null, jobs: [], summary: null,
   pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null,
   // Rows ticked for a bulk change (Inbox triage; Filtered and Not interested back to the Inbox); lastPicked anchors shift-click ranges.
   selected: new Set(), lastPicked: null,
@@ -178,10 +179,13 @@ function statusParams() {
   statuses.forEach((s) => params.append("status", s));
   return params;
 }
-// Jobs in the Inbox, Filtered, and Not interested aren't scored or followed up, so those
-// sorts (and, for Filtered, Recently added) don't apply there.
-const HIDDEN_SORTS = { inbox: ["score", "follow_up"], filtered: ["score", "added", "follow_up"],
+// Jobs in the Inbox, Filtered, and Not interested aren't followed up, and only Inbox jobs
+// you pick (with Score selected) are scored there, so those sorts (and, for Filtered,
+// Recently added) don't apply.
+const HIDDEN_SORTS = { inbox: ["follow_up"], filtered: ["score", "added", "follow_up"],
   not_interested: ["score", "follow_up"] };
+// The tabs with a Match column: My jobs, and the Inbox, where jobs you pick can be scored.
+const SCORED_TABS = ["jobs", "inbox"];
 function fitSort() {
   const hidden = HIDDEN_SORTS[state.view] || [];
   [...sortInput.options].forEach((option) => {
@@ -202,9 +206,9 @@ function filterParams() {
   (state.sites || []).forEach((s) => params.append("site", s));
   if (qInput.value.trim()) params.set("q", qInput.value.trim());
   if (salaryInput.value) params.set("salary_min_usd", salaryInput.value);
-  // Only My jobs has scored jobs; elsewhere a minimum match set there would hide every job.
+  // Only My jobs and the Inbox have scored jobs; elsewhere a minimum match would hide every job.
   COLUMN_FILTERS.forEach(([input, param]) => {
-    if (input.value && !(param === "score_min" && state.view !== "jobs")) params.set(param, input.value); });
+    if (input.value && !(param === "score_min" && !SCORED_TABS.includes(state.view))) params.set(param, input.value); });
   params.set("sort", sortInput.value);
   return params;
 }
@@ -259,8 +263,8 @@ function renderPipeline() {
       "Follow-ups overdue ", el("b", {}, overdue)) : null,
     hours > IMPORT_LATE_HOURS ? el("span", { className: "chip alert",
       title: "The daily import searches the past 24 hours, so jobs posted on a day it missed "
-        + "aren't imported. Run `uv run jobflow status` to see why, and `uv run jobflow ingest` "
-        + "(with a longer posted_within_days) to catch up." },
+        + "aren't imported. Run `uv run jobflow status` to see why, and "
+        + "`uv run jobflow ingest --posted-within-days 7` (or 14 or 30) to catch up." },
       !lastImport ? "No import yet" : hours < 72 ? `Last import ${Math.floor(hours)} hours ago`
         : `Last import ${Math.floor(hours / 24)} days ago`) : null]);
 }
@@ -407,12 +411,15 @@ function renderRows() {
   renderPager(starts);
   renderExports(first, end);
   renderBulk();
-  // Only My jobs holds jobs that are followed up or scored, so the other tabs have
-  // no Follow up or Match column.
+  // Only My jobs holds jobs that are followed up, and only it and the Inbox hold scored
+  // jobs, so the other tabs have no Follow up or Match column.
+  const scored = SCORED_TABS.includes(state.view);
   document.querySelectorAll(".fu-col").forEach((cell) => { cell.hidden = selectable; });
-  document.querySelectorAll(".match-col").forEach((cell) => { cell.hidden = selectable; });
+  document.querySelectorAll(".match-col").forEach((cell) => { cell.hidden = !scored; });
   if (!n) {
-    fill(body, [el("tr", {}, el("td", { colspan: selectable ? 7 : 8, className: "empty" }, emptyMessage(total)))]);
+    // Job, Country, Sites, Posted, Salary, and Status, with the tab's optional columns.
+    const columns = 6 + selectable + scored + !selectable;
+    fill(body, [el("tr", {}, el("td", { colspan: columns, className: "empty" }, emptyMessage(total)))]);
     return;
   }
   fill(body, state.jobs.slice(first, end).map((job, offset) => jobRow(job, first + offset, selectable)));
@@ -436,7 +443,7 @@ function jobRow(job, index, selectable) {
       : abroad ? "The same ad in another country, shown together" : null },
     selectable ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
       el("input", { type: "checkbox", checked: state.selected.has(job.id), "aria-label": `Select ${job.title}` })) : null,
-    selectable ? null : el("td", {}, scoreBadge(job)),
+    SCORED_TABS.includes(state.view) ? el("td", {}, scoreBadge(job)) : null,
     el("td", {}, jobSummary(job)),
     el("td", { className: "hide-sm meta", title: state.countryCounts.names[job.country] || null }, job.country || "–"),
     el("td", { className: "hide-sm" }, job.sites.map((s) => el("span", { className: "site" }, SITE_NAMES[s] || s))),
@@ -451,7 +458,9 @@ function scoreBadge(job) {
   const score = job.score == null ? null : Math.round(job.score);
   const scoreClass = score == null ? "" : score >= 70 ? " hi" : score >= 45 ? " mid" : " lo";
   return el("span", { className: "score" + scoreClass,
-    title: (job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored: only interested jobs are scored")
+    title: (job.cv_variant ? `Best CV: ${job.cv_variant}`
+      : state.view === "inbox" ? "Not scored: tick it and click Score selected to score it"
+      : "Not scored yet")
       + (job.outdated.length ? `. Scored against an earlier version of ${job.outdated.join(" and ")}: `
         + "Rescore edited CVs updates it" : "") },
     score == null ? "–" : score + (job.outdated.length ? "*" : ""));
@@ -557,7 +566,10 @@ function renderBulk() {
   if (bar.hidden) return;
   fill(bar, [el("strong", {}, `${n} selected`),
     inbox ? [el("button", { className: "btn small", onclick: () => markSelected("interested") }, "Mark interested"),
-      el("button", { className: "btn small", onclick: () => markSelected("not_interested") }, "Mark not interested")]
+      el("button", { className: "btn small", onclick: () => markSelected("not_interested") }, "Mark not interested"),
+      el("button", { className: "btn small", disabled: Boolean(state.scoring && state.scoring.running),
+        title: "Ask the LLM to compare the ticked jobs with each of your CVs, to help you decide",
+        onclick: scoreSelected }, "Score selected")]
       : el("button", { className: "btn small", onclick: () => markSelected("new", "moved to the Inbox") }, "Move to Inbox"),
     el("button", { className: "btn small", onclick: () => { state.selected.clear(); state.lastPicked = null; renderRows(); } }, "Clear selection"),
     el("span", { className: "meta" }, "Shift-click a checkbox to select a range.")]);
@@ -612,6 +624,15 @@ async function pollScoring() {
   await refresh();  // unsaved drafts are kept; rows just gain their new scores
   if (state.detail && !state.pending.size) await openDetail(state.detail.id);
 }
+// Inbox jobs you tick, scored to help you triage them; each keeps its score if you mark it
+// Interested.
+function scoreSelected() {
+  const ids = state.jobs.filter((job) => state.selected.has(job.id)).map((job) => job.id);
+  const cvs = state.summary.cv_variants.length;
+  startScoring({ job_ids: ids }, `Score ${ids.length} selected job${ids.length === 1 ? "" : "s"} against each of `
+    + `your CVs it has no score for?\n\nThis makes at most ${ids.length * cvs} LLM call${ids.length * cvs === 1 ? "" : "s"}. `
+    + "You can keep working while it runs.");
+}
 document.getElementById("score-btn").addEventListener("click", () => {
   const jobs = state.summary.unscored, cvs = state.summary.cv_variants.length;
   startScoring({}, `Score ${jobs} interested job${jobs === 1 ? "" : "s"} against each of your CVs it has no score for?`
@@ -626,128 +647,6 @@ document.getElementById("rescore-btn").addEventListener("click", () => {
 async function copyCommand(text) {
   try { await navigator.clipboard.writeText(text); toast("Copied: " + text); }
   catch (error) { toast("Copy failed; select the command and copy it instead.", true); }
-}
-
-// ---- Searches (config/searches.toml: what the daily import runs) ---------------------------------
-const siteName = (s) => SITE_NAMES[s] || s;
-function renderSearches() {
-  const data = state.searches, box = document.getElementById("searches-view");
-  const header = el("div", { className: "sv-card", id: "sv-top" },
-    el("h2", {}, "Your searches"),
-    el("div", {}, data.ok ? el("span", { className: "ok" }, "✓ Valid") : el("span", { className: "err" }, "✗ Can't be used"),
-      el("span", { className: "meta" }, `  ·  from ${data.source || "(no config/profile.toml)"}`), "  ",
-      el("button", { className: "btn small", onclick: () => refresh().then(() => toast("Searches reloaded")) }, "Reload")),
-    data.ok ? el("p", { className: "meta", style: "margin:8px 0 0" },
-      `${data.total_runs} Apify run${data.total_runs === 1 ? "" : "s"} per import, at most ${data.total_max_results} results. `
-      + "Actors charge per result. Nothing runs from this page.") : null,
-    data.error ? el("div", { className: "err-box" }, data.error) : null,
-    el("div", { className: "next" }, el("strong", {}, "To change your searches"),
-      el("p", { className: "meta", style: "margin:4px 0" },
-        "Edit the file in your editor, then click Reload to check it. After each change, run this: it checks "
-        + "the file, updates the copy the daily GitHub run uses, and filters Inbox jobs from your excluded employers or matching your excluded titles:"),
-      el("div", { className: "cmd" }, el("code", {}, "uv run jobflow update-searches"),
-        el("button", { className: "btn small", onclick: () => copyCommand("uv run jobflow update-searches") }, "Copy")),
-      el("div", { className: "cmd" }, el("code", {}, "uv run jobflow ingest --site seek"),
-        el("button", { className: "btn small", onclick: () => copyCommand("uv run jobflow ingest --site seek") }, "Copy")),
-      el("p", { className: "meta", style: "margin:4px 0 0" }, "The last command runs the searches now (one site here) instead of waiting for the daily run; ",
-        el("strong", {}, "IT COSTS APIFY CREDITS."))));
-  fill(box, [renderContents(data), header, data.searches.map(renderSearchCard), renderReference(data.reference)]);
-}
-// Links to each card below. The header is sticky, so scroll to just under it.
-function renderContents(data) {
-  const link = (id, text) => el("a", { href: `#${id}`, onclick: (event) => {
-    event.preventDefault();
-    const target = document.getElementById(id);
-    if (target.tagName === "DETAILS") target.open = true;
-    const top = target.getBoundingClientRect().top + window.scrollY - document.querySelector("header").offsetHeight - 8;
-    window.scrollTo({ top, behavior: "smooth" });
-  } }, text);
-  return el("nav", { className: "sv-card toc", "aria-label": "Contents" },
-    el("h2", {}, "Contents"),
-    el("ol", {},
-      el("li", {}, link("sv-top", "Your searches"),
-        data.searches.length ? el("ol", {}, data.searches.map((search, i) => el("li", {}, link(`sv-search-${i}`, search.name)))) : null),
-      el("li", {}, link("sv-ref", "Allowed values"),
-        el("ol", {},
-          el("li", {}, link("sv-ref-posted", "posted_within_days")),
-          el("li", {}, link("sv-ref-support", "How each site applies each setting")),
-          el("li", {}, link("sv-ref-locations", "locations: countries and cities")),
-          el("li", {}, link("sv-ref-classes", "seek_classifications (Seek only)"))))));
-}
-function renderSearchCard(search, index) {
-  const salary = search.salary_min != null || search.salary_max != null
-    ? `${search.salary_min ?? "any"} – ${search.salary_max ?? "any"} (${search.salary_period}); jobs without a salary are kept` : "any";
-  const item = (label, value) => [el("dt", {}, label), el("dd", {}, value)];
-  return el("div", { className: "sv-card", id: `sv-search-${index}` },
-    el("h2", {}, search.name),
-    search.warnings.length ? el("div", { className: "flags" },
-      search.warnings.map((w) => el("span", { className: "flag warn" }, w))) : null,
-    el("dl", { className: "kv" },
-      item("Terms", search.terms.map((t) => el("span", { className: "pill" }, t))),
-      item("Locations", Object.entries(search.locations).map(([country, cities]) =>
-        el("span", { className: "pill" }, `${country}: ${cities.length ? cities.join(", ") : "whole country"}`))),
-      item("Posted within", search.posted_within),
-      item("Results", `up to ${search.max_results} per run` + (search.max_cost_usd ? `, cost cap $${search.max_cost_usd} per run` : "")
-        + (search.radius_km ? `, ${search.radius_km} km radius` : "")),
-      item("Salary", salary),
-      item("Job types", search.job_types.length ? search.job_types.join(", ") : "any"),
-      item("Work arrangements", search.work_arrangements.length ? search.work_arrangements.join(", ") : "any"),
-      item("Seek classifications", search.seek_classifications.length ? search.seek_classifications.join(", ") : "any"),
-      item("Excluded titles", search.exclude_title_terms.length
-        ? search.exclude_title_terms.map((t) => el("span", { className: "pill" }, t)) : "none"),
-      item("Kept titles", search.include_title_terms.length
-        ? [search.include_title_terms.map((t) => el("span", { className: "pill" }, t)),
-           el("span", { className: "meta" }, " (override excluded titles)")] : "none"),
-      item("Excluded employers", search.exclude_companies.length
-        ? search.exclude_companies.map((t) => el("span", { className: "pill" }, t)) : "none")),
-    search.sites.map((site) => el("div", { className: "site-block" },
-      el("strong", {}, siteName(site.site)),
-      el("span", { className: "meta" }, ` · ${site.runs.length} run${site.runs.length === 1 ? "" : "s"}, up to ${site.max_results_per_run} results each`
-        + (site.local_filters.length ? ` · filtered after import by ${site.local_filters.join(", ").replace(/_/g, " ")}` : "")),
-      site.notes.map((note) => el("div", { className: "flags" }, el("span", { className: "flag warn" }, note))),
-      el("details", {}, el("summary", { className: "meta" }, `Show the exact input sent to ${site.actor}`),
-        site.runs.map((r) => [el("div", { className: "meta" }, r.label),
-          el("pre", { className: "json" }, JSON.stringify(r.input, null, 2))])))));
-}
-function renderReference(ref) {
-  const table = (head, rows) => el("div", { className: "table-wrap" }, el("table", {},
-    el("thead", {}, el("tr", {}, head.map((h) => el("th", {}, h)))),
-    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c) => el("td", {}, c)))))));
-  const filterNames = Object.keys(ref.filter_support[ref.sites[0]]);
-  // One row per classification (in bold, covering all its subclassifications), then a row
-  // per subclassification: the key to use in searches.toml, and the name Seek shows.
-  const classList = el("tbody");
-  const drawClasses = (q) => fill(classList, ref.seek_classifications.map((c) => {
-    const subs = c.subclassifications.filter((sc) => !q || `${sc.key} ${sc.name}`.toLowerCase().includes(q));
-    const own = !q || `${c.key} ${c.name}`.toLowerCase().includes(q);
-    if (!own && !subs.length) return null;
-    return [el("tr", { className: "top" }, el("td", {}, el("code", {}, c.key)),
-        el("td", {}, c.name, el("span", { className: "meta" }, " (all subclassifications)"))),
-      (own && !q ? c.subclassifications : subs).map((sc) =>
-        el("tr", { className: "sub" }, el("td", {}, el("code", {}, sc.key)), el("td", {}, sc.name)))];
-  }));
-  drawClasses("");
-  return el("div", { className: "sv-card ref", id: "sv-ref" },
-    el("h2", {}, "Allowed values"),
-    el("dl", { className: "kv" },
-      [["sites", ref.sites], ["job_types", ref.job_types], ["work_arrangements", ref.work_arrangements],
-       ["salary_period", ref.salary_periods]].map(([k, v]) => [el("dt", {}, el("code", {}, k)), el("dd", {}, v.join(", "))])),
-    el("h3", { id: "sv-ref-posted" }, "posted_within_days"),
-    table(["Value", ...ref.sites.map(siteName)], ref.posted_within.map((w) =>
-      [`${w.days} (${w.name})`, ...ref.sites.map((s) => w.sites[s] ? "✓" : "wider, then filtered")])),
-    el("h3", { id: "sv-ref-support" }, "How each site applies each setting"),
-    el("p", { className: "meta", style: "margin:0 0 4px" }, "search: the site filters before you pay · local: filtered after import, only when the job's value is known · unsupported: not available"),
-    table(["Setting", ...ref.sites.map(siteName)], filterNames.map((f) =>
-      [f.replace(/_/g, " "), ...ref.sites.map((s) => ref.filter_support[s][f])])),
-    el("h3", { id: "sv-ref-locations" }, "locations: countries and cities"),
-    el("p", { className: "meta", style: "margin:0 0 4px" }, "Use [] for the whole country. UK also works for GB."),
-    table(["Code", "Country", "Cities", "Sites"], ref.countries.map((c) =>
-      [el("code", {}, c.code), c.name, c.cities.join(", "), c.sites.map(siteName).join(", ")])),
-    el("details", { id: "sv-ref-classes" }, el("summary", {}, el("strong", {}, "seek_classifications (Seek only)")),
-      el("input", { type: "search", placeholder: "Filter classifications", oninput: (e) => drawClasses(e.target.value.toLowerCase()) }),
-      el("div", { className: "scroll" }, el("table", { className: "classes" },
-        el("thead", {}, el("tr", {}, el("th", {}, "Key (in searches.toml)"), el("th", {}, "Name on Seek"))),
-        classList))));
 }
 
 // ---- Detail drawer -----------------------------------------------------------------------
@@ -800,7 +699,7 @@ function renderDetail() {
 }
 // The panel's top: title, facts, links to each site, and warnings.
 function detailHeader(job, target) {
-  const inProgress = job.duplicates.filter((d) => ["applied", "interviewing", "offered", "accepted"].includes(d.status));
+  const inProgress = job.duplicates.filter((d) => state.summary.in_progress.includes(d.status));
   return [
     el("h2", {}, job.title),
     el("div", { className: "meta" }, [`Job #${job.id}`, job.company, job.location, fmtSalary(job.salary_min, job.salary_max, job.currency)]
@@ -818,17 +717,18 @@ function detailHeader(job, target) {
     job.status === "filtered" && job.filter_reason ? el("div", { className: "banner" }, `Filtered on import: ${job.filter_reason}`) : null];
 }
 // The job's scores against each CV, with Score or Rescore when there's something to do.
-// Only a saved Interested job is scored, once against each CV.
+// Only a saved Inbox or Interested job is scored, once against each CV; only an Interested
+// one is rescored.
 function matchSection(job) {
   // The CVs named in config/profile.toml this job has no score against yet.
   const unscored = state.summary.cv_variants.filter((v) => !job.matches.some((m) => m.variant === v));
   // The CVs edited since this job was scored against them.
   const outdated = job.matches.filter((m) => m.outdated).map((m) => m.variant);
   const busy = Boolean(state.scoring && state.scoring.running);
-  const interested = job.status === "interested";
+  const interested = job.status === "interested", scorable = interested || job.status === "new";
   return [
     el("div", { className: "h3-row" }, el("h3", {}, "Match with your CVs"),
-      interested && unscored.length
+      scorable && unscored.length
         ? el("button", { className: "btn small", disabled: busy,
             title: "Ask the LLM to compare this job with each CV", onclick: () =>
               startScoring({ job_ids: [job.id] }) }, "Score")
@@ -838,10 +738,10 @@ function matchSection(job) {
               startScoring({ job_ids: [job.id], rescore: true }) }, "Rescore")
         : null),
     job.matches.map(renderMatch),
-    interested && unscored.length
+    scorable && unscored.length
       ? el("p", { className: "meta" }, `Not scored yet against ${unscored.join(", ")}.`)
       : !job.matches.length ? el("p", { className: "meta" },
-          "Not scored: only interested jobs are scored. Mark it interested and save to score it.") : null];
+          "Not scored: only Inbox and interested jobs are scored.") : null];
 }
 // The commands for this job, by its saved status: tailor-cv and cover-letter work on
 // Interested jobs, interview-prep on Interviewing ones.
@@ -941,9 +841,14 @@ document.addEventListener("click", (event) => {
   document.querySelectorAll("details.multi[open]").forEach((menu) => {
     if (!menu.contains(event.target)) menu.open = false; });
 });
-recall();
-refresh().then(async () => {
+(async () => {
+  recall();
+  if (!state.statuses) {
+    try { state.statuses = new Set((await api("/api/summary")).default_statuses); }
+    catch (error) { toast(error.message, true); return; }
+  }
+  await refresh();
   try { state.scoring = await api("/api/scoring"); } catch (error) { return; }
   renderScoring();
   if (state.scoring.running) pollScoring();
-});
+})();

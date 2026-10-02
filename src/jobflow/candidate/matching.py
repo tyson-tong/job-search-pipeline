@@ -13,6 +13,9 @@ from .cvs import check_cv_length, chosen_sources, cv_digest, job_prompt, normali
 # Bump when the stored assessment shape changes.
 ASSESSMENT_FORMAT = 2
 CREDIT = {"matched": 1.0, "partial": 0.5, "not_evidenced": 0.0}
+# The statuses a job can be scored in: Interested (Score all jobs, and tailor-cv), and the
+# Inbox, for jobs you pick to help you triage. Each is one LLM call per CV.
+SCORABLE = ("new", "interested")
 
 MATCH_INSTRUCTIONS = (
     "List the job's requirements (skills, experience, qualifications). Mark each as "
@@ -165,9 +168,9 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
 
     A job is scored once against each CV, and again after that CV's content changes only
     when you ask (rescore: the tracker's Rescore edited CVs); a CV named later (added, or
-    renamed) is scored for it the next time. Only an Interested job is scored. Returns
-    every stored assessment, recomputed with the current profile weights, including any
-    against CVs no longer named.
+    renamed) is scored for it the next time. Only an Inbox or Interested job is scored
+    (SCORABLE). Returns every stored assessment, recomputed with the current profile
+    weights, including any against CVs no longer named.
     """
     weights = matching_weights()
     with db.connect() as conn:
@@ -178,12 +181,12 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
     sources = {variant: source for variant, source in chosen_sources().items()
                if variant not in assessed
                or (rescore and assessed[variant] != cv_digest(source))}
-    if sources and status[0] != "interested":
-        if assessed:   # scored while Interested: it keeps what it has
+    if sources and status[0] not in SCORABLE:
+        if assessed:   # scored in the Inbox or while Interested: it keeps what it has
             sources = {}
         else:
-            raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only interested "
-                               "jobs are scored")
+            raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only Inbox and "
+                               "interested jobs are scored")
     if not sources:
         with db.connect() as conn:
             return stored_assessments(conn, job_id, weights)
@@ -234,15 +237,14 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
                              "weights": dict(zip(("required", "preferred"), weights, strict=True)),
                              "breakdown": record["breakdown"]}),
                  record["model"]))
-            conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "
-                         "VALUES (%s,'match','SUCCEEDED',%s,now())", (job_id, record["model"]))
+            db.record_workflow_run(conn, job_id, "match", "SUCCEEDED", record["model"])
         return stored_assessments(conn, job_id, weights)
 
 
-# Interested jobs without a score against one of the CVs named (%(variants)s), in the
-# current format: each job is scored once against each CV.
+# Jobs with one of %(statuses)s without a score against one of the CVs named
+# (%(variants)s), in the current format: each job is scored once against each CV.
 UNSCORED_SQL = f"""FROM jobs j
-    WHERE j.status = 'interested'
+    WHERE j.status = ANY(%(statuses)s)
       AND EXISTS (SELECT 1 FROM unnest(%(variants)s::text[]) AS cv(variant)
                   WHERE NOT EXISTS (SELECT 1 FROM match_assessments m
                                     WHERE m.job_id = j.id AND m.cv_variant = cv.variant
@@ -250,18 +252,22 @@ UNSCORED_SQL = f"""FROM jobs j
 
 
 def jobs_needing_match(variants: list[str], only: list[int] | None = None) -> list[int]:
-    """Interested jobs with no score against one of these CVs, newest first; limited to
-    `only` when given."""
+    """Jobs with no score against one of these CVs, newest first: every Interested job, or,
+    given `only` (jobs you picked), those of them in the Inbox or Interested."""
+    statuses = ["interested"] if only is None else list(SCORABLE)
     with db.connect() as conn:
         rows = conn.execute(
             f"""SELECT j.id {UNSCORED_SQL} AND (%(only)s::bigint[] IS NULL OR j.id = ANY(%(only)s))
-                ORDER BY j.first_seen_at DESC""", {"variants": variants, "only": only}).fetchall()
+                ORDER BY j.first_seen_at DESC""",
+            {"variants": variants, "only": only, "statuses": statuses}).fetchall()
     return [row[0] for row in rows]
 
 
 def count_needing_match(variants: list[str]) -> int:
+    """How many Interested jobs Score all jobs would score."""
     with db.connect() as conn:
-        return conn.execute(f"SELECT count(*) {UNSCORED_SQL}", {"variants": variants}).fetchone()[0]
+        return conn.execute(f"SELECT count(*) {UNSCORED_SQL}",
+                            {"variants": variants, "statuses": ["interested"]}).fetchone()[0]
 
 
 # Each Interested job's latest score against each CV named whose text has changed since:

@@ -72,6 +72,4 @@ def record_run(job_id: int, kind: str, errors: list[str], model: str) -> None:
     """Record the finished run: NEEDS-FIX if its draft failed the fact check, so the next
     run drafts the job again (unless you fix it yourself), else SUCCEEDED."""
     with db.connect() as conn:
-        conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "
-                     "VALUES (%s,%s,%s,%s,now())",
-                     (job_id, kind, "NEEDS-FIX" if errors else "SUCCEEDED", model))
+        db.record_workflow_run(conn, job_id, kind, "NEEDS-FIX" if errors else "SUCCEEDED", model)

@@ -84,37 +84,12 @@ def update_searches(dry_run: bool = False) -> None:
           f"back to the Inbox{' (dry run: none moved)' if dry_run else ''}")
 
 
-def status() -> None:
-    """Show what the daily GitHub import uses, reading it from GitHub: whether it's on, its
-    last run, its secrets, its searches (and whether they match config/searches.toml), and
-    which job sites (Apify scrapers) it calls. Changes nothing."""
-    import json
-    from datetime import datetime
-
-    from .ingest.options import ACTORS, SITES
+def _print_published_searches(text: str | None) -> dict[str, list[str]]:
+    """Print whether the published JOBFLOW_SEARCHES can be used and matches
+    config/searches.toml; return {site: the searches that call it}."""
     from .ingest.searches import SearchConfigError, parse_config
-    from .settings import searches_file, timezone
+    from .settings import searches_file
 
-    state = _gh(["api", f"repos/{{owner}}/{{repo}}/actions/workflows/{WORKFLOW}", "--jq", ".state"],
-                "Reading the daily import's workflow").strip()
-    runs = json.loads(_gh(["run", "list", "--workflow", WORKFLOW, "-L", "1", "--json",
-                           "status,conclusion,createdAt,event"], "Reading the daily import's runs"))
-    secrets = {s["name"]: s["updatedAt"][:10] for s in json.loads(_gh(
-        ["secret", "list", "--json", "name,updatedAt"], "Reading the repository's secret names"))}
-    variables = {v["name"]: v["value"] for v in json.loads(_gh(
-        ["variable", "list", "--json", "name,value"], "Reading the repository's Actions variables"))}
-    print(f"Daily import (.github/workflows/{WORKFLOW}): {WORKFLOW_STATES.get(state, state)}")
-    if runs:
-        run = runs[0]
-        started = datetime.fromisoformat(run["createdAt"]).astimezone(timezone())
-        print(f"  Last run: {started:%Y-%m-%d %H:%M %Z} ({run['event']}), "
-              f"{run['conclusion'] or run['status']}")
-    else:
-        print("  Last run: none yet")
-    print("Secrets:  " + ", ".join(f"{name} set {secrets[name]}" if name in secrets
-                                   else f"{name} MISSING (gh secret set {name})"
-                                   for name in ACTIONS_SECRETS))
-    text = variables.get("JOBFLOW_SEARCHES")
     used: dict[str, list[str]] = {}
     if not text:
         print("Searches: JOBFLOW_SEARCHES not set: run `uv run jobflow update-searches`")
@@ -139,6 +114,39 @@ def status() -> None:
                   f"{'es' if len(searches) != 1 else ''}"
                   + ("" if same is None else " (same as config/searches.toml)" if same
                      else " (differs from config/searches.toml: run `uv run jobflow update-searches`)"))
+    return used
+
+
+def status() -> None:
+    """Show what the daily GitHub import uses, reading it from GitHub: whether it's on, its
+    last run, its secrets, its searches (and whether they match config/searches.toml), and
+    which job sites (Apify scrapers) it calls. Changes nothing."""
+    import json
+    from datetime import datetime
+
+    from .ingest.options import ACTORS, SITES
+    from .settings import timezone
+
+    state = _gh(["api", f"repos/{{owner}}/{{repo}}/actions/workflows/{WORKFLOW}", "--jq", ".state"],
+                "Reading the daily import's workflow").strip()
+    runs = json.loads(_gh(["run", "list", "--workflow", WORKFLOW, "-L", "1", "--json",
+                           "status,conclusion,createdAt,event"], "Reading the daily import's runs"))
+    secrets = {s["name"]: s["updatedAt"][:10] for s in json.loads(_gh(
+        ["secret", "list", "--json", "name,updatedAt"], "Reading the repository's secret names"))}
+    variables = {v["name"]: v["value"] for v in json.loads(_gh(
+        ["variable", "list", "--json", "name,value"], "Reading the repository's Actions variables"))}
+    print(f"Daily import (.github/workflows/{WORKFLOW}): {WORKFLOW_STATES.get(state, state)}")
+    if runs:
+        run = runs[0]
+        started = datetime.fromisoformat(run["createdAt"]).astimezone(timezone())
+        print(f"  Last run: {started:%Y-%m-%d %H:%M %Z} ({run['event']}), "
+              f"{run['conclusion'] or run['status']}")
+    else:
+        print("  Last run: none yet")
+    print("Secrets:  " + ", ".join(f"{name} set {secrets[name]}" if name in secrets
+                                   else f"{name} MISSING (gh secret set {name})"
+                                   for name in ACTIONS_SECRETS))
+    used = _print_published_searches(variables.get("JOBFLOW_SEARCHES"))
     published, zone = variables.get("JOBFLOW_TIMEZONE"), timezone().key
     print(f"Timezone: JOBFLOW_TIMEZONE {published}"
           + (" (same as yours)" if published == zone

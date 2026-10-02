@@ -1,9 +1,9 @@
 """The skills your CVs don't show that scored jobs ask for most, with a plan to close them.
 
-Built from stored match scores, so it costs one LLM call and no rescoring. Each scored
-Interested job contributes the requirements its best-matching CV didn't fully evidence. The LLM only
-groups those requirements into skills and suggests how to close each gap; the counts and
-the ranking are computed here, from the stored requirements.
+Built from stored match scores, so it costs one LLM call and no rescoring. Each scored job
+you're pursuing (STATUSES) contributes the requirements its best-matching CV didn't fully
+evidence. The LLM only groups those requirements into skills and suggests how to close each
+gap; the counts and the ranking are computed here, from the stored requirements.
 """
 from __future__ import annotations
 
@@ -22,6 +22,9 @@ from .pages import html_page
 IMPORTANCE_WEIGHT = {"required": 1.0, "preferred": 0.5}
 STATUS_WEIGHT = {"not_evidenced": 1.0, "partial": 0.5}
 MAX_GAPS_SENT = 600
+# The jobs whose gaps count: the ones you're pursuing. Jobs still in the Inbox, and ones
+# rejected, withdrawn, declined, or accepted, don't.
+STATUSES = ["interested", "applied", "interviewing", "offered"]
 
 
 def outdated_note(jobs: int) -> str:
@@ -29,11 +32,14 @@ def outdated_note(jobs: int) -> str:
     still counts it as a gap."""
     return (f"{jobs} of these jobs {'was' if jobs == 1 else 'were'} scored against an earlier "
             "version of your CV, so a skill you've since added may still be listed: click "
-            "Rescore edited CVs in the tracker's My jobs, then run skill-gaps again.")
+            "Rescore edited CVs in the tracker's My jobs, then run skill-gaps again. It "
+            "rescores Interested jobs only; ones you've applied for, or further along, keep "
+            "their scores.")
 
 
 def collect_gaps() -> tuple[list[dict], int, int]:
-    """Requirements not fully evidenced by each scored Interested job's best CV, among those
+    """Requirements not fully evidenced by the best CV of each scored job with one of
+    STATUSES, among those
     cvs in config/profile.toml names, newest job first; the job count; and how many of
     those jobs' best scores were made against an earlier version of the CV, so may list
     gaps you've since filled."""
@@ -43,9 +49,9 @@ def collect_gaps() -> tuple[list[dict], int, int]:
     with db.connect() as conn:
         jobs = conn.execute(
             """SELECT j.id, j.title, j.company FROM jobs j
-               WHERE j.status = 'interested'
+               WHERE j.status = ANY(%s)
                  AND EXISTS (SELECT 1 FROM match_assessments m WHERE m.job_id = j.id)
-               ORDER BY j.id DESC""").fetchall()
+               ORDER BY j.id DESC""", (STATUSES,)).fetchall()
         scored = 0
         for job_id, title, company in jobs:
             stored = [r for r in stored_assessments(conn, job_id, weights) if r["variant"] in chosen]
@@ -139,7 +145,8 @@ def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated
         note += (f"<p class=meta>Only the {MAX_GAPS_SENT} requirements from your most recently "
                  f"added scored jobs are grouped; {left_out} older ones are left out.</p>")
     return html_page("Skill gaps", f"""<h1>Skill gaps</h1>
-<p class=meta>Generated {generated} from {scored} scored Interested job{'s' if scored != 1 else ''}, using each job's
+<p class=meta>Generated {generated} from {scored} scored job{'s' if scored != 1 else ''} you're pursuing (interested,
+applied, interviewing, or offered), using each job's
 best-matching CV of those cvs in config/profile.toml names. Ranked by how often a skill is asked for and not shown: a required
 requirement counts 1, a preferred one 0.5, halved when your CV partly shows it. "Not shown"
 means your CV doesn't evidence it, not that you lack it: if you have the skill, add evidence
@@ -155,11 +162,11 @@ def report(output: Path | None = None) -> tuple[Path, list[dict], int]:
     gaps, scored, outdated = collect_gaps()
     if not gaps and scored:
         raise RuntimeError(f"No skill gaps: the best CV of each of your {scored} scored "
-                           "Interested jobs shows every requirement it lists")
+                           "jobs shows every requirement it lists")
     if not gaps:
-        raise RuntimeError("No skill gaps to report: it reads scored Interested jobs, so score "
-                           "some in the tracker first (against the CVs cvs in "
-                           "config/profile.toml names)")
+        raise RuntimeError("No skill gaps to report: it reads scored interested, applied, "
+                           "interviewing, and offered jobs, so score some in the tracker first "
+                           "(against the CVs cvs in config/profile.toml names)")
     groups, model = _group(gaps)
     skills, ungrouped = rank_skills(gaps[:MAX_GAPS_SENT], groups)
     generated = now()

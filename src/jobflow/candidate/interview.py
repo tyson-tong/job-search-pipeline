@@ -162,7 +162,6 @@ def prepare(job_id: int, output: Path | None = None) -> Path:
         BRIEFING_STYLE)
     target.write_text(page)
     with db.connect() as conn:
-        conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "
-                     "VALUES (%s,'interview-prep','SUCCEEDED',%s,now())", (job_id, model))
+        db.record_workflow_run(conn, job_id, "interview-prep", "SUCCEEDED", model)
     return target
 

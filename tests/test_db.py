@@ -1,6 +1,7 @@
 """Against a real PostgreSQL: merging, saving, and migrating, where a silent mistake loses
 or corrupts data. Skipped unless TEST_DATABASE_URL names a disposable database; each run
 works in its own schema and drops it afterwards."""
+import json
 import os
 import secrets
 
@@ -129,8 +130,6 @@ def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
 def test_a_cv_named_later_is_scored_without_rescoring_the_others(database, monkeypatch):
     # Scores were never refreshed, so renaming or adding a CV left every scored job with
     # no score against it: tailor-cv then refused them all.
-    import json
-
     from jobflow.candidate import matching
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
@@ -160,8 +159,6 @@ def test_a_cv_named_later_is_scored_without_rescoring_the_others(database, monke
 def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, monkeypatch):
     # Scores were never redone, so a skill you added to your CV stayed a gap in skill-gaps.
     # Each rescore is an LLM call per job per CV, so an unedited CV must not be sent again.
-    import json
-
     from jobflow.candidate import matching
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
@@ -197,8 +194,6 @@ def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, monke
     (["dev", "strat"], "timed out"),
 ])
 def test_a_failed_assessment_saves_no_score(database, monkeypatch, cvs, failure):
-    import json
-
     from jobflow.candidate import matching
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
@@ -224,8 +219,6 @@ def test_a_failed_assessment_saves_no_score(database, monkeypatch, cvs, failure)
 def test_the_tracker_and_tailor_cv_rank_cvs_alike_after_the_weights_change(database, monkeypatch):
     # The tracker showed the score stored at scoring time while tailor-cv recomputed it with
     # the weights now, so after a weights change they could pick different CVs.
-    import json
-
     from jobflow.candidate import matching
     from jobflow.web.queries import job_detail
 
@@ -557,3 +550,61 @@ def test_dates_are_in_your_timezone_in_python_and_the_database(database, monkeyp
 
     monkeypatch.setenv("JOBFLOW_TIMEZONE", "Pacific/Kiritimati")   # UTC+14
     assert _one("SELECT current_setting('TimeZone'), now()::date") == ("Pacific/Kiritimati", today())
+
+
+def test_score_all_scores_only_interested_jobs_but_picked_inbox_jobs_can_be_scored(database,
+                                                                                    monkeypatch):
+    # Each job is an LLM call per CV: Score all jobs must never score the whole Inbox, but
+    # Inbox jobs you tick are scored to help you triage them.
+    from jobflow.candidate import matching
+
+    save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "id": key, "title": title}
+                                        for key, title in (("1", "Analyst"), ("2", "Quant"),
+                                                           ("3", "Trader"))], country="AU")
+    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    with connect() as conn:
+        set_job_state(conn, ids["1"], status="interested", via="test")
+        set_job_state(conn, ids["3"], status="not_interested", via="test")
+    monkeypatch.setattr(matching, "complete", lambda system, user, **kw: (json.dumps(
+        {"requirements": [{"requirement": "SQL", "status": "matched", "evidence": ["SQL"]}]}), "m"))
+    monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
+    monkeypatch.setattr(matching, "chosen_sources", lambda: {"dev": "I write SQL."})
+    assert matching.jobs_needing_match(["dev"]) == [ids["1"]]
+    assert matching.count_needing_match(["dev"]) == 1
+    picked = [ids["2"], ids["3"]]   # an Inbox job, and a Not interested one
+    assert matching.jobs_needing_match(["dev"], picked) == [ids["2"]]
+    assert [r["variant"] for r in matching.match_job(ids["2"])] == ["dev"]
+    with pytest.raises(RuntimeError, match="only Inbox and interested jobs are scored"):
+        matching.match_job(ids["3"])
+    # Marked Interested later, it keeps its score: Score all jobs has nothing to redo.
+    with connect() as conn:
+        set_job_state(conn, ids["2"], status="interested", via="test")
+    assert matching.jobs_needing_match(["dev"]) == [ids["1"]]
+
+
+def test_skill_gaps_count_the_jobs_you_are_pursuing(database, monkeypatch):
+    # Jobs dropped out of the report the moment you applied for them, though they say most
+    # about what you're aiming at.
+    from pathlib import Path
+
+    from jobflow.candidate import skill_gaps
+
+    statuses = {"1": "interested", "2": "applied", "3": "offered", "4": "new", "5": "rejected"}
+    save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "id": key, "title": f"Role {key}"}
+                                        for key in statuses], country="AU")
+    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    with connect() as conn:
+        for key, status in statuses.items():
+            conn.execute("UPDATE jobs SET status=%s WHERE id=%s", (status, ids[key]))
+            conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score, gaps,
+                                evidence) VALUES (%s, 'dev', 'd', 0, %s, %s)""",
+                         (ids[key], json.dumps([{"requirement": f"Skill {key}",
+                                                 "importance": "required",
+                                                 "status": "not_evidenced"}]),
+                          json.dumps({"format": 2, "breakdown": {}})))
+    monkeypatch.setattr(skill_gaps, "matching_weights", lambda: (0.75, 0.25))
+    monkeypatch.setattr(skill_gaps, "chosen_files", lambda: {"dev": Path("CV_dev.yaml")})
+    monkeypatch.setattr(skill_gaps, "current_digests", lambda: {"dev": "d"})
+    gaps, scored, outdated = skill_gaps.collect_gaps()
+    assert sorted(g["requirement"] for g in gaps) == ["Skill 1", "Skill 2", "Skill 3"]
+    assert (scored, outdated) == (3, 0)

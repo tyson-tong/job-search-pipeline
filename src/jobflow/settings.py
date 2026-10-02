@@ -46,9 +46,8 @@ def init_files(root: Path = ROOT) -> list[tuple[str, bool]]:
 
 
 def env_path() -> Path:
-    """config/.env in the current project, else config/.env in the source checkout."""
-    local = Path.cwd() / "config" / ".env"
-    return local if local.exists() else CONFIG_DIR / ".env"
+    """config/.env in this checkout, where jobflow init creates it."""
+    return CONFIG_DIR / ".env"
 
 
 def load_env(path: Path | None = None) -> None:
@@ -78,11 +77,10 @@ def load_env(path: Path | None = None) -> None:
 
 
 def profile_path() -> Path:
-    """JOBFLOW_PROFILE, else config/profile.toml in the current project or checkout."""
+    """JOBFLOW_PROFILE, else config/profile.toml in this checkout."""
     if os.environ.get("JOBFLOW_PROFILE"):
         return Path(os.environ["JOBFLOW_PROFILE"]).expanduser().resolve()
-    local = Path.cwd() / "config" / "profile.toml"
-    return local.resolve() if local.exists() else CONFIG_DIR / "profile.toml"
+    return CONFIG_DIR / "profile.toml"
 
 
 def profile() -> dict:

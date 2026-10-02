@@ -48,12 +48,13 @@ def encrypted_url(url: str) -> str:
     return url
 
 
-# The tracker's pools of open connections (see use_pool), by connection string and
-# timezone: opening a connection to a database on another continent costs a TLS handshake
-# every time.
-_pools: dict[tuple[str, str], ConnectionPool] = {}
+# The tracker's pool of open connections (see use_pool), and the connection string and
+# timezone it was opened for: opening a connection to a database on another continent costs
+# a TLS handshake every time.
+_pool: ConnectionPool | None = None
+_pool_key: tuple[str, str] | None = None
 _pooling = False
-_pools_lock = threading.Lock()
+_pool_lock = threading.Lock()
 
 
 def use_pool() -> None:
@@ -80,15 +81,19 @@ def connect():
         conn = psycopg.connect(conninfo)
         _set_timezone(conn, zone)
         return conn
-    with _pools_lock:   # a new pool if the timezone or DATABASE_URL changed
-        pool = _pools.get((conninfo, zone))
-        if pool is None:
+    global _pool, _pool_key
+    with _pool_lock:   # a new pool if the timezone or DATABASE_URL changed
+        if _pool_key != (conninfo, zone):
+            old = _pool
             # The timezone is set once per connection the pool opens, and each is checked
             # before use: Neon closes idle connections when it suspends.
-            pool = _pools[(conninfo, zone)] = ConnectionPool(
-                conninfo, min_size=1, max_size=8, open=True,
-                configure=lambda conn: _set_timezone(conn, zone),
-                check=ConnectionPool.check_connection)
+            _pool = ConnectionPool(conninfo, min_size=1, max_size=8, open=True,
+                                   configure=lambda conn: _set_timezone(conn, zone),
+                                   check=ConnectionPool.check_connection)
+            _pool_key = (conninfo, zone)
+            if old is not None:
+                old.close()   # its idle connections now; any in use, when they're returned
+        pool = _pool
     return pool.connection()
 
 
@@ -158,6 +163,14 @@ def fetch_job(job_id: int) -> dict:
     job = dict(zip(keys, row, strict=True))
     job["description"] = job["description"] or ""
     return job
+
+
+def record_workflow_run(conn, job_id: int, kind: str, status: str,
+                        model: str | None = None) -> None:
+    """Log a finished piece of work on a job (match, tailor, cover-letter, interview-prep):
+    batch.py reads the latest of each kind to tell which jobs are done."""
+    conn.execute("INSERT INTO workflow_runs(job_id, kind, status, model_name, finished_at) "
+                 "VALUES (%s, %s, %s, %s, now())", (job_id, kind, status, model))
 
 
 _UNSET = object()

@@ -117,7 +117,7 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
     fresh draft, unless command.fixed_by_hand(its folder) says you fixed that draft yourself: then
     it's recorded as FIXED-BY-HAND and kept."""
     from .candidate.paths import job_directory
-    from .db import connect
+    from .db import connect, record_workflow_run
 
     status, kind = command.status, command.kind
     with connect() as conn:
@@ -156,8 +156,7 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
             elif done:
                 lost += 1
             elif tried and command.fixed_by_hand and command.fixed_by_hand(folder):
-                conn.execute("INSERT INTO workflow_runs(job_id,kind,status,finished_at) "
-                             "VALUES (%s,%s,'FIXED-BY-HAND',now())", (job_id, kind))
+                record_workflow_run(conn, job_id, kind, "FIXED-BY-HAND")
                 print(f"{name}: you fixed its draft yourself, so it's kept and not drafted again")
                 done_jobs.append((name, folder))
                 continue
