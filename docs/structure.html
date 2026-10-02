@@ -155,6 +155,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>db.py</code> · <code>migrations/</code></td><td>Connection, schema migrations (applied once each, in order), job lookup, and <code>set_job_state</code>: the one place status, notes, and follow-ups are changed and history recorded.</td></tr>
   <tr><td><code>llm.py</code></td><td>One call to any OpenAI-compatible chat-completions endpoint.</td></tr>
   <tr><td><code>batch.py</code></td><td>Working through jobs two at a time: which jobs tailor-cv, cover-letter, and interview-prep still have to do, one run of each at a time, and each job's output printed in one piece; also the tracker's scoring runs.</td></tr>
+  <tr><td><code>cleanup.py</code></td><td><code>jobflow clean-up</code>: deleting the output folders of jobs you're done with, after you confirm.</td></tr>
   <tr><td><code>github.py</code></td><td>The daily import seen from your machine, with the GitHub CLI: <code>update-searches</code> publishes your searches and timezone, <code>status</code> reads back what it uses.</td></tr>
   <tr><td><code>ingest/options.py</code></td><td>Constants: allowed search values (including the countries and their cities) and how each site's actor expresses them.</td></tr>
   <tr><td><code>ingest/searches.py</code></td><td>Loads and validates your searches.</td></tr>
@@ -178,6 +179,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>candidate/cover_letter.py</code></td><td>Optional cover letter, its reviewer pass and fact check.</td></tr>
   <tr><td><code>candidate/skill_gaps.py</code></td><td>Skill-gap report from stored match scores.</td></tr>
   <tr><td><code>candidate/interview.py</code></td><td>Company research, specialist agents, HTML briefing.</td></tr>
+  <tr><td><code>candidate/pages.py</code></td><td>The HTML page skeleton the briefing and the skill-gaps report share.</td></tr>
   <tr><td><code>web/server.py</code></td><td>Local-only HTTP server for <code>jobflow web</code>; a per-start token and host check keep other websites out.</td></tr>
   <tr><td><code>web/scoring.py</code></td><td>Runs match scoring in a background thread, one run at a time, with progress for the page.</td></tr>
   <tr><td><code>web/queries.py</code></td><td>Job list, its filters, pipeline counts, job details.</td></tr>
