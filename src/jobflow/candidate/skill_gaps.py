@@ -153,6 +153,9 @@ of it to your CV.</p>{note}
 def report(output: Path | None = None) -> tuple[Path, list[dict], int]:
     """The report's file, its skills, and how many of its jobs have outdated scores."""
     gaps, scored, outdated = collect_gaps()
+    if not gaps and scored:
+        raise RuntimeError(f"No skill gaps: the best CV of each of your {scored} scored "
+                           "Interested jobs shows every requirement it lists")
     if not gaps:
         raise RuntimeError("No skill gaps to report: it reads scored Interested jobs, so score "
                            "some in the tracker first (against the CVs cvs in "
