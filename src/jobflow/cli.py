@@ -199,7 +199,8 @@ def manual(commands: dict[str, argparse.ArgumentParser], command: str | None = N
             "tailor-cv, cover-letter, and interview-prep work on two jobs at a time and skip "
             "jobs they've already done (a job that failed, whose draft failed the fact "
             "check, or whose draft, letter, or briefing was deleted is tried again); --job "
-            "ID limits them to one job (or a few), by its number in the job panel. Only "
+            "ID limits them to one job (or a few), by its number in the job panel, and "
+            "--redo with it does those jobs again even if they're done. Only "
             "one run of each can go at a time. Every command except init, help, and status "
             "brings the database tables up to date when it starts.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
