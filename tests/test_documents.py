@@ -5,6 +5,7 @@ import pytest
 from docx import Document
 
 from jobflow.candidate.documents import write_docx, write_latex, write_letter_docx
+from jobflow.candidate.interview import _safe_markup
 
 CV = {
     "name": "José Example", "headline": "Data analyst", "email": "jose@example.com", "phone": "tel:+61-400-000-000",
@@ -109,3 +110,10 @@ def test_only_the_one_or_two_cv_files_named_in_the_profile_are_used(tmp_path, mo
         chosen("~$CV_dev.docx")
     with pytest.raises(RuntimeError, match="same CV in two formats"):
         chosen("CV_dev.yaml", "CV_dev.pdf")
+
+
+def test_briefing_markup_cannot_inject_html():
+    out = _safe_markup('<script>alert(1)</script>\n'
+                       '[click](javascript:alert(1)) [x](https://ok.example/" onmouseover="bad)')
+    assert "<script>" not in out
+    assert 'href="javascript' not in out and 'onmouseover="bad' not in out

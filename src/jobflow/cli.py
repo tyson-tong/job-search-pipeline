@@ -164,7 +164,10 @@ Next:
   1. config/.env           DATABASE_URL, APIFY_TOKEN, LLM_API_KEY, LLM_MODEL, WEB_SEARCH_API_KEY
   2. cv/                   your CVs (.yaml, .tex, .docx, or .pdf); name 1 or 2 with cvs in profile.toml
   3. config/searches.toml  your job searches (it starts with example searches: replace them)
-  4. uv run jobflow web, then the Searches tab to check your searches""")
+  4. uv run jobflow web, then the Searches tab to check your searches
+  5. GitHub secrets        DATABASE_URL and APIFY_TOKEN (gh secret set NAME), then
+                           uv run jobflow update-searches to schedule the daily import
+See docs/setup.md for each step.""")
 
 
 def manual(commands: dict[str, argparse.ArgumentParser], command: str | None = None) -> str:
@@ -286,7 +289,7 @@ def run_tailor_cv(args: argparse.Namespace) -> None:
         written = add_format(folder, args.format)
         return f"wrote {written}" if written else None
 
-    for_jobs(JobCommand("interested", "tailor", "a tailored CV", tailor_one,
+    for_jobs(JobCommand("tailor-cv", "interested", "tailor", "a tailored CV", tailor_one,
                         lambda folder: any(folder.glob("CV_*_draft.yaml")), cv_fixed_by_hand,
                         add_requested_format if args.format != "pdf" else None),
              args.job, args.redo)
@@ -311,8 +314,8 @@ def run_cover_letter(args: argparse.Namespace) -> None:
                             f"{target.parent / 'COVER_LETTER_REVIEW.md'}, before you send it "
                             "with your application.")
 
-    for_jobs(JobCommand("interested", "cover-letter", "a cover letter", letter_one,
-                        lambda folder: (folder / "cover-letter.docx").exists(),
+    for_jobs(JobCommand("cover-letter", "interested", "cover-letter", "a cover letter",
+                        letter_one, lambda folder: (folder / "cover-letter.docx").exists(),
                         letter_fixed_by_hand),
              args.job, args.redo)
 
@@ -326,7 +329,7 @@ def run_interview_prep(args: argparse.Namespace) -> None:
     chosen_sources()  # a problem with cvs in config/profile.toml stops it now
     check_keys(web_search=True)
     migrate()
-    for_jobs(JobCommand("interviewing", "interview-prep", "a briefing",
+    for_jobs(JobCommand("interview-prep", "interviewing", "interview-prep", "a briefing",
                         lambda job_id: print(prepare(job_id)),
                         lambda folder: (folder / "interview-prep.html").exists()),
              args.job, args.redo)
@@ -342,12 +345,13 @@ def run_clean_up(args: argparse.Namespace) -> None:
 def run_skill_gaps(args: argparse.Namespace) -> None:
     from .candidate.skill_gaps import outdated_note, report
     from .db import migrate
+    from .text import plural
     check_keys()
     migrate()
     target, skills, outdated = report()
     if outdated:
         print(f"warning: {outdated_note(outdated)}", file=sys.stderr)
     for rank, skill in enumerate(skills[:10], 1):
-        print(f"{rank:>2}. {skill['skill']}: {skill['jobs']} job{'s' if skill['jobs'] != 1 else ''}"
-              f", weight {skill['weight']}")
+        print(f"{rank:>2}. {skill['skill']}: {plural(skill['jobs'], 'job')}, "
+              f"weight {skill['weight']}")
     print(target)

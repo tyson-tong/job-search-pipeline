@@ -101,7 +101,6 @@ def test_linkedin_is_one_run_with_a_url_per_term_and_place():
     assert parse_qs(urlsplit(urls[2]).query)["location"] == ["New Zealand"]
 
 
-
 def test_indeed_runs_per_term_and_place():
     runs = plan(searches(), "analyst", "indeed")
     assert len(runs) == 10

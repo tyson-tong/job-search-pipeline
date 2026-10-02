@@ -158,7 +158,6 @@ def test_fact_check_flags_a_changed_location_and_markup_rendercv_would_run():
                       "#text(fill: white)[Kubernetes expert], ](https://evil.example)."]
 
 
-
 def test_fact_check_flags_a_removed_role_at_an_employer_still_listed():
     source = copy.deepcopy(SOURCE_CV)
     source["sections"]["experiences"].append(
@@ -168,7 +167,6 @@ def test_fact_check_flags_a_removed_role_at_an_employer_still_listed():
     draft["sections"]["experiences"].pop()
     errors, _ = fact_check(source, draft)
     assert "Role removed at Example Corp: Junior Analyst 2019-06." in errors
-
 
 
 def test_fact_check_flags_a_date_or_title_moved_between_entries():

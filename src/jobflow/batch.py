@@ -7,16 +7,15 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, NamedTuple
 
 from .llm import LLMError
+from .text import plural
 
 # Jobs worked on at once. More would be faster, but each job makes several LLM calls
 # sending whole CVs and ads, and providers cap tokens per minute (rate-limited calls are
 # retried; see llm.complete).
 JOBS_AT_ONCE = 2
-# The command each workflow_runs kind is run by, for messages.
-COMMANDS = {"tailor": "tailor-cv"}
 
 
 def run_each(items: list, work, workers: int = JOBS_AT_ONCE) -> tuple[list, list]:
@@ -69,11 +68,12 @@ class _JobOutput:
 class JobCommand:
     """One piece of work done per job: tailor-cv, cover-letter, or interview-prep.
 
-    status: the jobs it works on; kind: its workflow_runs kind; what: what it makes, for
+    command: its name, for messages; status: the jobs it works on; kind: its workflow_runs kind; what: what it makes, for
     messages ("a tailored CV"); run_one(job_id): does one job; output_exists(folder):
     whether its marker file is still in the job's folder; fixed_by_hand(folder), if given:
     whether you fixed a draft that failed the fact check; done_one(folder), if given: runs
     for each job already done and returns a line to print, or None."""
+    command: str
     status: str
     kind: str
     what: str
@@ -96,16 +96,27 @@ def for_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = Fa
         lock.autocommit = True
         if not lock.execute("SELECT pg_try_advisory_lock(hashtext(%s))",
                             (f"jobflow {command.kind}",)).fetchone()[0]:
-            raise SystemExit(f"{COMMANDS.get(command.kind, command.kind)} is already running (in another "
+            raise SystemExit(f"{command.command} is already running (in another "
                              "terminal or window). Let it finish, then run it again for any "
                              "jobs it didn't do.")
         _run_jobs(command, only, redo)
 
 
-def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False):
-    """The jobs with the command's status (only those in `only`, if given) still to do, and those
-    done: (all jobs, to do, done as (name, folder) pairs, how many are redrafted, how many
-    are done again). A job in `only` without that status is an error. With redo, every
+class Plan(NamedTuple):
+    """What _plan_jobs found: how many jobs have the command's status, the (id, company,
+    title) of those to do, the (name, folder) of those done, and how many of those to do
+    are drafted again (their last draft failed the fact check) or done again (their output
+    was deleted)."""
+    total: int
+    todo: list[tuple[int, str | None, str]]
+    done: list[tuple[str, Path]]
+    redrafted: int
+    lost: int
+
+
+def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> Plan:
+    """The jobs with the command's status (only those in `only`, if given) still to do, and
+    those done. A job in `only` without that status is an error. With redo, every
     job is to do, done or not.
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
@@ -163,7 +174,7 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
             elif tried:
                 redrafted += 1
             todo.append((job_id, company, title))
-    return rows, todo, done_jobs, redrafted, lost
+    return Plan(len(rows), todo, done_jobs, redrafted, lost)
 
 
 def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> None:
@@ -171,14 +182,15 @@ def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = F
     at a time, printing each job's output in one piece when it finishes, and
     command.done_one for each job already done. One failure doesn't stop the rest, unless
     the LLM provider refuses every request (no credit left, a bad key)."""
-    rows, todo, done_jobs, redrafted, lost = _plan_jobs(command, only, redo)
-    again = [f"{redrafted} drafted again: the last draft failed the fact check"] if redrafted \
-        else []
-    again += [f"{lost} done again: their output was deleted"] if lost else []
-    print(f"{len(rows)} {command.status.capitalize()} job{'s' if len(rows) != 1 else ''}: "
-          f"{len(rows) - len(todo)} already have {command.what}, {len(todo)} to do"
+    plan = _plan_jobs(command, only, redo)
+    todo = plan.todo
+    again = [f"{plan.redrafted} drafted again: the last draft failed the fact check"] \
+        if plan.redrafted else []
+    again += [f"{plan.lost} done again: their output was deleted"] if plan.lost else []
+    print(f"{plural(plan.total, command.status.capitalize() + ' job')}: "
+          f"{plan.total - len(todo)} already have {command.what}, {len(todo)} to do"
           + (f" ({'; '.join(again)})" if again else ""))
-    for name, folder in done_jobs if command.done_one else []:
+    for name, folder in plan.done if command.done_one else []:
         try:
             line = command.done_one(folder)
         except Exception as exc:   # one job's files (edited by hand, say) never stop the rest

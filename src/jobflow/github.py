@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 
+from .text import plural
+
 # The daily import's workflow file, the secrets it needs, and what GitHub's workflow states
 # mean for it.
 WORKFLOW = "daily-ingest.yml"
@@ -47,7 +49,7 @@ def update_searches(dry_run: bool = False) -> None:
         raise RuntimeError(f"No searches file at {path}. Run `uv run jobflow init` first")
     text = path.read_text()
     searches = parse_config(text)
-    print(f"{path}: valid ({len(searches)} search{'es' if len(searches) != 1 else ''})")
+    print(f"{path}: valid ({plural(len(searches), 'search', 'es')})")
     # [defaults] reach every search, so the same warning can come from each: show it once.
     sys.stdout.flush()
     for warning in dict.fromkeys(w for s in searches for w in search_warnings(s)):
@@ -110,8 +112,7 @@ def _print_published_searches(text: str | None) -> dict[str, list[str]]:
                 same = local.exists() and local.read_text().strip() == text.strip()
             except RuntimeError:  # no config/profile.toml
                 same = None
-            print(f"Searches: JOBFLOW_SEARCHES, {len(searches)} search"
-                  f"{'es' if len(searches) != 1 else ''}"
+            print(f"Searches: JOBFLOW_SEARCHES, {plural(len(searches), 'search', 'es')}"
                   + ("" if same is None else " (same as config/searches.toml)" if same
                      else " (differs from config/searches.toml: run `uv run jobflow update-searches`)"))
     return used

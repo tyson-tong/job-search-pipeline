@@ -91,7 +91,7 @@ Every command except `init`, `help`, and `status` brings the database tables up 
 
 - `config/.env`, `config/profile.toml`, `config/searches.toml`, `output/`, and `cv/` are ignored by Git. Never commit them.
 - The database holds job postings, scraper history, and match results, which include short quotes from your CVs: keep it private.
-- Scoring, tailoring, cover letters, skill gaps, and interview prep send CV and job text to your LLM provider; tailoring, cover letters, and interview prep send the company name and job title to Tavily. Choose providers whose data handling you accept.
+- Scoring, tailoring, cover letters, and interview prep send CV and job text to your LLM provider, and skill gaps sends the job requirements your CVs didn't show; tailoring, cover letters, and interview prep send the company name and job title to Tavily. Choose providers whose data handling you accept.
 
 ## Development
 

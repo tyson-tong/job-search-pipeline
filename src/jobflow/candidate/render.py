@@ -15,6 +15,7 @@ import yaml
 from pypdf import PdfReader
 
 from ..llm import LLMError, complete, parse_json
+from ..text import plural
 from .cvs import job_prompt
 
 # A page (other than the last) this empty at the bottom gets a warning: RenderCV never
@@ -168,7 +169,7 @@ def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
     least relevant bullets that makes it fit. Only removal, so the fact check still holds.
     Returns the CV, the bullets cut, and the final PDF, copied to keep_pdf if given.
     cv_folder, your CV's, is where a photo it names is found."""
-    pages_text = f"{max_pages} page{'s' if max_pages != 1 else ''}"
+    pages_text = plural(max_pages, "page")
     with tempfile.TemporaryDirectory() as scratch:
         source = Path(scratch) / name
         if cv_folder:

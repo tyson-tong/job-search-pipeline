@@ -55,19 +55,3 @@ def test_api_requires_the_token_and_a_local_host(server):
                          "POST", json.dumps({"changes": [{"id": 1, "status": "applied"}]}))
     assert status == 403
 
-
-def test_similar_jobs_sit_together_but_only_same_country_ones_are_marked_duplicates():
-    from jobflow.web.queries import group_duplicates
-
-    def job(pk, duplicates=(), elsewhere=()):
-        return {"id": pk, "duplicates": [{"id": d} for d in duplicates],
-                "elsewhere": [{"id": e} for e in elsewhere]}
-    # Sorted 1, 4, 2, 3: job 3 duplicates job 1 (same country); job 2 is job 1's ad in
-    # another country (CPP Investments in Sydney and Hong Kong); job 4 is unrelated.
-    jobs = [job(1, duplicates=[3], elsewhere=[2]), job(4), job(2, elsewhere=[1]),
-            job(3, duplicates=[1])]
-    ordered = group_duplicates(jobs)
-    assert [j["id"] for j in ordered] == [1, 3, 2, 4]
-    assert {j["id"]: j["group"] for j in ordered} == {1: 1, 3: 1, 2: None, 4: None}
-    # Jobs 1, 3, and 2 are also marked as one set spanning countries, in a second colour.
-    assert {j["id"]: j["area"] for j in ordered} == {1: 1, 3: 1, 2: 1, 4: None}

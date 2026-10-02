@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from .. import settings
+from ..text import words
 from . import options as opt
 from .runs import POSTED_WITHIN, WINDOW_NAMES, site_window
-from .searches import Search, words
+from .searches import Search
 from .sources import ANNUAL_FACTOR, Posting
 
 

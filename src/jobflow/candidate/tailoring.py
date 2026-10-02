@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 import yaml
 
 from ..db import fetch_job
 from ..llm import complete, parse_json
 from ..settings import cv_directory
+from ..text import plural
 from . import documents
 from .cvs import check_cv_length, chosen_files, is_yaml, job_prompt
 from .factcheck import fact_check
@@ -25,7 +27,17 @@ from .review import record_run, revise, write_review
 DEFAULT_MAX_PAGES = 1
 
 
-def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict, str]:
+class Source(NamedTuple):
+    """The job, the CV variant to tailor from, why it was chosen, and that CV's whole
+    RenderCV document and its cv section as YAML (what the LLM sees)."""
+    job: dict
+    variant: str
+    reason: str
+    document: dict
+    cv_yaml: str
+
+
+def load_source(job_id: int, variant: str | None) -> Source:
     """The job, the CV variant to use (best-matching unless given, scoring the job first
     if needed), why it was chosen, and that CV's document and cv-section YAML.
 
@@ -63,7 +75,7 @@ def load_source(job_id: int, variant: str | None) -> tuple[dict, str, str, dict,
         raise RuntimeError(f"{name} has no cv mapping")
     source_yaml = yaml.safe_dump({"cv": source_doc["cv"]}, sort_keys=False, allow_unicode=True)
     check_cv_length(f"{name}'s cv section", source_yaml)
-    return job, variant, reason, source_doc, source_yaml
+    return Source(job, variant, reason, source_doc, source_yaml)
 
 
 def _review(job: dict, source_yaml: str, cv_yaml: str, sources: list[dict]) -> tuple[dict, str]:
@@ -175,7 +187,7 @@ def _write_checked(job: dict, source_doc: dict, draft_cv: dict, target: Path, ma
     write the YAML, RenderCV's PDF, and fmt's .docx or .tex beside it. Adds any warnings to
     `warnings`. Returns the CV as written, the bullets cut, what was rendered, and what to
     read before sending it, for the review."""
-    pages = f"{max_pages} page{'s' if max_pages != 1 else ''}"
+    pages = plural(max_pages, "page")
     cut: list[dict] = []
     try:
         draft_cv, cut, pdf = fit(job, source_doc, draft_cv, target.name, max_pages,
@@ -246,7 +258,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
     else:
         draft_cv, cut, rendered, read_it = _write_checked(job, source_doc, draft_cv, target,
                                                           max_pages, fmt, warnings)
-    pages = f"{max_pages} page{'s' if max_pages != 1 else ''}"
+    pages = plural(max_pages, "page")
     cuts = (["", f"## Bullets cut to fit {pages} ({len(cut)})", "",
              "The least relevant to this job, cut in this order. Copy one back from your "
              "source CV if you want it.", ""] + [f"- {b['label']}: {b['text']}" for b in cut]

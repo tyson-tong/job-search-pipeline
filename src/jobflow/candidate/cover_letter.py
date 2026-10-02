@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import NamedTuple
 
 from ..db import fetch_job
 from ..llm import complete, parse_json
@@ -16,7 +17,18 @@ from .review import record_run, revise, write_review
 from .tailoring import load_source
 
 
-def load_cv(job_id: int, variant: str | None) -> tuple[dict, str, str, dict | str, str]:
+class LetterSource(NamedTuple):
+    """The job, the CV variant to write from, why it was chosen, the CV to check the letter
+    against (a RenderCV YAML CV's cv mapping, or another format's text), and the CV as the
+    LLM gets it."""
+    job: dict
+    variant: str
+    reason: str
+    cv: dict | str
+    cv_text: str
+
+
+def load_cv(job_id: int, variant: str | None) -> LetterSource:
     """The job, the CV variant to write from (best-matching unless given, scoring the job
     first if needed), why it was chosen, the CV to check the letter against (a RenderCV
     YAML CV's cv mapping, or another format's text), and the CV as the LLM gets it. Only
@@ -35,11 +47,11 @@ def load_cv(job_id: int, variant: str | None) -> tuple[dict, str, str, dict | st
     if variant not in files:
         raise RuntimeError(f"Unknown CV variant {variant!r}; choose from {', '.join(files)}")
     if is_yaml(files[variant]):
-        job, _, _, source_doc, source_yaml = load_source(job_id, variant)
-        return job, variant, reason, source_doc["cv"], source_yaml
+        source = load_source(job_id, variant)
+        return LetterSource(source.job, variant, reason, source.document["cv"], source.cv_yaml)
     text = chosen_sources()[variant]
     check_cv_length(files[variant].name, text)
-    return fetch_job(job_id), variant, reason, text, text
+    return LetterSource(fetch_job(job_id), variant, reason, text, text)
 
 
 def _draft(job: dict, cv: str, sources: list[dict]) -> tuple[str, str]:

@@ -130,11 +130,6 @@ def cv_digest(source: str) -> str:
     return hashlib.sha256(source.encode()).hexdigest()
 
 
-def normalise_text(text: object) -> str:
-    """Lower-case words only, for comparing CV text regardless of punctuation or markup."""
-    return re.sub(r"[^a-z0-9+#]+", " ", str(text or "").casefold()).strip()
-
-
 def slug(value: str | None) -> str:
     value = re.sub(r"[^a-z0-9]+", "-", (value or "unknown").lower()).strip("-")
     return value[:48] or "unknown"

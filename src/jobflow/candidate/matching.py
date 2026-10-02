@@ -8,7 +8,8 @@ from .. import db
 from ..db import fetch_job
 from ..llm import complete, parse_json
 from ..settings import matching_weights
-from .cvs import check_cv_length, chosen_sources, cv_digest, job_prompt, normalise_text
+from ..text import words
+from .cvs import check_cv_length, chosen_sources, cv_digest, job_prompt
 
 # Bump when the stored assessment shape changes.
 ASSESSMENT_FORMAT = 2
@@ -36,8 +37,8 @@ MATCH_INSTRUCTIONS = (
 
 def quote_in_cv(quote: str, source: str) -> bool:
     """True if the quote appears in the CV, ignoring case, punctuation, and markup."""
-    needle = normalise_text(quote)
-    return bool(needle) and f" {needle} " in f" {normalise_text(source)} "
+    needle = words(quote)
+    return bool(needle) and f" {needle} " in f" {words(source)} "
 
 
 def normalise_requirements(raw: object, source: str) -> list[dict]:

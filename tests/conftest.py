@@ -1,3 +1,5 @@
+import socket
+
 import pytest
 
 # Settings from your shell that would let a test reach your real database, LLM provider,
@@ -12,7 +14,11 @@ REAL_SETTINGS = ("DATABASE_URL", "APIFY_TOKEN", "APIFY_MAX_WAIT_MINUTES", "JOBFL
                  # would be sent to the test server, and PGSSLMODE changes what
                  # encrypted_url does.
                  "PGHOST", "PGHOSTADDR", "PGPORT", "PGUSER", "PGPASSWORD", "PGPASSFILE",
-                 "PGDATABASE", "PGSERVICE", "PGSERVICEFILE", "PGSSLMODE", "PGOPTIONS")
+                 "PGDATABASE", "PGSERVICE", "PGSERVICEFILE", "PGSSLMODE", "PGOPTIONS",
+                 # Set in GitHub Actions, where it makes load_searches refuse a searches
+                 # file: a test reading one would pass locally and fail there.
+                 "GITHUB_ACTIONS")
+LOCAL_ADDRESSES = ("127.0.0.1", "::1", "localhost")
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +40,31 @@ def isolated_settings(monkeypatch, tmp_path_factory):
     monkeypatch.setenv("JOBFLOW_PROFILE", str(profile))
     # Nor your config/.env, with its real keys.
     monkeypatch.setattr(settings, "env_path", lambda: home / "config" / ".env")
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Refuse any connection off this machine, so a test that forgets to fake the LLM,
+    Tavily, Apify, or GitHub fails instead of sending data or spending credits. The test
+    web server is on this machine, and libpq (the database tests) doesn't go through
+    Python's sockets."""
+    connect, getaddrinfo = socket.socket.connect, socket.getaddrinfo
+
+    def local(host) -> bool:
+        return isinstance(host, str) and (host in LOCAL_ADDRESSES or host.startswith("/"))
+
+    def guarded_connect(sock, address):
+        host = address if isinstance(address, str) else address[0]
+        if sock.family != getattr(socket, "AF_UNIX", None) and not local(host):
+            raise RuntimeError(f"a test tried to reach {host} over the network")
+        return connect(sock, address)
+
+    def guarded_getaddrinfo(host, *args, **kwargs):
+        if not local(host):
+            raise RuntimeError(f"a test tried to look up {host} on the network")
+        return getaddrinfo(host, *args, **kwargs)
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
 
 
 class NullConnection:

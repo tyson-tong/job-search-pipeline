@@ -4,6 +4,7 @@ from __future__ import annotations
 import shutil
 
 from . import db, settings
+from .text import plural
 
 # The statuses whose jobs' output folders clean-up deletes, with how it names them. Only a
 # job moved to Not interested from My jobs has a folder: Inbox jobs are never worked on.
@@ -36,7 +37,7 @@ def clean_up() -> None:
     for folder, _, status in folders:
         print(f"  {CLEAN_UP_STATUSES[status]:<14}  {folder.relative_to(root)}")
     try:
-        answer = input(f"Delete these {len(folders)} folder{'s' if len(folders) != 1 else ''} "
+        answer = input(f"Delete these {plural(len(folders), 'folder')} "
                        "and everything in them? This can't be undone. (Y/N) ")
     except EOFError:
         answer = ""
@@ -54,4 +55,4 @@ def clean_up() -> None:
         deleted += 1
         if not any(folder.parent.iterdir()):
             folder.parent.rmdir()   # the company's folder, now empty
-    print(f"Deleted {deleted} folder{'s' if deleted != 1 else ''}")
+    print(f"Deleted {plural(deleted, 'folder')}")

@@ -37,13 +37,16 @@ SALARY_PERIODS = ("annual", "monthly", "hourly")
 FILTER_SUPPORT = {
     "linkedin": {"country": "search", "city": "search", "posted_within_days": "search",
                  "salary": "local", "job_types": "local", "work_arrangements": "local",
-                 "seek_classifications": "unsupported"},
+                 "seek_classifications": "unsupported", "exclude_title_terms": "local",
+                 "exclude_companies": "local"},
     "indeed": {"country": "search", "city": "search", "posted_within_days": "search",
                "salary": "local", "job_types": "local", "work_arrangements": "local",
-               "seek_classifications": "unsupported"},
+               "seek_classifications": "unsupported", "exclude_title_terms": "local",
+               "exclude_companies": "local"},
     "seek": {"country": "search", "city": "search", "posted_within_days": "search",
              "salary": "local", "job_types": "search", "work_arrangements": "search",
-             "seek_classifications": "search"},
+             "seek_classifications": "search", "exclude_title_terms": "local",
+             "exclude_companies": "local"},
 }
 
 # --- Countries and cities --------------------------------------------------------------

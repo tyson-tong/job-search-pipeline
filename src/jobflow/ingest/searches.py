@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import math
 import os
-import re
 import tomllib
 from dataclasses import dataclass
 
+from ..text import words
 from . import options as opt
 
 DEFAULTS = {"posted_within_days": 1, "max_results": 50, "sites": list(opt.SITES)}
@@ -216,12 +216,6 @@ def _number(merged: dict, key: str, where: str, whole: bool = False) -> float | 
             or not math.isfinite(value) or value < 0 or (whole and value != int(value))):
         raise SearchConfigError(f"{where}: {key} must be a {kind} of 0 or more, not {value!r}")
     return float(value)
-
-
-def words(text: str | None) -> str:
-    """Lower-case words separated by single spaces, ignoring punctuation other than + and #,
-    so "C++" and "C#" stay themselves rather than the word "c"."""
-    return re.sub(r"[^a-z0-9+#]+", " ", (text or "").casefold()).strip()
 
 
 def _title_terms(merged: dict, key: str, where: str,

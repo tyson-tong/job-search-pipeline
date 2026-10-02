@@ -376,7 +376,7 @@ def test_a_job_is_done_only_while_its_output_exists_and_its_last_draft_passed(da
         folder.mkdir(parents=True)
         (folder / "CV_dev_draft.yaml").write_text("cv: {}")
     ran, extra = [], []
-    batch._run_jobs(batch.JobCommand("interested", "tailor", "a tailored CV", ran.append,
+    batch._run_jobs(batch.JobCommand("tailor-cv", "interested", "tailor", "a tailored CV", ran.append,
                                      lambda folder: any(folder.glob("CV_*_draft.yaml")),
                                      lambda folder: folder.name.startswith("quant"),
                                      lambda folder: extra.append(folder.name)))
@@ -386,7 +386,7 @@ def test_a_job_is_done_only_while_its_output_exists_and_its_last_draft_passed(da
     assert sorted(extra) == [f"engineer-{ids['2']}", f"quant-{ids['3']}"]
     # --redo: the named job again, done or not; no other.
     ran.clear()
-    batch._run_jobs(batch.JobCommand("interested", "tailor", "a tailored CV", ran.append,
+    batch._run_jobs(batch.JobCommand("tailor-cv", "interested", "tailor", "a tailored CV", ran.append,
                                      lambda folder: True), only=[ids["2"]], redo=True)
     assert ran == [ids["2"]]
 
@@ -406,7 +406,7 @@ def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database
         conn.execute("UPDATE jobs SET status='interested' WHERE source_job_id <> '3'")
     monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
     ran = []
-    tailor = batch.JobCommand("interested", "tailor", "a tailored CV", ran.append,
+    tailor = batch.JobCommand("tailor-cv", "interested", "tailor", "a tailored CV", ran.append,
                               lambda folder: False)
     batch._run_jobs(tailor, only=[ids["2"]])
     assert ran == [ids["2"]]
@@ -608,3 +608,42 @@ def test_skill_gaps_count_the_jobs_you_are_pursuing(database, monkeypatch):
     gaps, scored, outdated = skill_gaps.collect_gaps()
     assert sorted(g["requirement"] for g in gaps) == ["Skill 1", "Skill 2", "Skill 3"]
     assert (scored, outdated) == (3, 0)
+
+
+def test_a_save_that_fails_part_way_saves_nothing(database):
+    # Saves are all or nothing: half a save would leave the page's drafts and the database
+    # disagreeing about which jobs changed.
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    job_id = _one("SELECT id FROM jobs")[0]
+    with pytest.raises(RuntimeError, match="No job"):
+        save_changes([{"id": job_id, "status": "interested", "note": "Keen"},
+                      {"id": job_id + 1000, "status": "applied"}])
+    assert _one("SELECT status FROM jobs")[0] == "new"
+    assert _one("SELECT count(*) FROM applications")[0] == 0
+    assert _one("SELECT count(*) FROM status_history")[0] == 0
+
+
+def test_a_second_run_of_a_command_stops_while_the_first_is_going(database, tmp_path,
+                                                                 monkeypatch):
+    # Two tailor-cv runs at once (in two terminals, say) would draft, and pay for, the
+    # same jobs twice and write over each other's files.
+    from jobflow import batch
+    from jobflow.candidate import paths
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    job_id = _one("SELECT id FROM jobs")[0]
+    with connect() as conn:
+        set_job_state(conn, job_id, status="interested", via="test")
+    monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
+    ran = []
+
+    def run_one(job_id):
+        with pytest.raises(SystemExit, match="tailor-cv is already running"):
+            batch.for_jobs(command)   # started while this run is going
+        ran.append(job_id)
+    command = batch.JobCommand("tailor-cv", "interested", "tailor", "a tailored CV", run_one,
+                               lambda folder: False)
+    batch.for_jobs(command)
+    assert ran == [job_id]
+    batch.for_jobs(command)   # the first run's lock went with it
+    assert ran == [job_id, job_id]

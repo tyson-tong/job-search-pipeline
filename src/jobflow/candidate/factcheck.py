@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from .cvs import normalise_text
+from ..text import words
 
 # Header fields other than these must stay exactly as in the source CV, and none may be
 # added. The headline may be reworded, so it is checked like section text instead.
@@ -76,13 +76,13 @@ def _markup(value: object) -> set[str]:
 
 
 def _role(entry: dict) -> tuple[str, str, str]:
-    return tuple(normalise_text(entry.get(f)) for f in ("company", "position", "start_date"))
+    return tuple(words(entry.get(f)) for f in ("company", "position", "start_date"))
 
 
 def _facts(entry: dict) -> tuple[str | None, ...]:
     """An entry's employer, position, dates, and education details together: a draft entry
     must match one source entry on all of them, so no date or title moves between entries."""
-    return tuple(None if entry.get(f) is None else normalise_text(entry[f]) for f in FACT_FIELDS)
+    return tuple(None if entry.get(f) is None else words(entry[f]) for f in FACT_FIELDS)
 
 
 def _sections(cv: dict) -> list:
@@ -106,19 +106,19 @@ def _entry_errors(source_cv: dict, draft_cv: dict) -> list[str]:
     """Each draft entry against the source's: facts new or altered, facts that don't belong
     together, a changed location, and numbers taken from another entry."""
     errors = []
-    source_facts = {(f, normalise_text(e[f])) for e in _entries(source_cv) for f in FACT_FIELDS
+    source_facts = {(f, words(e[f])) for e in _entries(source_cv) for f in FACT_FIELDS
                     if e.get(f) is not None}
     # Each source entry's numbers, by its facts (entries with the same facts pooled).
     source_entries: dict[tuple, set[str]] = {}
     source_locations: dict[tuple, set[str]] = {}
     for e in _entries(source_cv):
         source_entries.setdefault(_facts(e), set()).update(_numbers(e))
-        source_locations.setdefault(_facts(e), set()).add(normalise_text(e.get(LOCATION)))
+        source_locations.setdefault(_facts(e), set()).add(words(e.get(LOCATION)))
     source_numbers = _numbers(_sections(source_cv))
     for entry in _entries(draft_cv):
         altered = False
         for field in FACT_FIELDS:
-            if entry.get(field) is not None and (field, normalise_text(entry[field])) not in source_facts:
+            if entry.get(field) is not None and (field, words(entry[field])) not in source_facts:
                 errors.append(f"New or altered {field}: {entry[field]!r} is not in the source CV.")
                 altered = True
         # Each value may exist somewhere in the source, yet not together: an end date
@@ -132,7 +132,7 @@ def _entry_errors(source_cv: dict, draft_cv: dict) -> list[str]:
                           "title, or detail was moved, added, or dropped.")
             continue
         if entry.get(LOCATION) is not None \
-                and normalise_text(entry[LOCATION]) not in source_locations[facts]:
+                and words(entry[LOCATION]) not in source_locations[facts]:
             errors.append(f"Location changed ({shown}): {entry[LOCATION]!r} is not this entry's "
                           "location in the source CV.")
         # A number from another entry ("cut costs 30%" at one job, given to another). Numbers
@@ -145,21 +145,21 @@ def _entry_errors(source_cv: dict, draft_cv: dict) -> list[str]:
 
 
 def _education(entry: dict) -> tuple[str, str, str]:
-    return tuple(normalise_text(entry.get(f)) for f in ("institution", "area", "degree"))
+    return tuple(words(entry.get(f)) for f in ("institution", "area", "degree"))
 
 
 def _removed_errors(source_cv: dict, draft_cv: dict) -> list[str]:
     """Education entries, employers, and roles in the source that the draft dropped."""
     errors = []
     draft_education = {_education(e) for e in _entries(draft_cv)}
-    draft_companies = {normalise_text(e.get("company")) for e in _entries(draft_cv)}
+    draft_companies = {words(e.get("company")) for e in _entries(draft_cv)}
     # Each role, not just each employer: two roles at one employer are two entries.
     draft_roles = {_role(e) for e in _entries(draft_cv)}
     for entry in _entries(source_cv):
         if entry.get("institution") and _education(entry) not in draft_education:
             errors.append(f"Education entry removed: {entry.get('institution')} "
                           f"{entry.get('degree') or ''} {entry.get('area') or ''}".rstrip() + ".")
-        if entry.get("company") and normalise_text(entry["company"]) not in draft_companies:
+        if entry.get("company") and words(entry["company"]) not in draft_companies:
             errors.append(f"Employer removed: {entry['company']}.")
         elif entry.get("company") and _role(entry) not in draft_roles:
             role = " ".join(str(entry.get(f) or "") for f in ("position", "start_date")).strip()
@@ -172,11 +172,11 @@ def _new_terms(source_cv: dict, draft_cv: dict, job_text: str) -> list[str]:
     ad's are looked for even at the start of a sentence."""
     source_text = list(_strings(_sections(source_cv)))
     source_vocab = {t.casefold() for t in _terms(source_text, skip_first=False)}
-    source_words = set(normalise_text(" ".join(source_text)).split())
+    source_words = set(words(" ".join(source_text)).split())
     job_vocab = {t.casefold() for t in _terms([job_text], skip_first=False)}
     return sorted(t for t in _terms(_strings(_sections(draft_cv)), skip_first=True, known=job_vocab)
                   if t.casefold() not in source_vocab
-                  and not set(normalise_text(t).split()) <= source_words)
+                  and not set(words(t).split()) <= source_words)
 
 
 def fact_check(source_cv: dict, draft_cv: dict,
@@ -223,9 +223,9 @@ def check_letter(letter: str, source_cv: dict | str, job: dict,
         errors.append("Numbers not in your CV, the job ad, or the company research: "
                       + ", ".join(new_numbers) + ".")
     vocab = {t.casefold() for t in _terms(_strings(allowed), skip_first=False)} | LETTER_WORDS
-    words = set(normalise_text(" ".join(_strings(allowed))).split())
+    allowed_words = set(words(" ".join(_strings(allowed))).split())
     new_terms = sorted(t for t in _terms([letter], skip_first=True)
-                       if t.casefold() not in vocab and not set(normalise_text(t).split()) <= words)
+                       if t.casefold() not in vocab and not set(words(t).split()) <= allowed_words)
     if new_terms:
         warnings.append("Terms not in your CV, the job ad, or the company research (check each "
                         "is true): " + ", ".join(new_terms) + ".")

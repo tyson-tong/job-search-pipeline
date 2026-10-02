@@ -10,6 +10,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg_pool import ConnectionPool
 
 from .settings import LOCAL_HOSTS, timezone, today
+from .text import plural
 
 STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "offered",
             "accepted", "declined", "rejected", "withdrawn", "filtered", "archived")
@@ -149,7 +150,7 @@ def migrate() -> None:
         for then in follow_ups:
             filled = getattr(store, then)(conn)
             if filled:
-                print(f"{then}: filled in {filled} row{'s' if filled != 1 else ''}")
+                print(f"{then}: filled in {plural(filled, 'row')}")
 
 
 def fetch_job(job_id: int) -> dict:

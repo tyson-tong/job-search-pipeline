@@ -121,8 +121,11 @@ def _like_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def job_rows(conn, filters: dict) -> list[dict]:
-    """The jobs the filters find, in their sort order, with what each row shows."""
+def job_rows(conn, filters: dict, digests: dict[str, str] | None = None) -> list[dict]:
+    """The jobs the filters find, in their sort order, with what each row shows. `digests`
+    (_digests_now(), read here if not given) names the CVs whose scores count."""
+    if digests is None:
+        digests = _digests_now()
     rows = conn.execute(
         f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
                    j.status, j.salary_min, j.salary_max, best.score, best.cv_variant,
@@ -167,7 +170,7 @@ def job_rows(conn, filters: dict) -> list[dict]:
                    < %(today)s::date - %(older_than_days)s::int)
             ORDER BY {SORTS[filters['sort']]}
             LIMIT %(limit)s""",
-        {**filters, **_weights(), "variants": list(_digests_now()) or None,
+        {**filters, **_weights(), "variants": list(digests) or None,
          "pattern": f"%{_like_escape(filters['q'])}%",
          "unknown": UNKNOWN_COUNTRY,
          "fx_codes": FX_CODES, "fx_rates": FX_RATES,
@@ -188,11 +191,12 @@ def job_rows(conn, filters: dict) -> list[dict]:
 def list_jobs(filters: dict) -> list[dict]:
     """job_rows, with each job's similar jobs, outdated scores, and flags, and similar
     jobs placed together."""
+    digests = _digests_now()   # reads and hashes each CV: once per refresh
     with db.connect() as conn:
-        jobs = job_rows(conn, filters)
+        jobs = job_rows(conn, filters, digests)
         duplicates = similar_jobs(conn, [job["id"] for job in jobs])
         outdated = _outdated(conn, [job["id"] for job in jobs if job["score"] is not None],
-                             _digests_now())
+                             digests)
     now_today = today()
     for job in jobs:
         # CVs edited since this job was scored against them: its score may be out of date.

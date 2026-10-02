@@ -14,6 +14,7 @@ from pathlib import Path
 from .. import db
 from ..llm import complete, parse_json
 from ..settings import matching_weights, now, output_directory
+from ..text import plural
 from .cvs import chosen_files
 from .matching import best_variant, current_digests, stored_assessments
 from .pages import html_page
@@ -134,8 +135,8 @@ def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated
             f"<tr><td>{rank}</td><td><strong>{html.escape(s['skill'])}</strong>"
             f"<div class=meta>{html.escape(s['kind'])}</div></td>"
             f"<td>{s['jobs']} of {scored}</td><td>{s['required']} of {len(s['requirements'])}</td>"
-            f"<td>{html.escape(s['how_to_close'])}<details><summary>{len(s['requirements'])} "
-            f"requirement{'s' if len(s['requirements']) != 1 else ''}</summary><ul>{examples}</ul>"
+            f"<td>{html.escape(s['how_to_close'])}<details><summary>"
+            f"{plural(len(s['requirements']), 'requirement')}</summary><ul>{examples}</ul>"
             "</details></td></tr>")
     note = (f"<p class=meta>{ungrouped} requirement{'s were' if ungrouped != 1 else ' was'} "
             "not grouped by the LLM and are left out.</p>" if ungrouped else "")
@@ -145,7 +146,7 @@ def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated
         note += (f"<p class=meta>Only the {MAX_GAPS_SENT} requirements from your most recently "
                  f"added scored jobs are grouped; {left_out} older ones are left out.</p>")
     return html_page("Skill gaps", f"""<h1>Skill gaps</h1>
-<p class=meta>Generated {generated} from {scored} scored job{'s' if scored != 1 else ''} you're pursuing (interested,
+<p class=meta>Generated {generated} from {plural(scored, 'scored job')} you're pursuing (interested,
 applied, interviewing, or offered), using each job's
 best-matching CV of those cvs in config/profile.toml names. Ranked by how often a skill is asked for and not shown: a required
 requirement counts 1, a preferred one 0.5, halved when your CV partly shows it. "Not shown"
@@ -157,7 +158,7 @@ of it to your CV.</p>{note}
         REPORT_STYLE, width="1100px", font_size="15px")
 
 
-def report(output: Path | None = None) -> tuple[Path, list[dict], int]:
+def report() -> tuple[Path, list[dict], int]:
     """The report's file, its skills, and how many of its jobs have outdated scores."""
     gaps, scored, outdated = collect_gaps()
     if not gaps and scored:
@@ -170,7 +171,7 @@ def report(output: Path | None = None) -> tuple[Path, list[dict], int]:
     groups, model = _group(gaps)
     skills, ungrouped = rank_skills(gaps[:MAX_GAPS_SENT], groups)
     generated = now()
-    target = output or (output_directory() / f"skill-gaps-{generated:%Y-%m-%d}.html")
+    target = output_directory() / f"skill-gaps-{generated:%Y-%m-%d}.html"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(_page(skills, scored, ungrouped, model, generated.strftime("%Y-%m-%d %H:%M %Z"),
                             left_out=max(0, len(gaps) - MAX_GAPS_SENT), outdated=outdated))

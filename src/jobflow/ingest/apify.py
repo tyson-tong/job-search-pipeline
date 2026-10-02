@@ -11,6 +11,7 @@ from functools import partial
 
 from apify_client import ApifyClient
 
+from ..text import plural
 from .filters import filter_reason
 from .runs import PlannedRun, plan
 from .searches import load_searches
@@ -139,14 +140,13 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
     from .store import archive_old_jobs, prune_archived_jobs, prune_sightings
     archived = archive_old_jobs()
     if archived:
-        print(f"Archived {archived} filtered, not interested, or untriaged Inbox "
-              f"job{'s' if archived != 1 else ''}")
+        print(f"Archived {plural(archived, 'filtered, not interested, or untriaged Inbox job')}")
     pruned = prune_sightings()
     if pruned:
-        print(f"Dropped the scraped records of {pruned} sighting{'s' if pruned != 1 else ''} "
+        print(f"Dropped the scraped records of {plural(pruned, 'sighting')} "
               "over 30 days old")
     cleared = prune_archived_jobs()
     if cleared:
-        print(f"Cleared the ads of {cleared} job{'s' if cleared != 1 else ''} archived over 90 days ago")
+        print(f"Cleared the ads of {plural(cleared, 'job')} archived over 90 days ago")
     if failed:
         raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed")

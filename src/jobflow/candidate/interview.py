@@ -1,3 +1,5 @@
+"""An interview briefing for one job: company research, specialist agents, and an editor
+that merges their notes into one HTML page."""
 from __future__ import annotations
 
 import concurrent.futures
@@ -111,7 +113,7 @@ h1,h2,h3{line-height:1.25}code{background:#eef1f4;padding:0 .25em;border-radius:
 @media print{body{background:white;margin:0;max-width:none}header,main section{box-shadow:none;border:1px solid #ddd;break-inside:avoid}}"""
 
 
-def prepare(job_id: int, output: Path | None = None) -> Path:
+def prepare(job_id: int) -> Path:
     job = fetch_job(job_id)
     if job["company"]:
         sources = web_search(job["company"], job["title"])
@@ -142,7 +144,7 @@ def prepare(job_id: int, output: Path | None = None) -> Path:
     brief, model = complete("You are the final interview-brief editor. Synthesize the specialists' "
                             "notes, remove repetition, and preserve source links and uncertainty.",
                             json.dumps(synth_input, ensure_ascii=False))
-    target = output or (job_directory(job_id, job) / "interview-prep.html")
+    target = job_directory(job_id, job) / "interview-prep.html"
     target.parent.mkdir(parents=True, exist_ok=True)
     source_items = "\n".join(
         (f'<li><a href="{html.escape(_web_url(s["url"]), quote=True)}" rel="noreferrer">'
