@@ -407,6 +407,6 @@ def test_a_cv_photo_is_copied_beside_the_draft_and_never_outside_it(tmp_path):
     (cv_folder / "img" / "me.png").write_bytes(b"png")
     copy_photo({"photo": "img/me.png"}, cv_folder, draft_folder)
     assert (draft_folder / "img" / "me.png").read_bytes() == b"png"
-    (tmp_path / "secret.png").write_bytes(b"x")
-    copy_photo({"photo": "../../../secret.png"}, cv_folder / "img", draft_folder)
-    assert not (tmp_path / "out" / "secret.png").exists()
+    (tmp_path / "outside.png").write_bytes(b"x")   # found, but its copy would leave the folder
+    copy_photo({"photo": "../outside.png"}, cv_folder, draft_folder)
+    assert not (draft_folder.parent / "outside.png").exists()
