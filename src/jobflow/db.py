@@ -45,9 +45,10 @@ def encrypted_url(url: str) -> str:
     return url
 
 
-# The tracker's pool of open connections (see use_pool), by connection string: opening a
-# connection to a database on another continent costs a TLS handshake every time.
-_pools: dict[str, ConnectionPool] = {}
+# The tracker's pools of open connections (see use_pool), by connection string and
+# timezone: opening a connection to a database on another continent costs a TLS handshake
+# every time.
+_pools: dict[tuple[str, str], ConnectionPool] = {}
 _pooling = False
 _pools_lock = threading.Lock()
 
@@ -58,6 +59,11 @@ def use_pool() -> None:
     _pooling = True
 
 
+def _set_timezone(conn, zone: str) -> None:
+    conn.execute("SELECT set_config('TimeZone', %s, false)", (zone,))
+    conn.commit()
+
+
 def connect():
     """A connection (used as `with connect() as conn:`, which commits on success) in
     settings.timezone(), so the dates the database works out (a timestamp's day) and the
@@ -66,18 +72,19 @@ def connect():
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL is required")
-    # Set when connecting, rather than by a statement after: one round trip fewer.
-    options = conninfo_to_dict(url).get("options") or ""
-    conninfo = make_conninfo(encrypted_url(url),
-                             options=f"{options} -c TimeZone={timezone().key}".strip())
+    conninfo, zone = encrypted_url(url), timezone().key
     if not _pooling:
-        return psycopg.connect(conninfo)
+        conn = psycopg.connect(conninfo)
+        _set_timezone(conn, zone)
+        return conn
     with _pools_lock:   # a new pool if the timezone or DATABASE_URL changed
-        pool = _pools.get(conninfo)
+        pool = _pools.get((conninfo, zone))
         if pool is None:
-            # Checked before each use: Neon closes idle connections when it suspends.
-            pool = _pools[conninfo] = ConnectionPool(
+            # The timezone is set once per connection the pool opens, and each is checked
+            # before use: Neon closes idle connections when it suspends.
+            pool = _pools[(conninfo, zone)] = ConnectionPool(
                 conninfo, min_size=1, max_size=8, open=True,
+                configure=lambda conn: _set_timezone(conn, zone),
                 check=ConnectionPool.check_connection)
     return pool.connection()
 
