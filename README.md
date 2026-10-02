@@ -96,7 +96,7 @@ Every command except `init`, `help`, and `status` brings the database tables up 
 ## Development
 
 ```
-uv sync --extra test
+uv sync --group dev
 uv run pytest
 uv run ruff check    # unused imports, likely bugs, import order
 ```
