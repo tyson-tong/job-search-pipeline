@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import sys
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, NamedTuple
+from typing import NamedTuple, TextIO
 
 from .llm import LLMError
 from .text import plural
@@ -190,7 +191,9 @@ def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = F
     print(f"{plural(plan.total, command.status.capitalize() + ' job')}: "
           f"{plan.total - len(todo)} already have {command.what}, {len(todo)} to do"
           + (f" ({'; '.join(again)})" if again else ""))
-    for name, folder in plan.done if command.done_one else []:
+    for name, folder in plan.done:
+        if command.done_one is None:
+            break
         try:
             line = command.done_one(folder)
         except Exception as exc:   # one job's files (edited by hand, say) never stop the rest
@@ -203,7 +206,8 @@ def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = F
 
     def one(row) -> None:
         job_id, company, title = row
-        out.held.lines = err.held.lines = lines = []
+        lines: list[tuple[TextIO, str]] = []
+        out.held.lines = err.held.lines = lines
         print(f"\n#{job_id} {title} ({company or 'unknown employer'})")
         try:
             command.run_one(job_id)

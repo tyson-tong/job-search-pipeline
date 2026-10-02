@@ -43,10 +43,13 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
     run = None
     try:
         # Apify stops the run itself at max_wait too, so it can't keep charging if this
-        # process is killed first (the daily GitHub job is stopped at 180 minutes).
+        # process is killed first (the daily GitHub job is stopped at 180 minutes). The
+        # cost cap only binds a pay-per-event actor and the item cap a pay-per-result one,
+        # so both are sent: an actor that changes its pricing is still capped.
         run = client.actor(planned.actor).call(
             run_input=planned.run_input, wait_duration=max_wait, run_timeout=max_wait,
-            logger=None, max_total_charge_usd=Decimal(str(cap)) if cap else None)
+            logger=None, max_items=planned.max_results,
+            max_total_charge_usd=Decimal(str(cap)) if cap else None)
         if run is None:
             raise RuntimeError("Apify returned no run")
         if run.status != "SUCCEEDED":
@@ -137,7 +140,7 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
         thread.start()
     for thread in threads:
         thread.join()
-    from .store import archive_old_jobs, prune_archived_jobs, prune_sightings
+    from .upkeep import archive_old_jobs, prune_archived_jobs, prune_sightings
     archived = archive_old_jobs()
     if archived:
         print(f"Archived {plural(archived, 'filtered, not interested, or untriaged Inbox job')}")

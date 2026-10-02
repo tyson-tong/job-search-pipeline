@@ -11,14 +11,6 @@ from .runs import POSTED_WITHIN, WINDOW_NAMES, plan
 from .searches import SearchConfigError, load_searches
 
 
-def _run_max_results(run_input: dict) -> int:
-    """The most results one run can return, from the input the actor is actually sent
-    (Seek caps maxResults below what a search may ask for)."""
-    if "urls" in run_input:   # LinkedIn: a cap per search URL
-        return run_input["limitPerSource"] * len(run_input["urls"])
-    return run_input.get("maxResults") or run_input["count"]
-
-
 def describe_searches() -> dict:
     """Your searches and every planned Apify run, or why the config can't be used.
     Nothing is run and nothing is charged."""
@@ -40,13 +32,13 @@ def describe_searches() -> dict:
     for search, search_runs in groupby(runs, key=lambda r: r.search):
         sites = []
         for site, site_runs in groupby(search_runs, key=lambda r: r.site):
-            site_runs = list(site_runs)
-            per_run = _run_max_results(site_runs[0].run_input)
-            total_results += per_run * len(site_runs)
-            sites.append({"site": site, "actor": site_runs[0].actor, "max_results_per_run": per_run,
+            listed = list(site_runs)
+            per_run = listed[0].max_results
+            total_results += per_run * len(listed)
+            sites.append({"site": site, "actor": listed[0].actor, "max_results_per_run": per_run,
                           "local_filters": local_filters(site, search),
-                          "notes": list(dict.fromkeys(site_runs[0].notes)),
-                          "runs": [{"label": r.label, "input": r.run_input} for r in site_runs]})
+                          "notes": list(dict.fromkeys(listed[0].notes)),
+                          "runs": [{"label": r.label, "input": r.run_input} for r in listed]})
         described.append({
             "name": search.name, "terms": list(search.terms),
             "locations": {c: list(cities) for c, cities in search.locations.items()},

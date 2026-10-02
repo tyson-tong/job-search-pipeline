@@ -9,5 +9,5 @@ CREATE TABLE IF NOT EXISTS job_observations (
 );
 
 -- Migration ID: 02
--- A sighting's scraped record is dropped after a while (see store.prune_sightings).
+-- A sighting's scraped record is dropped after a while (see upkeep.prune_sightings).
 ALTER TABLE job_observations ALTER COLUMN observed_json DROP NOT NULL;

@@ -4,6 +4,7 @@ beside the draft; and the record of the run."""
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from .. import db
@@ -46,7 +47,7 @@ def revise(draft, checked: tuple[list[str], list[str]], review, revision_of, che
 
 def write_review(path: Path, title: str, intro: list[str], notes: list[str],
                  errors: list[str], warnings: list[str], critique: list[str], what: str,
-                 extra: list[str] = ()) -> None:
+                 extra: Sequence[str] = ()) -> None:
     """The review, as Markdown at `path` and a .docx copy beside it: the intro lines, the
     notes, the fact-check errors and warnings, the reviewer's critique of the first draft
     (`what`, the CV or the letter, is what the reviewer revised), then any `extra` lines."""

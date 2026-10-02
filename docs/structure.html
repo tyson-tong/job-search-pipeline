@@ -165,7 +165,10 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>ingest/filters.py</code></td><td>The filters a site can't apply, applied after import: excluded title terms and employers, salary, job type, work arrangement, widened date windows.</td></tr>
   <tr><td><code>ingest/apify.py</code></td><td>Runs each planned search on Apify and hands the results to the store.</td></tr>
   <tr><td><code>ingest/sources.py</code></td><td>Converts LinkedIn, Indeed, and Seek records to one <code>Posting</code> shape.</td></tr>
-  <tr><td><code>ingest/store.py</code></td><td>Saving jobs and sightings, merging copies, run records, filtering the Inbox after a searches change, archiving, and pruning old records.</td></tr>
+  <tr><td><code>ingest/store.py</code></td><td>Saving jobs and sightings, merging copies, and run records.</td></tr>
+  <tr><td><code>ingest/refilter.py</code></td><td>A searches change applied to jobs already saved: filtering Inbox jobs, and bringing back Filtered ones.</td></tr>
+  <tr><td><code>ingest/upkeep.py</code></td><td>Archiving jobs you're done with, and pruning scraped records no longer needed.</td></tr>
+  <tr><td><code>ingest/backfill.py</code></td><td>Filling in a new table or column once, when its migration is applied.</td></tr>
   <tr><td><code>ingest/dedupe.py</code></td><td>The rules for recognising one job in several postings: links without tracking parameters, employer and title keys, fingerprints, and how alike two ads are.</td></tr>
   <tr><td><code>ingest/similar.py</code></td><td>Similar jobs for the tracker: postings the merge kept apart that may be one role, and one ad in several countries.</td></tr>
   <tr><td><code>ingest/report.py</code></td><td>The tracker's Searches tab: your searches, their planned runs, and allowed values.</td></tr>
@@ -186,7 +189,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>web/scoring.py</code></td><td>Runs match scoring in a background thread, one run at a time, with progress for the page.</td></tr>
   <tr><td><code>web/queries.py</code></td><td>Job list, its filters, pipeline counts, job details.</td></tr>
   <tr><td><code>web/saving.py</code> · <code>web/export.py</code></td><td>Validated all-or-nothing saves that never overwrite a change made elsewhere; the CSV export.</td></tr>
-  <tr><td><code>web/static/index.html</code> · <code>app.js</code> · <code>searches.js</code></td><td>The page: Inbox, My jobs, Filtered, and Not interested tabs, job panel, unsaved-changes tracking (<code>app.js</code>), and the Searches tab (<code>searches.js</code>). Its script is only in those files, so the page's security policy lets no other script run.</td></tr>
+  <tr><td><code>web/static/index.html</code> · <code>common.js</code> · <code>detail.js</code> · <code>app.js</code> · <code>searches.js</code></td><td>The page: what its scripts share, including unsaved-changes tracking (<code>common.js</code>), the job panel (<code>detail.js</code>), the Inbox, My jobs, Filtered, and Not interested tabs (<code>app.js</code>), and the Searches tab (<code>searches.js</code>). Its script is only in those files, so the page's security policy lets no other script run.</td></tr>
 </table></div>
 
 <h2 id="searches">From searches to site inputs</h2>
@@ -296,8 +299,8 @@ applications      42   notes "2026-09-25: Applied via referral"</div>
 <h2 id="commands">Commands</h2>
 <div class="table-wrap"><table>
   <tr><th>Command</th><th>Does</th><th>Module</th></tr>
-  <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import (<code>--posted-within-days</code> widens every search's window for one catch-up import)</td><td>ingest/apify.py → store.py</td></tr>
-  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables, filter Inbox jobs from excluded employers or matching excluded title terms, bring back Filtered jobs the searches would now keep</td><td>github.py → ingest/store.py</td></tr>
+  <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import (<code>--posted-within-days</code> widens every search's window for one catch-up import)</td><td>ingest/apify.py → store.py, upkeep.py</td></tr>
+  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables, filter Inbox jobs from excluded employers or matching excluded title terms, bring back Filtered jobs the searches would now keep</td><td>github.py → ingest/refilter.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv</code></td><td>Reviewed, fact-checked CVs for Interested jobs (or only those <code>--job ID</code> names; <code>--redo</code> does them again)</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow cover-letter</code></td><td>Optional reviewed, fact-checked cover letters for Interested jobs (or only those <code>--job ID</code> names; <code>--redo</code> does them again)</td><td>candidate/cover_letter.py</td></tr>

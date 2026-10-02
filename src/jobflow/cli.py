@@ -17,9 +17,12 @@ def check_variant(variant: str | None, yaml_only: bool) -> str | None:
     of its CVs (for tailor-cv, none that is a RenderCV YAML CV)."""
     from .candidate.cvs import chosen_files, is_yaml
 
+    if variant is None:
+        chosen_files()   # still check the setting before any job is tried
+        return None
     choices = {name: path for name, path in chosen_files().items() if is_yaml(path) or not yaml_only}
     by_file = {path.name: name for name, path in choices.items()}
-    if variant is not None and variant not in choices and variant not in by_file:
+    if variant not in choices and variant not in by_file:
         raise RuntimeError(f"No {'RenderCV YAML ' if yaml_only else ''}CV {variant!r} among "
                            f"those cvs in config/profile.toml names; choose from "
                            f"{', '.join(by_file) or 'none'}")
@@ -147,6 +150,10 @@ def main() -> None:
         raise SystemExit(f"error: can't use the database (check DATABASE_URL): {exc}") from None
     except requests.RequestException as exc:
         raise SystemExit(f"error: a web request failed (check your connection): {exc}") from None
+    except KeyboardInterrupt:
+        # Ctrl+C: what was saved stays saved, and an open database transaction is rolled back.
+        print("\nStopped.", file=sys.stderr)
+        raise SystemExit(130) from None
 
 
 def init() -> None:
@@ -238,7 +245,7 @@ def run_status(args: argparse.Namespace) -> None:
 
 def run_web(args: argparse.Namespace) -> None:
     from .db import migrate, use_pool
-    from .ingest.store import archive_old_jobs, prune_archived_jobs, prune_sightings
+    from .ingest.upkeep import archive_old_jobs, prune_archived_jobs, prune_sightings
     from .web.server import serve
     migrate()
     use_pool()   # the page makes several queries a refresh

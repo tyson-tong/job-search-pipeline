@@ -61,7 +61,7 @@ def chosen_files() -> dict[str, Path]:
         raise RuntimeError(f"cvs in config/profile.toml names {', '.join(unknown)}, {what} "
                            f"in {cv_directory()} (give the exact file name, in one of "
                            f"{', '.join(CV_FORMATS)}); your CV files are: {found}")
-    files = {}
+    files: dict[str, Path] = {}
     for name in names:
         path = cv_directory() / name
         if variant_name(path) in files:
@@ -100,7 +100,7 @@ def cv_text(path: Path, mtime_ns: int = 0, size: int = 0) -> str:
     elif suffix == ".docx":
         from docx import Document
 
-        doc = Document(path)
+        doc = Document(str(path))
         lines = [p.text for p in doc.paragraphs]
         lines += [cell.text for table in doc.tables for row in table.rows for cell in row.cells]
         text = "\n".join(lines)

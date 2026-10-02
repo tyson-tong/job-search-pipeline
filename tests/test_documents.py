@@ -99,14 +99,14 @@ def test_only_the_one_or_two_cv_files_named_in_the_profile_are_used(tmp_path, mo
         monkeypatch.setattr(cvs, "chosen_cvs", lambda: list(names))
         return {variant: path.name for variant, path in cvs.chosen_files().items()}
 
-    with pytest.raises(RuntimeError, match='set cvs = \\["CV_dev.pdf", "CV_dev.yaml"\\]'):
+    with pytest.raises(RuntimeError, match=re.escape('set cvs = ["CV_dev.pdf", "CV_dev.yaml"]')):
         chosen()
     assert chosen("CV_strat.yaml", "CV_dev.pdf") == {"strat": "CV_strat.yaml", "dev": "CV_dev.pdf"}
     with pytest.raises(RuntimeError, match="names 3 CVs"):
         chosen("CV_dev.yaml", "CV_harvard.yaml", "CV_strat.yaml")
     with pytest.raises(RuntimeError, match="names dev, which isn't a CV file"):
         chosen("dev")
-    with pytest.raises(RuntimeError, match="names ~\\$CV_dev.docx, which isn't"):
+    with pytest.raises(RuntimeError, match=re.escape("names ~$CV_dev.docx, which isn't")):
         chosen("~$CV_dev.docx")
     with pytest.raises(RuntimeError, match="same CV in two formats"):
         chosen("CV_dev.yaml", "CV_dev.pdf")

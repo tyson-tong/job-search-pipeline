@@ -43,7 +43,7 @@ def _technical(token: str) -> bool:
     return bool(re.search(r"[+#]|\w\.\w|^.+[A-Z]", token))
 
 
-def _terms(texts, skip_first: bool, known: set[str] = frozenset()) -> set[str]:
+def _terms(texts, skip_first: bool, known: set[str] | frozenset[str] = frozenset()) -> set[str]:
     """Capitalised or technical tokens (e.g. AWS, Node.js, C++). With skip_first, the
     first word of a sentence, which is capitalised anyway, counts only if it is technical,
     starts a list ("Kubernetes, Python, SQL"), or is one of `known` (casefolded terms, such
@@ -75,7 +75,7 @@ def _markup(value: object) -> set[str]:
     return {m.group(0) for text in _strings(value) for m in _MARKUP.finditer(text)}
 
 
-def _role(entry: dict) -> tuple[str, str, str]:
+def _role(entry: dict) -> tuple[str, ...]:
     return tuple(words(entry.get(f)) for f in ("company", "position", "start_date"))
 
 
@@ -144,7 +144,7 @@ def _entry_errors(source_cv: dict, draft_cv: dict) -> list[str]:
     return errors
 
 
-def _education(entry: dict) -> tuple[str, str, str]:
+def _education(entry: dict) -> tuple[str, ...]:
     return tuple(words(entry.get(f)) for f in ("institution", "area", "degree"))
 
 

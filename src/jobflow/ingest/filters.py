@@ -95,7 +95,7 @@ def filter_reason(posting: Posting, search: Search, site: str,
         if posting.posted_at < oldest:
             return (f"posted {posting.posted_at.isoformat()}, older than "
                     f"{WINDOW_NAMES[search.posted_within_days]}")
-    if "salary" in active and posting.salary_min is not None:
+    if "salary" in active and posting.salary_min is not None and posting.salary_max is not None:
         factor = ANNUAL_FACTOR[search.salary_period]
         low = search.salary_min * factor if search.salary_min is not None else None
         high = search.salary_max * factor if search.salary_max is not None else None

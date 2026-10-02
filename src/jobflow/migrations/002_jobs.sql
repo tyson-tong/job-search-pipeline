@@ -36,7 +36,7 @@ CREATE INDEX IF NOT EXISTS jobs_description_fts_idx
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS country TEXT;
 
 -- Migration ID: 03
--- An archived job's scraped record is cleared after a while (see store.prune_archived_jobs).
+-- An archived job's scraped record is cleared after a while (see upkeep.prune_archived_jobs).
 ALTER TABLE jobs ALTER COLUMN raw_json DROP NOT NULL;
 
 -- Migration ID: 04

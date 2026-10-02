@@ -11,7 +11,8 @@ from psycopg.conninfo import make_conninfo
 
 from jobflow.db import connect, migrate, migration_files, set_job_state
 from jobflow.ingest import similar
-from jobflow.ingest.store import archive_old_jobs, prune_archived_jobs, prune_sightings, save_run
+from jobflow.ingest.store import save_run
+from jobflow.ingest.upkeep import archive_old_jobs, prune_archived_jobs, prune_sightings
 from jobflow.web.queries import list_jobs, parse_filters
 from jobflow.web.saving import Conflict, save_changes
 
@@ -416,8 +417,8 @@ def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database
 
 
 def test_update_searches_filters_the_inbox_but_not_a_job_moved_back_from_filtered(database):
+    from jobflow.ingest.refilter import exclude_inbox_jobs
     from jobflow.ingest.searches import parse_config
-    from jobflow.ingest.store import exclude_inbox_jobs
 
     search = parse_config('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
                           'exclude_title_terms = ["Intern"]\n')[0]
@@ -443,8 +444,8 @@ def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
     from functools import partial
 
     from jobflow.ingest.filters import filter_reason
+    from jobflow.ingest.refilter import exclude_inbox_jobs, restore_filtered_jobs
     from jobflow.ingest.searches import parse_config
-    from jobflow.ingest.store import exclude_inbox_jobs, restore_filtered_jobs
 
     base = ('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
             'salary_min = 100000\n')
@@ -469,8 +470,8 @@ def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
 
 
 def test_a_job_whose_search_was_renamed_is_judged_by_the_defaults(database):
+    from jobflow.ingest.refilter import exclude_inbox_jobs
     from jobflow.ingest.searches import defaults_search, parse_config
-    from jobflow.ingest.store import exclude_inbox_jobs
 
     text = ('[defaults]\nexclude_title_terms = ["Intern"]\n'
             '[[search]]\nname = "renamed"\nterms = ["a"]\nlocations = { AU = [] }\n')
@@ -483,8 +484,8 @@ def test_a_job_whose_search_was_renamed_is_judged_by_the_defaults(database):
 def test_a_renamed_search_brings_back_only_jobs_its_defaults_can_judge(database):
     # [defaults] has no salary minimum: judged by it, a job filtered for its salary would
     # come back to the Inbox though the search that kept it out still would.
+    from jobflow.ingest.refilter import restore_filtered_jobs
     from jobflow.ingest.searches import defaults_search, parse_config
-    from jobflow.ingest.store import restore_filtered_jobs
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN, {**LINKEDIN, "id": "2", "title": "Quant",
                                                    "descriptionText": "Price options."}],
@@ -647,3 +648,16 @@ def test_a_second_run_of_a_command_stops_while_the_first_is_going(database, tmp_
     assert ran == [job_id]
     batch.for_jobs(command)   # the first run's lock went with it
     assert ran == [job_id, job_id]
+
+
+def test_a_site_failing_while_others_succeed_is_flagged(database):
+    # The header only warned when no import had succeeded at all, so a site failing every
+    # day (all of them, once the Apify account hit its monthly limit) went unseen.
+    from jobflow.ingest.store import record_failed_run
+    from jobflow.web.queries import summary
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    record_failed_run("seek:a", "r2", None, "FAILED", "Monthly usage hard limit exceeded")
+    save_run("seek:a", "r3", "d3", [SEEK], country="AU")
+    assert summary()["failed_runs"] == [{"site": "seek", "failed": 1, "total": 2,
+                                         "error": "Monthly usage hard limit exceeded"}]

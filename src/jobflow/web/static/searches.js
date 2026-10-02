@@ -1,7 +1,7 @@
 "use strict";
 // The Searches tab: your config/searches.toml, the Apify runs it plans, and the allowed
-// values. Loaded after app.js, whose helpers (el, fill, toast, refresh, copyCommand, state,
-// SITE_NAMES) it uses; app.js calls renderSearches.
+// values. Loaded last; uses common.js's helpers (el, fill, toast, copyCommand, state,
+// SITE_NAMES) and app.js's refresh, which calls renderSearches.
 
 const siteName = (s) => SITE_NAMES[s] || s;
 function renderSearches() {

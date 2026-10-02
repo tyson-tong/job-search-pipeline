@@ -155,6 +155,12 @@ def _period(text: str, amounts: tuple[int, int], amount: float,
     return _period_from_amount(amount, country)
 
 
+def _next_word_end(text: str, start: int) -> int:
+    """Where the word after `start` (and the space before it) ends."""
+    following = re.match(r"\s*\w*", text[start:])
+    return start + (following.end() if following else 0)
+
+
 def _annual(low: float, high: float, period: str) -> tuple[float, float] | None:
     factor = ANNUAL_FACTOR[period]
     return None if high * factor > MAX_ANNUAL else (low * factor, high * factor)
@@ -182,9 +188,11 @@ def parse_salary(value: object, country: str | None = None) -> tuple[float, floa
     text = value.replace("\u2013", "-").replace("\u2014", "-")
     matches = list(re.finditer(r"(?P<cur>[$£€]|\b(?:A|AU|NZ|S|US|HK)\$)?\s*"
                                r"(?P<num>\d[\d,]*(?:\.\d+)?)\s*(?P<k>[kK]\b)?(?P<pct>\s*%)?", text))
-    amounts, skipped, spans = [], [], []
+    amounts = []
+    skipped: list[re.Match[str]] = []
+    spans: list[tuple[int, int]] = []
     has_currency = any(m["cur"] for m in matches)
-    kept = None
+    kept: re.Match[str] | None = None
     for m in matches:
         # Once a currency is marked, an unmarked number is kept only as the top of a range
         # ("$120,000 - 140,000"); others are things like "2 weeks" or "11.5% super".
@@ -196,8 +204,8 @@ def parse_salary(value: object, country: str | None = None) -> tuple[float, floa
             continue
         amount = float(m["num"].replace(",", "")) * (1000 if m["k"] else 1)
         # "$60 - $80k": the k is the whole range's, not just its top.
-        if range_end and m["k"] and not kept["k"] and amounts and spans[-1] == kept.span() \
-                and amounts[-1] < 1000:
+        if range_end and kept is not None and m["k"] and not kept["k"] and amounts \
+                and spans[-1] == kept.span() and amounts[-1] < 1000:
             amounts[-1] *= 1000
         if amount >= 5:
             amounts.append(amount)
@@ -206,7 +214,7 @@ def parse_salary(value: object, country: str | None = None) -> tuple[float, floa
     if not amounts:
         return None
     # A skipped number takes its next word with it, so "2 weeks leave" doesn't read as weekly pay.
-    ignore = [(m.start(), m.end() + len(re.match(r"\s*\w*", text[m.end():])[0])) for m in skipped]
+    ignore = [(m.start(), _next_word_end(text, m.end())) for m in skipped]
     period = _period(text, (spans[0][0], spans[-1][1]), max(amounts), ignore, country)
     return _annual(min(amounts), max(amounts), period)
 
@@ -267,6 +275,7 @@ def _indeed(item: dict, country: str | None) -> Posting:
     site = {"gb": "uk"}.get(site, site)
     host = "www.indeed.com" if site in ("", "us") else f"{site}.indeed.com"
     link = _text(_get(item, "viewJobLink", "url", "link"))
+    url: str | None
     if job_id:
         url = f"https://{host}/viewjob?jk={job_id}"
     else:

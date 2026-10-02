@@ -138,10 +138,16 @@ def _wait(response: requests.Response, attempt: int) -> float:
 
 
 def parse_json(content: str) -> dict:
+    """The JSON object in a reply, also when the model wrapped it in prose or a code fence.
+    LLMError if there is none: every prompt asks for an object."""
     try:
-        return json.loads(content)
+        parsed = json.loads(content)
     except json.JSONDecodeError:
         left, right = content.find("{"), content.rfind("}")
-        if left < 0 or right <= left:
-            raise
-        return json.loads(content[left:right + 1])
+        try:
+            parsed = json.loads(content[left:right + 1]) if 0 <= left < right else None
+        except json.JSONDecodeError:
+            parsed = None
+    if not isinstance(parsed, dict):
+        raise LLMError("The LLM's reply wasn't the JSON object asked for")
+    return parsed

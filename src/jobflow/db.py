@@ -17,7 +17,7 @@ STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "o
 # Finished with, so no follow-up is due. "filtered" is set on import, or by
 # update-searches, when a job fails a search's local filters (see jobs.filter_reason);
 # "archived" when a filtered, not interested, or untriaged Inbox job is old enough (see
-# archive_old_jobs in ingest/store.py).
+# archive_old_jobs in ingest/upkeep.py).
 CLOSED_STATUSES = ["not_interested", "accepted", "declined", "rejected", "withdrawn", "filtered",
                    "archived"]
 # Statuses meaning you've applied; the first time a job reaches one sets applied_at.
@@ -33,9 +33,9 @@ def encrypted_url(url: str) -> str:
     ("prefer") quietly connects unencrypted when the server (or anyone in between) allows
     it; so a missing sslmode becomes require, and a weaker one is refused."""
     params = conninfo_to_dict(url)
-    hosts = (params.get("host") or os.environ.get("PGHOST") or "").split(",")
+    hosts = str(params.get("host") or os.environ.get("PGHOST") or "").split(",")
     # libpq connects over TCP to a hostaddr whatever the host says, so one counts too.
-    addrs = (params.get("hostaddr") or os.environ.get("PGHOSTADDR") or "").split(",")
+    addrs = str(params.get("hostaddr") or os.environ.get("PGHOSTADDR") or "").split(",")
     # No host, or a folder, is a Unix socket on this machine.
     if (all(not host or host.startswith("/") or host in LOCAL_HOSTS for host in hosts)
             and all(not addr or addr in LOCAL_HOSTS for addr in addrs)):
@@ -100,7 +100,7 @@ def connect():
 
 def migration_files() -> list[tuple[str, str, str | None]]:
     """Return (file-scoped migration key, SQL, follow-up) triples in file and local-ID order.
-    A block's follow-up is the function in ingest/store.py its "-- Then: NAME" comment
+    A block's follow-up is the function in ingest/backfill.py its "-- Then: NAME" comment
     names, run once after the block is first applied (to fill in a new table or column),
     or None."""
     folder = resources.files("jobflow") / "migrations"
@@ -127,8 +127,9 @@ def migration_files() -> list[tuple[str, str, str | None]]:
 
 
 def migrate() -> None:
-    from .ingest import store
+    from .ingest.backfill import FOLLOW_UPS
 
+    done: list[str] = []   # printed once committed, so a failure part-way never claims any
     with connect() as conn:
         # Two commands starting at once (the daily import and yours) would otherwise both
         # apply a new migration; the second waits here until the first has committed.
@@ -144,13 +145,15 @@ def migrate() -> None:
             with conn.transaction():
                 conn.execute(sql)
                 conn.execute("INSERT INTO schema_migrations(name) VALUES (%s)", (name,))
-            print(f"Applied migration {name}")
+            done.append(f"Applied migration {name}")
             follow_ups += [then] if then else []
         # Once every table exists: a follow-up may read tables created by later files.
         for then in follow_ups:
-            filled = getattr(store, then)(conn)
+            filled = FOLLOW_UPS[then](conn)
             if filled:
-                print(f"{then}: filled in {plural(filled, 'row')}")
+                done.append(f"{then}: filled in {plural(filled, 'row')}")
+    for line in done:
+        print(line)
 
 
 def fetch_job(job_id: int) -> dict:

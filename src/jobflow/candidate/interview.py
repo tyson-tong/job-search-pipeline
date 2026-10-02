@@ -94,13 +94,13 @@ def _safe_markup(text: str) -> str:
         if heading:
             close_list()
             chunks.append("<h3>" + _inline(heading[1]) + "</h3>")
-        elif bullet or numbered:
+        elif item := bullet or numbered:
             kind = "ul" if bullet else "ol"
             if open_list != kind:
                 close_list()
                 chunks.append(f"<{kind}>")
                 open_list = kind
-            chunks.append("<li>" + _inline((bullet or numbered)[1]) + "</li>")
+            chunks.append("<li>" + _inline(item[1]) + "</li>")
         else:
             close_list()
             chunks.append("<p>" + _inline(stripped) + "</p>")

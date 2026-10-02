@@ -35,8 +35,10 @@ def make_handler(token: str, port: int):
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
     static = resources.files("jobflow.web") / "static"
     page = (static / "index.html").read_text().replace("__JOBFLOW_TOKEN__", token)
-    # The page's scripts, by path: app.js, and searches.js for the Searches tab.
-    scripts = {f"/{name}": (static / name).read_bytes() for name in ("app.js", "searches.js")}
+    # The page's scripts, by path: what they share, the job panel, the job list, and the
+    # Searches tab.
+    scripts = {f"/{name}": (static / name).read_bytes()
+               for name in ("common.js", "detail.js", "app.js", "searches.js")}
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "jobflow"
@@ -77,13 +79,13 @@ def make_handler(token: str, port: int):
                 return False
             return True
 
-        def do_GET(self) -> None:  # noqa: N802 - name from the base class
+        def do_GET(self) -> None:
             url = urlsplit(self.path)
             query = parse_qs(url.query)
             if url.path == "/":
                 if self.headers.get("Host") not in allowed_hosts:
                     return self._error(HTTPStatus.FORBIDDEN, "Unexpected host")
-                # Scripts only from app.js and searches.js, so text that reached the page (a
+                # Scripts only from the page's own .js files, so text that reached the page (a
                 # scraped ad, say) could never run as script. No framing: another site could
                 # otherwise load the tracker in a hidden frame and trick you into clicking
                 # Save (clickjacking).
@@ -128,7 +130,7 @@ def make_handler(token: str, port: int):
             except Exception as exc:  # report, keep serving
                 return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
 
-        def do_POST(self) -> None:  # noqa: N802 - name from the base class
+        def do_POST(self) -> None:
             url = urlsplit(self.path)
             if not self._allowed():
                 return None

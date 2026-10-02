@@ -18,7 +18,7 @@ dependencies = [
 [dependency-groups]
 documents = ["pypdf>=5,<7", "python-docx>=1.1,<2", "rendercv[full]==2.8"]
 # For working on jobflow itself: uv sync --group dev
-dev = ["pytest>=8", "ruff>=0.16,<0.17"]
+dev = ["pytest>=8", "ruff>=0.16,<0.17", "mypy>=1.13,<2", "types-PyYAML", "types-requests"]
 
 [tool.uv]
 default-groups = ["documents"]
@@ -36,6 +36,13 @@ jobflow = ["migrations/*.sql", "web/static/*", "ingest/*.json"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 
+[tool.mypy]
+python_version = "3.12"
+files = ["src/jobflow"]
+# The scraper, document, and PDF libraries ship without type information.
+ignore_missing_imports = true
+warn_unused_ignores = true
+
 [tool.ruff]
 target-version = "py312"
 # The width the code is written to; it decides how the import sorter wraps long imports.
@@ -44,8 +51,12 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 # Lint only; the code isn't reformatted. Unused imports and undefined names (F), syntax
-# errors (E9), likely bugs (B), and import order (I).
-select = ["F", "E9", "B", "I"]
+# errors (E9), likely bugs (B), import order (I), outdated syntax (UP), simpler forms
+# (SIM), and ruff's own checks (RUF).
+select = ["F", "E9", "B", "I", "UP", "SIM", "RUF"]
+# En dashes are deliberate (date ranges in CVs), and an if/else with a comment on each
+# branch can read better than one long conditional expression.
+ignore = ["RUF001", "SIM108"]
 
 [tool.ruff.lint.isort]
 # Imports that fit on one line go on one line.

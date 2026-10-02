@@ -31,6 +31,9 @@ SORTS = {
 FX_CODES = list(CURRENCIES)
 FX_RATES = [USD_PER_UNIT[CURRENCIES[code]] for code in FX_CODES]
 STALE_AFTER = timedelta(days=21)
+# Apify runs this recent count for the header's failed-runs warning: the last day's import,
+# with slack for GitHub starting it late.
+RECENT_RUNS = timedelta(hours=36)
 # The most jobs one list shows; the page says so when a list reaches it.
 MAX_ROWS = 2000
 MAX_NOTE = 2000
@@ -100,7 +103,7 @@ def parse_filters(params: dict[str, list[str]]) -> dict:
     sort = (params.get("sort") or ["score"])[0]
     posted = (params.get("posted") or [""])[0]
     try:
-        limit = max(1, min(int((params.get("limit") or [MAX_ROWS])[0]), MAX_ROWS))
+        limit = max(1, min(int((params.get("limit") or [str(MAX_ROWS)])[0]), MAX_ROWS))
     except ValueError:
         limit = MAX_ROWS
     return {"statuses": statuses, "q": (params.get("q") or [""])[0].strip(),
@@ -293,6 +296,17 @@ def summary() -> dict:
         # The searches look back 24 hours, so a day the import didn't run loses its jobs.
         last_import = conn.execute("SELECT max(finished_at) FROM scraper_runs "
                                    "WHERE status = 'SUCCEEDED'").fetchone()[0]
+        # Each site with runs that failed lately, even if others succeeded: a site failing
+        # every day (a rented actor expired, say) would otherwise only show in GitHub's email.
+        failed_runs = [dict(zip(("site", "failed", "total", "error"), row, strict=True))
+                       for row in conn.execute(
+            """SELECT split_part(actor_id, ':', 1),
+                      count(*) FILTER (WHERE status <> 'SUCCEEDED'), count(*),
+                      (array_agg(error ORDER BY created_at DESC)
+                           FILTER (WHERE status <> 'SUCCEEDED'))[1]
+               FROM scraper_runs WHERE created_at > now() - %s
+               GROUP BY 1 HAVING count(*) FILTER (WHERE status <> 'SUCCEEDED') > 0
+               ORDER BY 1""", (RECENT_RUNS,)).fetchall()]
     # Scoring reads your CV files; a missing CV folder shouldn't break the rest of the page.
     from ..candidate.cvs import chosen_sources
     from ..candidate.matching import count_needing_match, current_digests, outdated_scores
@@ -308,7 +322,7 @@ def summary() -> dict:
         variants, unscored, scoring_problem = [], None, str(exc)
         outdated = {"jobs": 0, "calls": 0}
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,
-            "last_import": last_import,
+            "last_import": last_import, "failed_runs": failed_runs,
             "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,
             "default_statuses": DEFAULT_STATUSES, "in_progress": list(IN_PROGRESS),
             "cv_variants": variants, "unscored": unscored,

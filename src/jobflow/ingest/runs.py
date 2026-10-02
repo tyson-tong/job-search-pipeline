@@ -2,6 +2,7 @@
 a run (or a LinkedIn job's own search URL) covers."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from itertools import product
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -24,8 +25,17 @@ class PlannedRun:
     def country(self) -> str | None:
         return run_country(self.site, self.run_input)
 
+    @property
+    def max_results(self) -> int:
+        """The most results this run can return, from the input the actor is actually sent
+        (LinkedIn caps each search URL; Seek caps maxResults below what a search may ask)."""
+        if "urls" in self.run_input:
+            return self.run_input["limitPerSource"] * len(self.run_input["urls"])
+        return self.run_input.get("maxResults") or self.run_input["count"]
 
-POSTED_WITHIN = {"linkedin": (opt.LINKEDIN_POSTED_WITHIN, opt.LINKEDIN_POSTED_ANY_TIME),
+
+# Each site's {days: input value} for the windows it has, and its value for any time.
+POSTED_WITHIN: dict[str, tuple[Mapping[int, object], object]] = {"linkedin": (opt.LINKEDIN_POSTED_WITHIN, opt.LINKEDIN_POSTED_ANY_TIME),
                  "indeed": (opt.INDEED_POSTED_WITHIN, opt.INDEED_POSTED_ANY_TIME),
                  "seek": (opt.SEEK_POSTED_WITHIN, opt.SEEK_POSTED_ANY_TIME)}
 WINDOW_NAMES = {1: "24 hours", 7: "1 week", 14: "2 weeks", 30: "1 month"}
@@ -50,7 +60,7 @@ def linkedin_runs(search: Search) -> list[PlannedRun]:
     urls = []
     for term, (country, city) in product(search.terms, search.places()):
         country_name = opt.LINKEDIN_COUNTRIES[country]
-        params = {"keywords": term,
+        params: dict[str, object] = {"keywords": term,
                   "location": (f"{opt.LINKEDIN_CITY_NAMES.get(city, city)}, {country_name}"
                                if city else country_name)}
         if window:

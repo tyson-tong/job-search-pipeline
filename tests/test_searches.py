@@ -268,6 +268,9 @@ def test_run_passes_cost_cap_and_applies_the_search_filter(monkeypatch):
     apify.run_search(client, planned, timedelta(minutes=5))
     (_, call), = client.calls
     assert str(call["max_total_charge_usd"]) == "0.5"
+    # The cost cap binds only a pay-per-event actor: the result cap still holds if an actor
+    # moves to pay-per-result pricing (Indeed's changed in September 2026).
+    assert call["max_items"] == 40
     # Apify stops the run itself too, in case this process is killed while it waits.
     assert call["run_timeout"] == call["wait_duration"] == timedelta(minutes=5)
     part_time = normalise({"viewJobLink": "/viewjob?jk=2", "title": "x", "jobTypes": ["Part-time"]})
@@ -317,10 +320,10 @@ def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
             raise RuntimeError("boom")
 
     monkeypatch.setattr(apify, "run_search", fake_run)
-    import jobflow.ingest.store as store
-    monkeypatch.setattr(store, "archive_old_jobs", lambda: 0)
-    monkeypatch.setattr(store, "prune_sightings", lambda: 0)
-    monkeypatch.setattr(store, "prune_archived_jobs", lambda: 0)
+    import jobflow.ingest.upkeep as upkeep
+    monkeypatch.setattr(upkeep, "archive_old_jobs", lambda: 0)
+    monkeypatch.setattr(upkeep, "prune_sightings", lambda: 0)
+    monkeypatch.setattr(upkeep, "prune_archived_jobs", lambda: 0)
     with pytest.raises(SystemExit, match="1 of 20 Apify runs failed"):
         apify.ingest_searches()
     assert seen.count("indeed") == 10 and seen.count("seek") == 9

@@ -7,7 +7,7 @@ at once (each job's CVs are also assessed at once).
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..batch import run_each
 from ..candidate.cvs import chosen_sources
@@ -50,12 +50,12 @@ def start(job_ids: list[int] | None = None, rescore: bool = False) -> dict:
                              "against (or, to rescore, an interested job with a CV edited since) "
                              "can be scored")
         _state.update(running=bool(ids), total=len(ids), done=0, errors=[],
-                      scored=[], started_at=datetime.now(timezone.utc), finished_at=None)
+                      scored=[], started_at=datetime.now(UTC), finished_at=None)
     if ids:
         threading.Thread(target=_run, args=(ids, rescore), daemon=True).start()
     else:
         with _lock:
-            _state["finished_at"] = datetime.now(timezone.utc)
+            _state["finished_at"] = datetime.now(UTC)
     return status()
 
 
@@ -77,7 +77,7 @@ def _run(ids: list[int], rescore: bool = False) -> None:
     # many were left.
     run_each(ids, score)
     with _lock:
-        _state.update(running=False, finished_at=datetime.now(timezone.utc))
+        _state.update(running=False, finished_at=datetime.now(UTC))
 
 
 def parse_request(payload: object) -> tuple[list[int] | None, bool]:

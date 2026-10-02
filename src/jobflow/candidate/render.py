@@ -95,7 +95,7 @@ def page_gaps(pdf: Path) -> list[tuple[int, float]]:
 
 def bullets(cv: dict) -> list[dict]:
     """Every entry highlight, with its place and the entry it belongs to."""
-    found = []
+    found: list[dict] = []
     for name, section in (cv.get("sections") or {}).items():
         for i, entry in enumerate(section if isinstance(section, list) else []):
             highlights = entry.get("highlights") if isinstance(entry, dict) else None
@@ -114,7 +114,7 @@ def cut_order(found: list[dict], ranking: object) -> list[dict]:
     ids = [i for i in (ranking if isinstance(ranking, list) else []) if isinstance(i, int)]
     ids = list(dict.fromkeys(i for i in ids if i in by_id))
     ids += [b["id"] for b in found if b["id"] not in ids]
-    left = {}
+    left: dict[tuple, int] = {}
     for b in found:
         left[b["entry"]] = left.get(b["entry"], 0) + 1
     order = []

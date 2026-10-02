@@ -54,7 +54,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 - **Filters** under the column headings: minimum match score (My jobs and the Inbox), a title/company/location search, country and site (tick several, or **All** or **None**), when the job was posted (past day, week, 2 weeks, or month, or over a month ago), and a minimum salary in US dollars (converted from each job's currency; jobs without a salary are kept). Click **Posted** or **Salary** to sort, again to reverse. **Export CSV (All)** exports every job in the tab (in My jobs, those with the chosen statuses), ignoring the other filters; **Export CSV (Filtered)** exports just the rows on the page you're viewing. Filters and sorting apply before paging; up to 2,000 matching jobs are loaded per query. If the list reaches that cap, narrow the filters to find jobs beyond it. The results are shown 5 to 100 per page (the menu beside the job count), with similar jobs kept together on one page.
 - **Job panel** (click a title): the ad, links to each site it's listed on, why it scored as it did, similar jobs, notes, status history, and the tailor-cv and cover-letter commands (for an Interested job) or interview-prep (for an Interviewing one) with `--job` and the job's number, ready to copy. The number (`Job #42`) is at the top of the panel, and at the end of the job's output folder name.
 - **Similar jobs** sit together with an orange bar ("highly similar" or "similar"; a similar job not in the list shown is counted with where it is, such as "1 highly similar (Filtered)"), and a row warns if it may be a role you've already applied for; the same ad in another country sits alongside with a blue bar. See [rules](docs/rules.md#similar-jobs).
-- **A late import is flagged:** the searches look back 24 hours, so a day the daily import missed is jobs never seen. If no import has succeeded for 36 hours, the header says so; `uv run jobflow status` shows why. Catch up with `uv run jobflow ingest --posted-within-days 7` (or `14` or `30` for a longer gap). This overrides every search's window for that import only and leaves your saved searches unchanged.
+- **A late import is flagged:** the searches look back 24 hours, so a day the daily import missed is jobs never seen. If no import has succeeded for 36 hours, the header says so, and it names each site with runs that failed in that time (hover for the error), even when other sites' runs succeeded; `uv run jobflow status` shows why. Catch up with `uv run jobflow ingest --posted-within-days 7` (or `14` or `30` for a longer gap). This overrides every search's window for that import only and leaves your saved searches unchanged.
 - **Saving is safe:** the page refreshes itself (never over unsaved drafts), and if a job was changed elsewhere since you loaded it, Save writes nothing and shows what changed.
 
 ## Changing your searches
@@ -98,7 +98,8 @@ Every command except `init`, `help`, and `status` brings the database tables up 
 ```
 uv sync --group dev
 uv run pytest
-uv run ruff check    # unused imports, likely bugs, import order
+uv run ruff check    # unused imports, likely bugs, import order, outdated syntax
+uv run mypy          # type checks
 ```
 
 The tests need no database or network. The ones in `tests/test_db.py` (merging, saving, migrations) run only when `TEST_DATABASE_URL` names a disposable PostgreSQL database; each run works in a schema of its own and drops it afterwards. For example, with Docker:
@@ -108,4 +109,4 @@ docker run -d --rm --name jobflow-test-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 
 TEST_DATABASE_URL=postgresql://postgres:pw@127.0.0.1:55432/postgres uv run pytest
 ```
 
-GitHub runs ruff and all the tests, the database ones included, on every push (`.github/workflows/tests.yml`).
+GitHub runs ruff, mypy, and all the tests, the database ones included, on every push (`.github/workflows/tests.yml`).
