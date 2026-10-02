@@ -397,8 +397,7 @@ function renderRows() {
   document.getElementById("shown").textContent = n >= state.summary.max_rows
     ? `The first ${n} jobs: narrow the filters to see the rest`
     : n < total ? `${n} of ${total} jobs` : `${n} job${n === 1 ? "" : "s"}`;
-  const inbox = state.view === "inbox", filtered = state.view === "filtered";
-  const selectable = inbox || RETURN_TABS.includes(state.view);
+  const selectable = state.view === "inbox" || RETURN_TABS.includes(state.view);
   const loaded = new Set(state.jobs.map((job) => job.id));
   state.selected.forEach((id) => { if (!selectable || !loaded.has(id)) state.selected.delete(id); });
   // After a save or refresh removes rows, stay on the last page that still exists.
@@ -413,61 +412,73 @@ function renderRows() {
   document.querySelectorAll(".fu-col").forEach((cell) => { cell.hidden = selectable; });
   document.querySelectorAll(".match-col").forEach((cell) => { cell.hidden = selectable; });
   if (!n) {
-    const none = nothingChosen();
-    fill(body, [el("tr", {}, el("td", { colspan: selectable ? 7 : 8, className: "empty" },
-      none ? `No ${none} chosen: pick some in the ${WHERE_CHOSEN[none]}.`
-        : inbox && !total ? "Inbox is empty: no new jobs to review."
-        : filtered && !total ? "No filtered jobs."
-        : state.view === "not_interested" && !total ? "No jobs marked not interested."
-        : "No jobs match these filters."))]);
+    fill(body, [el("tr", {}, el("td", { colspan: selectable ? 7 : 8, className: "empty" }, emptyMessage(total)))]);
     return;
   }
-  fill(body, [...state.jobs.slice(first, end).map((job, offset) => {
-    const index = first + offset;
-    const score = job.score == null ? null : Math.round(job.score);
-    const scoreClass = score == null ? "" : score >= 70 ? " hi" : score >= 45 ? " mid" : " lo";
-    const statusCell = QUICK_STATUSES[state.view]
-      ? el("div", { className: "quick" }, QUICK_STATUSES[state.view].map((s) => {
-          const on = current(job, "status") === s;
-          // Clicking the chosen one again keeps the job where it is.
-          return el("button", { className: "btn small" + (on ? " on" : ""), "aria-pressed": String(on),
-            onclick: () => setPending(job, "status", on ? job.status : s) }, label(s));
-        }))
-      : statusSelect(job);
-    const grouped = job.group != null, abroad = job.area != null;
-    const groupStart = grouped && (index === 0 || state.jobs[index - 1].group !== job.group);
-    const areaStart = abroad && (index === 0 || state.jobs[index - 1].area !== job.area);
-    return el("tr", { className: [state.pending.has(job.id) ? "dirty" : "", grouped ? "grouped" : "",
-      groupStart ? "group-start" : "", abroad ? "abroad" : "", areaStart ? "area-start" : ""].filter(Boolean).join(" "),
-      title: grouped ? "Similar jobs, shown together"
-        : abroad ? "The same ad in another country, shown together" : null },
-      selectable ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
-        el("input", { type: "checkbox", checked: state.selected.has(job.id), "aria-label": `Select ${job.title}` })) : null,
-      selectable ? null : el("td", {}, el("span", { className: "score" + scoreClass,
-        title: (job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored: only interested jobs are scored")
-          + (job.outdated.length ? `. Scored against an earlier version of ${job.outdated.join(" and ")}: `
-            + "Rescore edited CVs updates it" : "") },
-        score == null ? "–" : score + (job.outdated.length ? "*" : ""))),
-      el("td", {},
-        el("button", { className: "title-btn", onclick: () => openDetail(job.id) }, job.title),
-        el("div", { className: "meta" }, [job.company, job.location].filter(Boolean).join(" · ")),
-        filtered && job.filter_reason ? el("div", { className: "meta" }, `Filtered: ${job.filter_reason}`) : null,
-        el("div", { className: "flags" },
-          duplicateFlag(job),
-          job.elsewhere.length ? el("span", { className: "flag", title: "The same role advertised in another country; shown alongside" },
-            `Same ad in ${[...new Set(job.elsewhere.map((d) => d.country || "another country"))].join(", ")}`) : null,
-          job.overdue ? el("span", { className: "flag warn" }, "Follow-up overdue") : null,
-          job.stale ? el("span", { className: "flag" }, "Applied 3+ weeks ago") : null,
-          job.has_notes || current(job, "note") ? el("span", { className: "flag" }, "Notes") : null)),
-      el("td", { className: "hide-sm meta", title: state.countryCounts.names[job.country] || null }, job.country || "–"),
-      el("td", { className: "hide-sm" }, job.sites.map((s) => el("span", { className: "site" }, SITE_NAMES[s] || s))),
-      el("td", { className: "hide-sm meta" }, fmtDate(job.posted_at) || fmtDate(job.first_seen_at)),
-      el("td", { className: "hide-sm meta" }, fmtSalary(job.salary_min, job.salary_max, job.currency)),
-      el("td", {}, statusCell),
-      selectable ? null : el("td", { className: "hide-sm" }, el("input", { type: "date", "aria-label": "Follow-up date",
-        value: current(job, "follow_up_on") ? fmtDate(current(job, "follow_up_on")) : "",
-        onchange: (event) => setPending(job, "follow_up_on", event.target.value) })));
-  })]);
+  fill(body, state.jobs.slice(first, end).map((job, offset) => jobRow(job, first + offset, selectable)));
+}
+function emptyMessage(total) {
+  const none = nothingChosen();
+  return none ? `No ${none} chosen: pick some in the ${WHERE_CHOSEN[none]}.`
+    : state.view === "inbox" && !total ? "Inbox is empty: no new jobs to review."
+    : state.view === "filtered" && !total ? "No filtered jobs."
+    : state.view === "not_interested" && !total ? "No jobs marked not interested."
+    : "No jobs match these filters.";
+}
+// One job's row; index is its place in state.jobs, for shift-click ranges and grouping.
+function jobRow(job, index, selectable) {
+  const grouped = job.group != null, abroad = job.area != null;
+  const groupStart = grouped && (index === 0 || state.jobs[index - 1].group !== job.group);
+  const areaStart = abroad && (index === 0 || state.jobs[index - 1].area !== job.area);
+  return el("tr", { className: [state.pending.has(job.id) ? "dirty" : "", grouped ? "grouped" : "",
+    groupStart ? "group-start" : "", abroad ? "abroad" : "", areaStart ? "area-start" : ""].filter(Boolean).join(" "),
+    title: grouped ? "Similar jobs, shown together"
+      : abroad ? "The same ad in another country, shown together" : null },
+    selectable ? el("td", { className: "sel", onclick: (event) => pick(job.id, index, event) },
+      el("input", { type: "checkbox", checked: state.selected.has(job.id), "aria-label": `Select ${job.title}` })) : null,
+    selectable ? null : el("td", {}, scoreBadge(job)),
+    el("td", {}, jobSummary(job)),
+    el("td", { className: "hide-sm meta", title: state.countryCounts.names[job.country] || null }, job.country || "–"),
+    el("td", { className: "hide-sm" }, job.sites.map((s) => el("span", { className: "site" }, SITE_NAMES[s] || s))),
+    el("td", { className: "hide-sm meta" }, fmtDate(job.posted_at) || fmtDate(job.first_seen_at)),
+    el("td", { className: "hide-sm meta" }, fmtSalary(job.salary_min, job.salary_max, job.currency)),
+    el("td", {}, statusCell(job)),
+    selectable ? null : el("td", { className: "hide-sm" }, el("input", { type: "date", "aria-label": "Follow-up date",
+      value: current(job, "follow_up_on") ? fmtDate(current(job, "follow_up_on")) : "",
+      onchange: (event) => setPending(job, "follow_up_on", event.target.value) })));
+}
+function scoreBadge(job) {
+  const score = job.score == null ? null : Math.round(job.score);
+  const scoreClass = score == null ? "" : score >= 70 ? " hi" : score >= 45 ? " mid" : " lo";
+  return el("span", { className: "score" + scoreClass,
+    title: (job.cv_variant ? `Best CV: ${job.cv_variant}` : "Not scored: only interested jobs are scored")
+      + (job.outdated.length ? `. Scored against an earlier version of ${job.outdated.join(" and ")}: `
+        + "Rescore edited CVs updates it" : "") },
+    score == null ? "–" : score + (job.outdated.length ? "*" : ""));
+}
+// The title (which opens the job panel), employer and place, and the row's flags.
+function jobSummary(job) {
+  return [
+    el("button", { className: "title-btn", onclick: () => openDetail(job.id) }, job.title),
+    el("div", { className: "meta" }, [job.company, job.location].filter(Boolean).join(" · ")),
+    state.view === "filtered" && job.filter_reason ? el("div", { className: "meta" }, `Filtered: ${job.filter_reason}`) : null,
+    el("div", { className: "flags" },
+      duplicateFlag(job),
+      job.elsewhere.length ? el("span", { className: "flag", title: "The same role advertised in another country; shown alongside" },
+        `Same ad in ${[...new Set(job.elsewhere.map((d) => d.country || "another country"))].join(", ")}`) : null,
+      job.overdue ? el("span", { className: "flag warn" }, "Follow-up overdue") : null,
+      job.stale ? el("span", { className: "flag" }, "Applied 3+ weeks ago") : null,
+      job.has_notes || current(job, "note") ? el("span", { className: "flag" }, "Notes") : null)];
+}
+// The Inbox, Filtered, and Not interested tabs' one-click buttons, else the status menu.
+function statusCell(job) {
+  if (!QUICK_STATUSES[state.view]) return statusSelect(job);
+  return el("div", { className: "quick" }, QUICK_STATUSES[state.view].map((s) => {
+    const on = current(job, "status") === s;
+    // Clicking the chosen one again keeps the job where it is.
+    return el("button", { className: "btn small" + (on ? " on" : ""), "aria-pressed": String(on),
+      onclick: () => setPending(job, "status", on ? job.status : s) }, label(s));
+  }));
 }
 
 // ---- Country and site filters ----------------------------------------------------------------
@@ -757,28 +768,10 @@ function renderDetail() {
   // Edits go through the same pending changes as the table, using the list row if shown.
   const target = listed || { ...job, duplicates: job.duplicates, duplicate_in_progress: null };
   const drawer = document.getElementById("drawer");
-  const inProgress = job.duplicates.filter((d) => ["applied", "interviewing", "offered", "accepted"].includes(d.status));
-  // The CVs named in config/profile.toml this job has no score against yet.
-  const unscored = state.summary.cv_variants.filter((v) => !job.matches.some((m) => m.variant === v));
-  // The CVs edited since this job was scored against them.
-  const outdated = job.matches.filter((m) => m.outdated).map((m) => m.variant);
   drawer.hidden = false;
   fill(drawer, [
     el("button", { className: "close", "aria-label": "Close", onclick: closeDetail }, "×"),
-    el("h2", {}, job.title),
-    el("div", { className: "meta" }, [`Job #${job.id}`, job.company, job.location, fmtSalary(job.salary_min, job.salary_max, job.currency)]
-      .filter(Boolean).join(" · ")),
-    el("div", { className: "meta" }, `Posted ${fmtDate(job.posted_at) || "unknown"} · added ${fmtDate(job.first_seen_at)}`
-      + (job.applied_at ? ` · applied ${fmtDate(job.applied_at)}` : "")),
-    el("div", { className: "flags", style: "margin-top:8px" }, job.sources.map((s) => safeUrl(s.url)
-      ? el("a", { className: "btn small", href: safeUrl(s.url), target: "_blank", rel: "noopener noreferrer" },
-          `Open on ${SITE_NAMES[s.source] || s.source} ↗`)
-      : el("span", { className: "flag" }, SITE_NAMES[s.source] || s.source))),
-    inProgress.length > 0 && ["interested", "applied"].includes(current(target, "status"))
-      ? el("div", { className: "banner" }, `This may be the same role as job #${inProgress[0].id} `
-          + `(${inProgress[0].company || "unknown employer"}), which is already ${label(inProgress[0].status).toLowerCase()}.`)
-      : null,
-    job.status === "filtered" && job.filter_reason ? el("div", { className: "banner" }, `Filtered on import: ${job.filter_reason}`) : null,
+    detailHeader(job, target),
     el("div", { className: "edit" },
       el("label", { for: "d-status" }, "Status"),
       Object.assign(statusSelect(target), { id: "d-status" }),
@@ -789,22 +782,7 @@ function renderDetail() {
         maxlength: 2000, oninput: (event) => setPending(target, "note", event.target.value) },
         current(target, "note") || "")),
     job.notes ? [el("h3", {}, "Notes"), el("div", { className: "notes" }, job.notes)] : null,
-    // Only a saved Interested job is scored, once against each CV.
-    el("div", { className: "h3-row" }, el("h3", {}, "Match with your CVs"),
-      job.status === "interested" && unscored.length
-        ? el("button", { className: "btn small", disabled: Boolean(state.scoring && state.scoring.running),
-            title: "Ask the LLM to compare this job with each CV", onclick: () =>
-              startScoring({ job_ids: [job.id] }) }, "Score")
-        : job.status === "interested" && outdated.length
-        ? el("button", { className: "btn small", disabled: Boolean(state.scoring && state.scoring.running),
-            title: "Ask the LLM to compare this job again with each CV you've edited since", onclick: () =>
-              startScoring({ job_ids: [job.id], rescore: true }) }, "Rescore")
-        : null),
-    job.matches.map(renderMatch),
-    job.status === "interested" && unscored.length
-      ? el("p", { className: "meta" }, `Not scored yet against ${unscored.join(", ")}.`)
-      : !job.matches.length ? el("p", { className: "meta" },
-          "Not scored: only interested jobs are scored. Mark it interested and save to score it.") : null,
+    matchSection(job),
     el("div", { className: "next" }, el("strong", {}, "Next steps for this job (in a terminal)"),
       nextSteps(job)),
     similarList("Highly similar jobs", job.duplicates.filter((d) => d.level === "highly similar")),
@@ -819,6 +797,51 @@ function renderDetail() {
       el("button", { className: "btn", onclick: closeDetail }, "Close"),
       el("button", { className: "btn primary", id: "d-save", onclick: () => save() }, "Save"))]);
   renderSaveBar();
+}
+// The panel's top: title, facts, links to each site, and warnings.
+function detailHeader(job, target) {
+  const inProgress = job.duplicates.filter((d) => ["applied", "interviewing", "offered", "accepted"].includes(d.status));
+  return [
+    el("h2", {}, job.title),
+    el("div", { className: "meta" }, [`Job #${job.id}`, job.company, job.location, fmtSalary(job.salary_min, job.salary_max, job.currency)]
+      .filter(Boolean).join(" · ")),
+    el("div", { className: "meta" }, `Posted ${fmtDate(job.posted_at) || "unknown"} · added ${fmtDate(job.first_seen_at)}`
+      + (job.applied_at ? ` · applied ${fmtDate(job.applied_at)}` : "")),
+    el("div", { className: "flags", style: "margin-top:8px" }, job.sources.map((s) => safeUrl(s.url)
+      ? el("a", { className: "btn small", href: safeUrl(s.url), target: "_blank", rel: "noopener noreferrer" },
+          `Open on ${SITE_NAMES[s.source] || s.source} ↗`)
+      : el("span", { className: "flag" }, SITE_NAMES[s.source] || s.source))),
+    inProgress.length > 0 && ["interested", "applied"].includes(current(target, "status"))
+      ? el("div", { className: "banner" }, `This may be the same role as job #${inProgress[0].id} `
+          + `(${inProgress[0].company || "unknown employer"}), which is already ${label(inProgress[0].status).toLowerCase()}.`)
+      : null,
+    job.status === "filtered" && job.filter_reason ? el("div", { className: "banner" }, `Filtered on import: ${job.filter_reason}`) : null];
+}
+// The job's scores against each CV, with Score or Rescore when there's something to do.
+// Only a saved Interested job is scored, once against each CV.
+function matchSection(job) {
+  // The CVs named in config/profile.toml this job has no score against yet.
+  const unscored = state.summary.cv_variants.filter((v) => !job.matches.some((m) => m.variant === v));
+  // The CVs edited since this job was scored against them.
+  const outdated = job.matches.filter((m) => m.outdated).map((m) => m.variant);
+  const busy = Boolean(state.scoring && state.scoring.running);
+  const interested = job.status === "interested";
+  return [
+    el("div", { className: "h3-row" }, el("h3", {}, "Match with your CVs"),
+      interested && unscored.length
+        ? el("button", { className: "btn small", disabled: busy,
+            title: "Ask the LLM to compare this job with each CV", onclick: () =>
+              startScoring({ job_ids: [job.id] }) }, "Score")
+        : interested && outdated.length
+        ? el("button", { className: "btn small", disabled: busy,
+            title: "Ask the LLM to compare this job again with each CV you've edited since", onclick: () =>
+              startScoring({ job_ids: [job.id], rescore: true }) }, "Rescore")
+        : null),
+    job.matches.map(renderMatch),
+    interested && unscored.length
+      ? el("p", { className: "meta" }, `Not scored yet against ${unscored.join(", ")}.`)
+      : !job.matches.length ? el("p", { className: "meta" },
+          "Not scored: only interested jobs are scored. Mark it interested and save to score it.") : null];
 }
 // The commands for this job, by its saved status: tailor-cv and cover-letter work on
 // Interested jobs, interview-prep on Interviewing ones.
