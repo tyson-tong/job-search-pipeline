@@ -171,6 +171,8 @@ def make_handler(token: str, port: int):
                 return self._error(HTTPStatus.CONFLICT, str(exc))
             except RuntimeError as exc:  # LLM or CV configuration
                 return self._error(HTTPStatus.UNPROCESSABLE_ENTITY, str(exc))
+            except Exception as exc:  # the database, say: report it rather than drop the request
+                return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"Scoring didn't start: {exc}")
 
     return Handler
 
