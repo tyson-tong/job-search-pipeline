@@ -12,6 +12,7 @@ from ..db import fetch_job
 from ..llm import complete
 from ..settings import now
 from .cvs import CV_CHAR_LIMIT, chosen_sources, job_prompt
+from .pages import html_page
 from .paths import job_directory
 from .research import NO_EMPLOYER, web_search
 
@@ -105,6 +106,11 @@ def _safe_markup(text: str) -> str:
     return "\n".join(chunks)
 
 
+BRIEFING_STYLE = """header,main section{background:white;padding:1.25rem 1.5rem;margin:1rem 0;border-radius:12px;box-shadow:0 2px 12px #17202a12}
+h1,h2,h3{line-height:1.25}code{background:#eef1f4;padding:0 .25em;border-radius:4px}li{margin:.55rem 0}footer{color:#52606d;font-size:.9rem}
+@media print{body{background:white;margin:0;max-width:none}header,main section{box-shadow:none;border:1px solid #ddd;break-inside:avoid}}"""
+
+
 def prepare(job_id: int, output: Path | None = None) -> Path:
     job = fetch_job(job_id)
     if job["company"]:
@@ -147,22 +153,13 @@ def prepare(job_id: int, output: Path | None = None) -> Path:
     posting_link = (f'<p><a href="{html.escape(_web_url(job["url"]), quote=True)}" rel="noreferrer">'
                     "Open job posting</a></p>" if _web_url(job["url"]) else "")
     generated = now().strftime("%Y-%m-%d %H:%M %Z")
-    page = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Interview preparation — {html.escape(job['company'] or '')} — {html.escape(job['title'])}</title>
-<style>
-body{{font:16px/1.6 system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f7f8fa}}
-header,main section{{background:white;padding:1.25rem 1.5rem;margin:1rem 0;border-radius:12px;box-shadow:0 2px 12px #17202a12}}
-h1,h2,h3{{line-height:1.25}}code{{background:#eef1f4;padding:0 .25em;border-radius:4px}}a{{color:#125ca1}}.meta{{color:#52606d}}li{{margin:.55rem 0}}footer{{color:#52606d;font-size:.9rem}}
-@media print{{body{{background:white;margin:0;max-width:none}}header,main section{{box-shadow:none;border:1px solid #ddd;break-inside:avoid}}}}
-</style></head><body>
-<header><p class="meta">Interview preparation • Generated {generated}</p>
+    page = html_page(f"Interview preparation — {job['company'] or ''} — {job['title']}", f"""<header><p class="meta">Interview preparation • Generated {generated}</p>
 <h1>{html.escape(job['company'] or 'Company')} — {html.escape(job['title'])}</h1>
 <p>{html.escape(job['location'] or '')}</p>{posting_link}</header>
 <main><section><h2>Preparation brief</h2>{_safe_markup(brief)}</section>
 <section><h2>Research sources</h2><ul>{source_items}</ul></section></main>
-<footer><p>Generated with model {html.escape(model)}. Verify current facts and review every suggested answer against your own experience.</p></footer>
-</body></html>"""
+<footer><p>Generated with model {html.escape(model)}. Verify current facts and review every suggested answer against your own experience.</p></footer>""",
+        BRIEFING_STYLE)
     target.write_text(page)
     with db.connect() as conn:
         conn.execute("INSERT INTO workflow_runs(job_id,kind,status,model_name,finished_at) "

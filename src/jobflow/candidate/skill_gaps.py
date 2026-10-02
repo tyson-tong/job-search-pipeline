@@ -16,6 +16,7 @@ from ..llm import complete, parse_json
 from ..settings import matching_weights, now, output_directory
 from .cvs import chosen_files
 from .matching import best_variant, current_digests, stored_assessments
+from .pages import html_page
 
 # How much one unmet requirement counts towards a skill's rank.
 IMPORTANCE_WEIGHT = {"required": 1.0, "preferred": 0.5}
@@ -111,6 +112,10 @@ def _group(gaps: list[dict]) -> tuple[object, str]:
     return parse_json(content).get("skills"), model
 
 
+REPORT_STYLE = """table{border-collapse:collapse;width:100%;background:white}th,td{padding:.6rem;border-bottom:1px solid #e3e7eb;text-align:left;vertical-align:top}
+th{background:#eef1f4}.meta{font-size:.9em}details{margin-top:.4rem}li{margin:.25rem 0}"""
+
+
 def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated: str,
           left_out: int = 0, outdated: int = 0) -> str:
     rows = []
@@ -133,15 +138,7 @@ def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated
     if left_out:
         note += (f"<p class=meta>Only the {MAX_GAPS_SENT} requirements from your most recently "
                  f"added scored jobs are grouped; {left_out} older ones are left out.</p>")
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Skill gaps</title>
-<style>
-body{{font:15px/1.5 system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f7f8fa}}
-table{{border-collapse:collapse;width:100%;background:white}}th,td{{padding:.6rem;border-bottom:1px solid #e3e7eb;text-align:left;vertical-align:top}}
-th{{background:#eef1f4}}.meta{{color:#52606d;font-size:.9em}}details{{margin-top:.4rem}}li{{margin:.25rem 0}}
-</style></head><body>
-<h1>Skill gaps</h1>
+    return html_page("Skill gaps", f"""<h1>Skill gaps</h1>
 <p class=meta>Generated {generated} from {scored} scored Interested job{'s' if scored != 1 else ''}, using each job's
 best-matching CV of those cvs in config/profile.toml names. Ranked by how often a skill is asked for and not shown: a required
 requirement counts 1, a preferred one 0.5, halved when your CV partly shows it. "Not shown"
@@ -149,8 +146,8 @@ means your CV doesn't evidence it, not that you lack it: if you have the skill, 
 of it to your CV.</p>{note}
 <table><tr><th>#</th><th>Skill</th><th>Jobs</th><th>Required</th><th>How to close it</th></tr>
 {''.join(rows)}</table>
-<p class=meta>Grouping and suggestions by model {html.escape(model)}; counts are computed from your stored match scores.</p>
-</body></html>"""
+<p class=meta>Grouping and suggestions by model {html.escape(model)}; counts are computed from your stored match scores.</p>""",
+        REPORT_STYLE, width="1100px", font_size="15px")
 
 
 def report(output: Path | None = None) -> tuple[Path, list[dict], int]:
