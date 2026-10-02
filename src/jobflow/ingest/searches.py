@@ -115,6 +115,8 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     locations = {}
     for country, cities in raw_locations.items():
         code = opt.COUNTRY_ALIASES.get(country.upper(), country.upper())
+        if code in locations:   # UK and GB, say
+            raise SearchConfigError(f"{where}: {code} is listed twice in locations")
         if code not in opt.CITIES:
             raise SearchConfigError(f"{where}: unknown country {country!r}; choose from "
                                     f"{', '.join(opt.CITIES)} (UK also works for GB)")
@@ -128,7 +130,8 @@ def parse_search(raw: dict, defaults: dict) -> Search:
             raise SearchConfigError(f"{where}: unknown {code} cit{'y' if len(unknown_cities) == 1 else 'ies'} "
                                     f"{unknown_cities}; choose from {', '.join(opt.CITIES[code])}, "
                                     "or [] for the whole country")
-        locations[code] = tuple(known[c.strip().casefold()] for c in cities)
+        # A city listed twice would be searched, and paid for, twice.
+        locations[code] = tuple(dict.fromkeys(known[c.strip().casefold()] for c in cities))
     sites = _choices(f"{where} sites", merged.get("sites"), opt.SITES)
     if not sites:
         raise SearchConfigError(f"{where}: sites must list at least one of {list(opt.SITES)}")
@@ -156,7 +159,7 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     period = merged.get("salary_period", "annual")
     _choices(f"{where} salary_period", [period], opt.SALARY_PERIODS)
     return Search(
-        name=name, terms=tuple(t.strip() for t in terms), locations=locations, sites=sites,
+        name=name, terms=_unique(terms), locations=locations, sites=sites,
         posted_within_days=days, max_results=max_results,
         max_cost_usd=max_cost_usd,
         radius_km=int(radius_km) if radius_km else None,
@@ -171,6 +174,15 @@ def parse_search(raw: dict, defaults: dict) -> Search:
         include_title_terms=included,
         exclude_companies=companies,
     )
+
+
+def _unique(terms: list[str]) -> tuple[str, ...]:
+    """The terms without repeats in any capitalisation: each would be searched, and paid
+    for, again."""
+    first: dict[str, str] = {}
+    for term in terms:
+        first.setdefault(term.strip().casefold(), term.strip())
+    return tuple(first.values())
 
 
 def _number(merged: dict, key: str, where: str, whole: bool = False) -> float | None:

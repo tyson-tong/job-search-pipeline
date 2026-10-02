@@ -404,3 +404,12 @@ def test_old_setting_names_still_work():
     assert old == parse_config(CONFIG)
     with pytest.raises(SearchConfigError, match="set seek_classifications only"):
         parse_config(CONFIG.replace("seek_classifications = [", 'classifications = ["engineering"]\nseek_classifications = ['))
+
+
+def test_a_term_or_city_listed_twice_is_searched_and_paid_for_once():
+    searches = parse_config('[[search]]\nname = "a"\nsites = ["indeed"]\n'
+                            'terms = ["Data analyst", "data Analyst"]\n'
+                            'locations = { AU = ["Sydney", "sydney"] }\n')
+    assert len(plan(searches)) == 1
+    with pytest.raises(SearchConfigError, match="GB is listed twice"):
+        parse_config('[[search]]\nname = "a"\nterms = ["x"]\nlocations = { UK = [], GB = ["London"] }\n')
