@@ -7,7 +7,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import psycopg
@@ -236,6 +236,24 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
         if jobs and skipped == len(jobs):
             raise RuntimeError(f"none of the run's {len(jobs)} postings could be saved")
         return added
+
+
+# Apify runs this recent count as the last import's: a day, with slack for GitHub starting
+# the daily import late.
+RECENT_RUNS = timedelta(hours=36)
+
+
+def recent_failed_runs(conn) -> list[dict]:
+    """Each site with runs that failed in RECENT_RUNS, even if its other runs (or other
+    sites') succeeded: {site, failed, total, error}, with the latest failure's error."""
+    return [dict(zip(("site", "failed", "total", "error"), row, strict=True)) for row in conn.execute(
+        """SELECT split_part(actor_id, ':', 1),
+                  count(*) FILTER (WHERE status <> 'SUCCEEDED'), count(*),
+                  (array_agg(error ORDER BY created_at DESC)
+                       FILTER (WHERE status <> 'SUCCEEDED'))[1]
+           FROM scraper_runs WHERE created_at > now() - %s
+           GROUP BY 1 HAVING count(*) FILTER (WHERE status <> 'SUCCEEDED') > 0
+           ORDER BY 1""", (RECENT_RUNS,)).fetchall()]
 
 
 def record_failed_run(actor_id: str, run_id: str | None, dataset_id: str | None, status: str,

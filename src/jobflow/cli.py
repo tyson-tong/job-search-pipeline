@@ -79,7 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
                      "back Filtered jobs it would no longer filter")
     update.add_argument("--dry-run", action="store_true",
                         help="Check the file and list the jobs that would be filtered or brought "
-                        "back; publish and move nothing (the database tables are still brought up to date)")
+                        "back; publish, move, and change nothing (it stops if the database "
+                        "tables are out of date)")
     web = command("web", run_web, "Run the local job tracker web server")
     web.add_argument("--port", type=int, default=8765,
                      help="Port to serve the tracker on (default: 8765)")
@@ -120,7 +121,8 @@ def build_parser() -> argparse.ArgumentParser:
             "in the database)")
     command("status", run_status, "Show the daily GitHub import, read from GitHub: "
             "whether it's on, its last run, its secrets, whether its searches and timezone match "
-            "yours, and which job sites it calls")
+            "yours, and which job sites it calls; and, from your database, why recent Apify "
+            "runs failed")
     commands = dict(sub.choices)   # every command but help itself
 
     def show_manual(args: argparse.Namespace) -> None:
@@ -215,8 +217,8 @@ def manual(commands: dict[str, argparse.ArgumentParser], command: str | None = N
             "check, or whose draft, letter, or briefing was deleted is tried again); --job "
             "ID limits them to one job (or a few), by its number in the job panel, and "
             "--redo with it does those jobs again even if they're done. Only "
-            "one run of each can go at a time. Every command except init, help, and status "
-            "brings the database tables up to date when it starts.")),
+            "one run of each can go at a time. Every command except init, help, status, and "
+            "update-searches --dry-run brings the database tables up to date when it starts.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
                 "docs/structure.html"),
     ])

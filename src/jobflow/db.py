@@ -126,6 +126,15 @@ def migration_files() -> list[tuple[str, str, str | None]]:
     return sorted(migrations)
 
 
+def pending_migrations() -> list[str]:
+    """The migrations not yet applied to the database, without applying them."""
+    with connect() as conn:
+        exists = conn.execute("SELECT to_regclass('schema_migrations') IS NOT NULL").fetchone()[0]
+        applied = ({row[0] for row in conn.execute("SELECT name FROM schema_migrations")}
+                   if exists else set())
+    return [name for name, _, _ in migration_files() if name not in applied]
+
+
 def migrate() -> None:
     from .ingest.backfill import FOLLOW_UPS
 

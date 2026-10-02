@@ -105,6 +105,15 @@ def wait_minutes() -> float:
     return minutes
 
 
+def account_wide(exc: Exception) -> bool:
+    """Whether every other run on this Apify account would fail the same way: a token
+    Apify rejects, or the account's monthly usage limit reached."""
+    from apify_client.errors import ApifyApiError
+
+    return (isinstance(exc, ApifyApiError) and exc.status_code == 401) \
+        or "usage hard limit" in str(exc).casefold()
+
+
 def ingest_searches(only_search: str | None = None, only_site: str | None = None,
                     posted_within_days: int | None = None) -> None:
     searches = load_searches()
@@ -120,16 +129,24 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
     for planned in runs:
         by_site.setdefault(planned.site, []).append(planned)
     failed: list[str] = []
+    skipped: list[str] = []
+    # Set by an error every later run would hit too (account_wide): the rest are skipped.
+    stop = threading.Event()
 
     def run_site(client: ApifyClient, site_runs: list[PlannedRun]) -> None:
         # One site's runs go one after another, so at most one Apify run per site.
         for planned in site_runs:
+            run_name = f"{planned.search.name}/{planned.site} {planned.label}"
+            if stop.is_set():
+                skipped.append(run_name)
+                continue
             try:
                 run_search(client, planned, max_wait)
             except Exception as exc:
-                run_name = f"{planned.search.name}/{planned.site} {planned.label}"
                 failed.append(run_name)
                 print(f"{run_name}: FAILED — {exc}", file=sys.stderr)
+                if account_wide(exc):
+                    stop.set()
 
     # Daemon threads so Ctrl+C ends ingest at once instead of waiting up to max_wait for
     # each site's Apify call; an interrupted import rolls back its transaction.
@@ -151,5 +168,9 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
     cleared = prune_archived_jobs()
     if cleared:
         print(f"Cleared the ads of {plural(cleared, 'job')} archived over 90 days ago")
+    if skipped:
+        raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed, and the other "
+                         f"{len(skipped)} weren't started: the error is your Apify account's "
+                         "(its token, or its monthly usage limit), so they would fail too")
     if failed:
         raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed")

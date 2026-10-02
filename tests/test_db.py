@@ -661,3 +661,19 @@ def test_a_site_failing_while_others_succeed_is_flagged(database):
     save_run("seek:a", "r3", "d3", [SEEK], country="AU")
     assert summary()["failed_runs"] == [{"site": "seek", "failed": 1, "total": 2,
                                          "error": "Monthly usage hard limit exceeded"}]
+
+
+def test_a_dry_run_never_changes_the_database(database, tmp_path, monkeypatch):
+    # update-searches --dry-run applied pending migrations, one of which dropped columns.
+    from jobflow import github, settings
+
+    searches = tmp_path / "searches.toml"
+    searches.write_text('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
+                        "max_cost_usd = 1\n")
+    monkeypatch.setattr(settings, "searches_file", lambda: searches)
+    name = migration_files()[-1][0]
+    with connect() as conn:   # as if this migration came with a jobflow update
+        conn.execute("DELETE FROM schema_migrations WHERE name=%s", (name,))
+    with pytest.raises(RuntimeError, match=f"1 database migration not applied yet \\({name}\\)"):
+        github.update_searches(dry_run=True)
+    assert _one("SELECT count(*) FROM schema_migrations WHERE name=%s", name)[0] == 0

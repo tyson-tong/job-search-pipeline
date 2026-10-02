@@ -38,7 +38,7 @@ def update_searches(dry_run: bool = False) -> None:
     its excluded title terms (imports only apply them to the jobs they bring in), and bring
     back Filtered jobs its filters would now keep. An invalid file stops before anything
     is published, so a typo never reaches the daily import."""
-    from .db import migrate
+    from .db import migrate, pending_migrations
     from .ingest.filters import search_warnings
     from .ingest.refilter import exclude_inbox_jobs, restore_filtered_jobs
     from .ingest.searches import defaults_search, parse_config
@@ -69,7 +69,14 @@ def update_searches(dry_run: bool = False) -> None:
             hint=f", or set the variable by hand: gh variable set JOBFLOW_TIMEZONE --body {zone}")
         print(f"Updated the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE ({zone}) GitHub variables: the "
               "daily import uses them now")
-    migrate()
+    if not dry_run:
+        migrate()
+    elif pending := pending_migrations():
+        # A migration can drop columns: a dry run must change nothing, so it stops here.
+        raise RuntimeError(f"{plural(len(pending), 'database migration')} not applied yet "
+                           f"({', '.join(pending)}), and a dry run changes nothing. Any other "
+                           "jobflow command (such as jobflow web) applies them; then run the "
+                           "dry run again")
     # A job found by a search since renamed or removed is judged by [defaults].
     fallback = defaults_search(text)
     matched, checked = exclude_inbox_jobs(searches, dry_run=dry_run, fallback=fallback)
@@ -118,10 +125,38 @@ def _print_published_searches(text: str | None) -> dict[str, list[str]]:
     return used
 
 
+def _print_recent_runs() -> None:
+    """What your database says about the latest imports: when one last succeeded, and each
+    site whose Apify runs failed lately, with the error (GitHub only says the job failed).
+    Reads only; a database that can't be read is a note, not a failed status."""
+    import psycopg
+
+    from .db import connect
+    from .ingest.store import RECENT_RUNS, recent_failed_runs
+    from .settings import timezone
+
+    try:
+        with connect() as conn:
+            last = conn.execute("SELECT max(finished_at) FROM scraper_runs "
+                                "WHERE status = 'SUCCEEDED'").fetchone()[0]
+            failed = recent_failed_runs(conn)
+    except (RuntimeError, psycopg.Error) as exc:
+        print(f"Runs:     can't read them from your database ({str(exc).strip()})")
+        return
+    hours = round(RECENT_RUNS.total_seconds() / 3600)
+    print("Runs:     " + (f"last succeeded {last.astimezone(timezone()):%Y-%m-%d %H:%M %Z}"
+                          if last else "none has succeeded yet")
+          + ("" if failed else f"; none failed in the last {hours} hours"))
+    for f in failed:
+        print(f"  {f['site']:<9} {f['failed']} of {plural(f['total'], 'run')} failed in the last "
+              f"{hours} hours: {f['error'] or 'no error recorded'}")
+
+
 def status() -> None:
     """Show what the daily GitHub import uses, reading it from GitHub: whether it's on, its
     last run, its secrets, its searches (and whether they match config/searches.toml), and
-    which job sites (Apify scrapers) it calls. Changes nothing."""
+    which job sites (Apify scrapers) it calls; and from your database, why recent Apify
+    runs failed. Changes nothing."""
     import json
     from datetime import datetime
 
@@ -144,6 +179,7 @@ def status() -> None:
               f"{run['conclusion'] or run['status']}")
     else:
         print("  Last run: none yet")
+    _print_recent_runs()
     print("Secrets:  " + ", ".join(f"{name} set {secrets[name]}" if name in secrets
                                    else f"{name} MISSING (gh secret set {name})"
                                    for name in ACTIONS_SECRETS))

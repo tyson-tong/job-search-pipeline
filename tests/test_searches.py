@@ -328,6 +328,17 @@ def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
         apify.ingest_searches()
     assert seen.count("indeed") == 10 and seen.count("seek") == 9
     assert "FAILED — boom" in capsys.readouterr().err
+    # An error every run would hit (the account's usage limit) skips the runs not started:
+    # each site's first run at most, not all 20.
+    seen.clear()
+
+    def over_limit(client, planned, max_wait):
+        seen.append(planned.site)
+        raise RuntimeError("Monthly usage hard limit exceeded")
+    monkeypatch.setattr(apify, "run_search", over_limit)
+    with pytest.raises(SystemExit, match="weren't started"):
+        apify.ingest_searches()
+    assert 1 <= len(seen) <= 3
 
 
 def test_each_run_knows_its_country_so_one_ad_in_two_countries_stays_two_jobs():

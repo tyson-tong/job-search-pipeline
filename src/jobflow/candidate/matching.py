@@ -163,17 +163,10 @@ def stored_assessments(conn, job_id: int, weights: tuple[float, float]) -> list[
                     weights) for variant, hit in _cached_assessments(conn, job_id).items()]
 
 
-def match_job(job_id: int, rescore: bool = False) -> list[dict]:
-    """The job's assessment against each CV cvs in config/profile.toml names, scoring it
-    first against any of them it has no score for (all at once).
-
-    A job is scored once against each CV, and again after that CV's content changes only
-    when you ask (rescore: the tracker's Rescore edited CVs); a CV named later (added, or
-    renamed) is scored for it the next time. Only an Inbox or Interested job is scored
-    (SCORABLE). Returns every stored assessment, recomputed with the current profile
-    weights, including any against CVs no longer named.
-    """
-    weights = matching_weights()
+def _cvs_to_score(job_id: int, rescore: bool) -> dict[str, str]:
+    """{CV: its text} for the CVs this job needs scoring against: those it has no score
+    for, and, with rescore, those edited since. Only an Inbox or Interested job is scored
+    (SCORABLE); a job further along keeps the scores it has."""
     with db.connect() as conn:
         assessed = _latest_digests(conn, job_id)
         status = conn.execute("SELECT status FROM jobs WHERE id=%s", (job_id,)).fetchone()
@@ -184,40 +177,37 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
                or (rescore and assessed[variant] != cv_digest(source))}
     if sources and status[0] not in SCORABLE:
         if assessed:   # scored in the Inbox or while Interested: it keeps what it has
-            sources = {}
-        else:
-            raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only Inbox and "
-                               "interested jobs are scored")
-    if not sources:
-        with db.connect() as conn:
-            return stored_assessments(conn, job_id, weights)
-    job = fetch_job(job_id)
-    for variant, source in sources.items():
-        # A score stands until the CV changes, so one from part of a CV would stand too.
-        check_cv_length(f"CV {variant!r}", source)
+            return {}
+        raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only Inbox and "
+                           "interested jobs are scored")
+    return sources
 
-    def assess(variant: str, source: str) -> dict:
-        digest = cv_digest(source)
-        prompt = {"job": job_prompt(job),
-                  "cv_variant": variant, "cv_source": source,
-                  "instructions": MATCH_INSTRUCTIONS}
-        content, model = complete(
-            "You are a careful CV-to-job evidence assessor. Never invent facts. Return valid JSON only.",
-            json.dumps(prompt, ensure_ascii=False), json_mode=True)
-        result = parse_json(content)
-        items = normalise_requirements(result.get("requirements"), source)
-        if not items:
-            # A score stands until the CV changes, so saving this would fix it at 0.
-            raise RuntimeError(f"The LLM listed no requirements for CV {variant!r}; nothing "
-                               "was saved, so the job can be scored again")
-        return _record(variant, digest, items, str(result.get("rationale") or ""), model, weights)
 
-    # The CVs are independent, so their LLM calls run side by side.
-    with ThreadPoolExecutor(max_workers=len(sources)) as pool:
-        results = list(pool.map(assess, sources, sources.values()))
-    # Saved together, only once every CV is assessed: a job scored against only one of two
-    # CVs would look as good as scored, so a failure part-way must save none. A rescore
-    # adds a row; the latest row per CV is the job's score against it.
+def _assess(job: dict, variant: str, source: str, weights: tuple[float, float]) -> dict:
+    """One LLM call: the job's requirements and how this CV evidences each, with every
+    quote checked against the CV, scored with these weights."""
+    prompt = {"job": job_prompt(job), "cv_variant": variant, "cv_source": source,
+              "instructions": MATCH_INSTRUCTIONS}
+    content, model = complete(
+        "You are a careful CV-to-job evidence assessor. Never invent facts. Return valid JSON only.",
+        json.dumps(prompt, ensure_ascii=False), json_mode=True)
+    result = parse_json(content)
+    items = normalise_requirements(result.get("requirements"), source)
+    if not items:
+        # A score stands until the CV changes, so saving this would fix it at 0.
+        raise RuntimeError(f"The LLM listed no requirements for CV {variant!r}; nothing "
+                           "was saved, so the job can be scored again")
+    return _record(variant, cv_digest(source), items, str(result.get("rationale") or ""),
+                   model, weights)
+
+
+def _save_assessments(job_id: int, results: list[dict], rescore: bool,
+                      weights: tuple[float, float]) -> list[dict]:
+    """Save every CV's assessment of the job together, and return all its stored ones.
+
+    Saved only once every CV is assessed: a job scored against only one of two CVs would
+    look as good as scored, so a failure part-way must save none. A rescore adds a row; the
+    latest row per CV is the job's score against it."""
     with db.connect() as conn:
         # Another process (a second tracker, or tailor-cv) may have scored this job while
         # the LLM calls ran. Lock the job and keep whichever score was saved first.
@@ -240,6 +230,32 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
                  record["model"]))
             db.record_workflow_run(conn, job_id, "match", "SUCCEEDED", record["model"])
         return stored_assessments(conn, job_id, weights)
+
+
+def match_job(job_id: int, rescore: bool = False) -> list[dict]:
+    """The job's assessment against each CV cvs in config/profile.toml names, scoring it
+    first against any of them it has no score for (all at once).
+
+    A job is scored once against each CV, and again after that CV's content changes only
+    when you ask (rescore: the tracker's Rescore edited CVs); a CV named later (added, or
+    renamed) is scored for it the next time. Only an Inbox or Interested job is scored
+    (SCORABLE). Returns every stored assessment, recomputed with the current profile
+    weights, including any against CVs no longer named.
+    """
+    weights = matching_weights()
+    sources = _cvs_to_score(job_id, rescore)
+    if not sources:
+        with db.connect() as conn:
+            return stored_assessments(conn, job_id, weights)
+    job = fetch_job(job_id)
+    for variant, source in sources.items():
+        # A score stands until the CV changes, so one from part of a CV would stand too.
+        check_cv_length(f"CV {variant!r}", source)
+    # The CVs are independent, so their LLM calls run side by side.
+    with ThreadPoolExecutor(max_workers=len(sources)) as pool:
+        results = list(pool.map(lambda variant, source: _assess(job, variant, source, weights),
+                                sources, sources.values()))
+    return _save_assessments(job_id, results, rescore, weights)
 
 
 # Jobs with one of %(statuses)s without a score against one of the CVs named

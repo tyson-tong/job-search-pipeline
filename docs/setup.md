@@ -30,7 +30,7 @@ Sign-up screens and prices change, so the steps below describe what to look for 
 
 Keep every key out of Git: `config/.env` is ignored by Git, and should be readable only by you (as `init` creates it). Never paste a key into `config/searches.toml`, `config/profile.toml`, or an issue.
 
-Optional: `APIFY_MAX_WAIT_MINUTES` in `config/.env` sets how long to wait for each Apify run (default and at most 30); a run still going then is stopped, so it can't keep charging, and recorded as failed. `JOBFLOW_PROFILE` names another profile file, and `CV_DIRECTORY`, `OUTPUT_DIRECTORY`, and `SEARCHES_FILE` override those paths in it. `OPENAI_API_KEY` works in place of `LLM_API_KEY`. `jobflow` reads `config/.env` by itself; variables already set in your shell take precedence. The database tables are created the first time you run any command other than `init`, `help`, or `status`.
+Optional: `APIFY_MAX_WAIT_MINUTES` in `config/.env` sets how long to wait for each Apify run (default and at most 30); a run still going then is stopped, so it can't keep charging, and recorded as failed. `JOBFLOW_PROFILE` names another profile file, and `CV_DIRECTORY`, `OUTPUT_DIRECTORY`, and `SEARCHES_FILE` override those paths in it. `OPENAI_API_KEY` works in place of `LLM_API_KEY`. `jobflow` reads `config/.env` by itself; variables already set in your shell take precedence. The database tables are created the first time you run any command other than `init`, `help`, `status`, or `update-searches --dry-run`.
 
 ## 1. Database (Neon)
 
@@ -131,7 +131,7 @@ The daily import runs in GitHub Actions, so it needs its own copy of two keys. I
 
 The LLM and Tavily keys stay on your machine; GitHub never needs them.
 
-Then open **Actions → "Daily job ingestion" → Run workflow** to test it once. After that it runs every day at 00:30 Sydney time (01:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. If a run fails, GitHub emails you, and the error is recorded in the database (`scraper_runs`). GitHub may start a scheduled run a few hours late when it's busy. `uv run jobflow status` shows it all at a glance: whether the import is on, its last run, which secrets are set, whether the published searches and timezone match yours, and which sites it calls.
+Then open **Actions → "Daily job ingestion" → Run workflow** to test it once. After that it runs every day at 00:30 Sydney time (01:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. If a run fails, GitHub emails you, and the error is recorded in the database (`scraper_runs`). GitHub may start a scheduled run a few hours late when it's busy. `uv run jobflow status` shows it all at a glance: whether the import is on, its last run, which secrets are set, whether the published searches and timezone match yours, which sites it calls, and, from your database, why recent Apify runs failed (such as your Apify account reaching its monthly usage limit).
 
 ## If a key leaks
 
