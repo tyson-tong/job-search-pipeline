@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from .. import db, settings
+from .dedupe import FUZZY_WINDOW_DAYS
 
 # A filtered job this long past its posted date (or the date first seen, if later), or a job
 # this long after you marked it Not interested, is archived (see archive_old_jobs).
@@ -15,11 +16,12 @@ INBOX_ARCHIVE_AFTER = timedelta(days=30)
 # How long each sighting keeps its full scraped record (see prune_sightings).
 KEEP_SIGHTING_RECORDS = timedelta(days=30)
 # How long an archived job keeps its description and scraped record (see
-# prune_archived_jobs). By then it is past the 90 days in which a repost with a new ID is
-# matched by its ad (dedupe.FUZZY_WINDOW_DAYS), as it was archived at least 2 weeks after it was
-# first seen. Similar-job notes look further back (similar.POSSIBLE_WINDOW_DAYS), but
-# only notes are lost: a cleared job has no ad to compare.
-KEEP_ARCHIVED_RECORDS = timedelta(days=90)
+# prune_archived_jobs): as long as a repost with a new ID is matched by its ad
+# (dedupe.FUZZY_WINDOW_DAYS, counted from first seen), so clearing it never loses a merge;
+# the job was archived after it was first seen, so this is past that window. Similar-job
+# notes look further back (similar.POSSIBLE_WINDOW_DAYS), but only notes are lost: a
+# cleared job has no ad to compare.
+KEEP_ARCHIVED_RECORDS = timedelta(days=FUZZY_WINDOW_DAYS)
 
 
 def archive_old_jobs(today: date | None = None) -> int:

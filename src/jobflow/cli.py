@@ -298,9 +298,11 @@ def run_tailor_cv(args: argparse.Namespace) -> None:
         written = add_format(folder, args.format)
         return f"wrote {written}" if written else None
 
-    for_jobs(JobCommand("tailor-cv", "interested", "tailor", "a tailored CV", tailor_one,
-                        lambda folder: any(folder.glob("CV_*_draft.yaml")), cv_fixed_by_hand,
-                        add_requested_format if args.format != "pdf" else None),
+    for_jobs(JobCommand(command="tailor-cv", status="interested", kind="tailor",
+                        what="a tailored CV", run_one=tailor_one,
+                        output_exists=lambda folder: any(folder.glob("CV_*_draft.yaml")),
+                        fixed_by_hand=cv_fixed_by_hand,
+                        done_one=add_requested_format if args.format != "pdf" else None),
              args.job, args.redo)
 
 
@@ -323,9 +325,10 @@ def run_cover_letter(args: argparse.Namespace) -> None:
                             f"{target.parent / 'COVER_LETTER_REVIEW.md'}, before you send it "
                             "with your application.")
 
-    for_jobs(JobCommand("cover-letter", "interested", "cover-letter", "a cover letter",
-                        letter_one, lambda folder: (folder / "cover-letter.docx").exists(),
-                        letter_fixed_by_hand),
+    for_jobs(JobCommand(command="cover-letter", status="interested", kind="cover-letter",
+                        what="a cover letter", run_one=letter_one,
+                        output_exists=lambda folder: (folder / "cover-letter.docx").exists(),
+                        fixed_by_hand=letter_fixed_by_hand),
              args.job, args.redo)
 
 
@@ -338,9 +341,9 @@ def run_interview_prep(args: argparse.Namespace) -> None:
     chosen_sources()  # a problem with cvs in config/profile.toml stops it now
     check_keys(web_search=True)
     migrate()
-    for_jobs(JobCommand("interview-prep", "interviewing", "interview-prep", "a briefing",
-                        lambda job_id: print(prepare(job_id)),
-                        lambda folder: (folder / "interview-prep.html").exists()),
+    for_jobs(JobCommand(command="interview-prep", status="interviewing", kind="interview-prep",
+                        what="a briefing", run_one=lambda job_id: print(prepare(job_id)),
+                        output_exists=lambda folder: (folder / "interview-prep.html").exists()),
              args.job, args.redo)
 
 

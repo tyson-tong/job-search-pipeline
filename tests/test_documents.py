@@ -1,7 +1,8 @@
+"""Documents jobflow writes: the CV as .docx and .tex, the cover letter .docx, and the
+interview briefing's HTML."""
 import re
 from datetime import date
 
-import pytest
 from docx import Document
 
 from jobflow.candidate.documents import write_docx, write_latex, write_letter_docx
@@ -58,20 +59,6 @@ def test_latex_cv_text_can_never_run_commands(tmp_path):
     assert "{[}Confidential{]} project" in tex
 
 
-def test_the_cv_files_named_in_the_profile_are_read_as_text(tmp_path, monkeypatch):
-    from jobflow.candidate import cvs
-
-    write_docx(CV, tmp_path / "Resume 2026.docx")
-    (tmp_path / "strat-cv.tex").write_text(
-        "\\documentclass{article}\n\\begin{document}\n\\textbf{Built} ETL 100\\% % note\n"
-        "\\end{document}\n")
-    monkeypatch.setattr(cvs, "cv_directory", lambda: tmp_path)
-    monkeypatch.setattr(cvs, "chosen_cvs", lambda: ["Resume 2026.docx", "strat-cv.tex"])
-    sources = cvs.chosen_sources()
-    assert "Built Python ETL pipelines" in sources["Resume 2026"]
-    assert _words(sources["strat-cv"]).strip() == "Built ETL 100%"
-
-
 def test_letter_from_a_non_yaml_cv_takes_its_header_only_from_the_cv(tmp_path):
     cv_text = ("José Example\njose@example.com | +61 400 000 000\n"
                "Example Corp 2016 - 2019: processed 2,000,000 records")
@@ -84,32 +71,6 @@ def test_letter_from_a_non_yaml_cv_takes_its_header_only_from_the_cv(tmp_path):
     write_letter_docx(letter, "José Example\njose@example.com\nAcme (2019 - 2023) analyst",
                       {"title": "Analyst", "company": "Acme"}, tmp_path / "l.docx", date(2026, 9, 27))
     assert Document(tmp_path / "l.docx").paragraphs[0].text == "José Example\njose@example.com"
-
-
-def test_only_the_one_or_two_cv_files_named_in_the_profile_are_used(tmp_path, monkeypatch):
-    # Each CV is one LLM call per job, sending the whole CV and ad: more CVs multiply the
-    # bill, so the profile must name 1 or 2 files exactly, and nothing runs until it does.
-    from jobflow.candidate import cvs
-    for name in ("CV_dev.yaml", "CV_dev.pdf", "CV_harvard.yaml", "CV_strat.yaml"):
-        (tmp_path / name).write_text("cv:\n  name: " + name + "\n")
-    (tmp_path / "~$CV_dev.docx").write_bytes(b"Word lock file")
-    monkeypatch.setattr(cvs, "cv_directory", lambda: tmp_path)
-
-    def chosen(*names):
-        monkeypatch.setattr(cvs, "chosen_cvs", lambda: list(names))
-        return {variant: path.name for variant, path in cvs.chosen_files().items()}
-
-    with pytest.raises(RuntimeError, match=re.escape('set cvs = ["CV_dev.pdf", "CV_dev.yaml"]')):
-        chosen()
-    assert chosen("CV_strat.yaml", "CV_dev.pdf") == {"strat": "CV_strat.yaml", "dev": "CV_dev.pdf"}
-    with pytest.raises(RuntimeError, match="names 3 CVs"):
-        chosen("CV_dev.yaml", "CV_harvard.yaml", "CV_strat.yaml")
-    with pytest.raises(RuntimeError, match="names dev, which isn't a CV file"):
-        chosen("dev")
-    with pytest.raises(RuntimeError, match=re.escape("names ~$CV_dev.docx, which isn't")):
-        chosen("~$CV_dev.docx")
-    with pytest.raises(RuntimeError, match="same CV in two formats"):
-        chosen("CV_dev.yaml", "CV_dev.pdf")
 
 
 def test_briefing_markup_cannot_inject_html():

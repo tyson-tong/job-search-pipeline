@@ -353,6 +353,14 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
     assert _one("SELECT status FROM jobs WHERE source_job_id='1'")[0] == "archived"
 
 
+def _tailor(run_one, output_exists, **more):
+    """tailor-cv's JobCommand, with test doubles for its work."""
+    from jobflow import batch
+    return batch.JobCommand(command="tailor-cv", status="interested", kind="tailor",
+                            what="a tailored CV", run_one=run_one, output_exists=output_exists,
+                            **more)
+
+
 def test_a_job_is_done_only_while_its_output_exists_and_its_last_draft_passed(database, tmp_path,
                                                                             monkeypatch):
     # clean-up deletes folders but not the runs that made them: a job moved back to
@@ -382,18 +390,16 @@ def test_a_job_is_done_only_while_its_output_exists_and_its_last_draft_passed(da
         folder.mkdir(parents=True)
         (folder / "CV_dev_draft.yaml").write_text("cv: {}")
     ran, extra = [], []
-    batch._run_jobs(batch.JobCommand("tailor-cv", "interested", "tailor", "a tailored CV", ran.append,
-                                     lambda folder: any(folder.glob("CV_*_draft.yaml")),
-                                     lambda folder: folder.name.startswith("quant"),
-                                     lambda folder: extra.append(folder.name)))
+    batch._run_jobs(_tailor(ran.append, lambda folder: any(folder.glob("CV_*_draft.yaml")),
+                            fixed_by_hand=lambda folder: folder.name.startswith("quant"),
+                            done_one=lambda folder: extra.append(folder.name)))
     assert sorted(ran) == sorted([ids["1"], ids["4"]])
     assert _one("SELECT count(*) FROM workflow_runs WHERE status='FIXED-BY-HAND'")[0] == 1
     # --format's extra file, for the jobs already done.
     assert sorted(extra) == [f"engineer-{ids['2']}", f"quant-{ids['3']}"]
     # --redo: the named job again, done or not; no other.
     ran.clear()
-    batch._run_jobs(batch.JobCommand("tailor-cv", "interested", "tailor", "a tailored CV", ran.append,
-                                     lambda folder: True), only=[ids["2"]], redo=True)
+    batch._run_jobs(_tailor(ran.append, lambda folder: True), only=[ids["2"]], redo=True)
     assert ran == [ids["2"]]
 
 
@@ -412,8 +418,7 @@ def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database
         conn.execute("UPDATE jobs SET status='interested' WHERE source_job_id <> '3'")
     monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
     ran = []
-    tailor = batch.JobCommand("tailor-cv", "interested", "tailor", "a tailored CV", ran.append,
-                              lambda folder: False)
+    tailor = _tailor(ran.append, lambda folder: False)
     batch._run_jobs(tailor, only=[ids["2"]])
     assert ran == [ids["2"]]
     with pytest.raises(RuntimeError, match=f"#{ids['3']} is new"):
@@ -647,8 +652,7 @@ def test_a_second_run_of_a_command_stops_while_the_first_is_going(database, tmp_
         with pytest.raises(SystemExit, match="tailor-cv is already running"):
             batch.for_jobs(command)   # started while this run is going
         ran.append(job_id)
-    command = batch.JobCommand("tailor-cv", "interested", "tailor", "a tailored CV", run_one,
-                               lambda folder: False)
+    command = _tailor(run_one, lambda folder: False)
     batch.for_jobs(command)
     assert ran == [job_id]
     batch.for_jobs(command)   # the first run's lock went with it

@@ -65,12 +65,13 @@ class _JobOutput:
         return getattr(self.stream, name)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class JobCommand:
     """One piece of work done per job: tailor-cv, cover-letter, or interview-prep.
 
-    command: its name, for messages; status: the jobs it works on; kind: its workflow_runs kind; what: what it makes, for
-    messages ("a tailored CV"); run_one(job_id): does one job; output_exists(folder):
+    command: its name, for messages; status: the jobs it works on; kind: its workflow_runs
+    kind; what: what it makes, for messages ("a tailored CV"); run_one(job_id): does one
+    job; output_exists(folder):
     whether its marker file is still in the job's folder; fixed_by_hand(folder), if given:
     whether you fixed a draft that failed the fact check; done_one(folder), if given: runs
     for each job already done and returns a line to print, or None."""
@@ -105,12 +106,14 @@ def for_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = Fa
 
 class Plan(NamedTuple):
     """What _plan_jobs found: how many jobs have the command's status, the (id, company,
-    title) of those to do, the (name, folder) of those done, and how many of those to do
-    are drafted again (their last draft failed the fact check) or done again (their output
-    was deleted)."""
+    title) of those to do, the (name, folder) of those done, the (id, name, folder) of
+    those whose failed draft you fixed by hand (done too, once recorded), and how many of
+    those to do are drafted again (their last draft failed the fact check) or done again
+    (their output was deleted)."""
     total: int
     todo: list[tuple[int, str | None, str]]
     done: list[tuple[str, Path]]
+    fixed: list[tuple[int, str, Path]]
     redrafted: int
     lost: int
 
@@ -118,7 +121,7 @@ class Plan(NamedTuple):
 def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> Plan:
     """The jobs with the command's status (only those in `only`, if given) still to do, and
     those done. A job in `only` without that status is an error. With redo, every
-    job is to do, done or not.
+    job is to do, done or not. Reads only: _run_jobs records what it found.
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
     twice, and a failed job is retried next time. A job counts as done only while
@@ -126,10 +129,10 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
     CV_*_draft.yaml, cover-letter.docx, or interview-prep.html): one whose marker was
     deleted (by clean-up, say) is done again. Deleting only a tailored CV's PDF doesn't
     count. A job whose latest draft failed the fact check (NEEDS-FIX) is done again, for a
-    fresh draft, unless command.fixed_by_hand(its folder) says you fixed that draft yourself: then
-    it's recorded as FIXED-BY-HAND and kept."""
+    fresh draft, unless command.fixed_by_hand(its folder) says you fixed that draft
+    yourself: then it's kept (Plan.fixed)."""
     from .candidate.paths import job_directory
-    from .db import connect, record_workflow_run
+    from .db import connect
 
     status, kind = command.status, command.kind
     with connect() as conn:
@@ -155,7 +158,7 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
                                   ORDER BY r.id DESC LIMIT 1) last ON true
                WHERE j.status = %s AND (%s::bigint[] IS NULL OR j.id = ANY(%s))
                ORDER BY j.id""", (kind, status, only, only)).fetchall()
-        todo, done_jobs, redrafted, lost = [], [], 0, 0
+        todo, done_jobs, fixed, redrafted, lost = [], [], [], 0, 0
         for job_id, company, title, done, tried in rows:
             name = f"#{job_id} {title} ({company or 'unknown employer'})"
             folder = job_directory(job_id, {"company": company, "title": title})
@@ -168,14 +171,12 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
             elif done:
                 lost += 1
             elif tried and command.fixed_by_hand and command.fixed_by_hand(folder):
-                record_workflow_run(conn, job_id, kind, "FIXED-BY-HAND")
-                print(f"{name}: you fixed its draft yourself, so it's kept and not drafted again")
-                done_jobs.append((name, folder))
+                fixed.append((job_id, name, folder))
                 continue
             elif tried:
                 redrafted += 1
             todo.append((job_id, company, title))
-    return Plan(len(rows), todo, done_jobs, redrafted, lost)
+    return Plan(len(rows), todo, done_jobs, fixed, redrafted, lost)
 
 
 def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> None:
@@ -191,16 +192,24 @@ def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = F
     print(f"{plural(plan.total, command.status.capitalize() + ' job')}: "
           f"{plan.total - len(todo)} already have {command.what}, {len(todo)} to do"
           + (f" ({'; '.join(again)})" if again else ""))
-    for name, folder in plan.done:
-        if command.done_one is None:
-            break
-        try:
-            line = command.done_one(folder)
-        except Exception as exc:   # one job's files (edited by hand, say) never stop the rest
-            print(f"{name}: warning: {exc}", file=sys.stderr)
-        else:
-            if line:
-                print(f"{name}: {line}")
+    from .db import connect, record_workflow_run
+
+    if plan.fixed:
+        with connect() as conn:   # so the next run doesn't redraft them either
+            for job_id, _, _ in plan.fixed:
+                record_workflow_run(conn, job_id, command.kind, "FIXED-BY-HAND")
+    for _, name, _ in plan.fixed:
+        print(f"{name}: you fixed its draft yourself, so it's kept and not drafted again")
+    done_one = command.done_one
+    if done_one is not None:
+        for name, folder in plan.done + [(name, folder) for _, name, folder in plan.fixed]:
+            try:
+                line = done_one(folder)
+            except Exception as exc:   # one job's files (edited by hand, say) never stop the rest
+                print(f"{name}: warning: {exc}", file=sys.stderr)
+            else:
+                if line:
+                    print(f"{name}: {line}")
     out, err = _JobOutput(sys.stdout), _JobOutput(sys.stderr)
     lock = threading.Lock()
 

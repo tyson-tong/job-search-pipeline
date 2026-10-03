@@ -1,6 +1,9 @@
+"""Work on your CVs: reading and choosing them, scoring jobs against them, tailoring and
+shortening a CV, cover letters, the fact checks, and skill gaps."""
 import copy
 import json
 import os
+import re
 from concurrent.futures import Future
 
 import pytest
@@ -8,6 +11,7 @@ from docx import Document
 
 from jobflow.candidate import cover_letter
 from jobflow.candidate.cover_letter import letter_fixed_by_hand
+from jobflow.candidate.documents import write_docx
 from jobflow.candidate.factcheck import check_letter, fact_check
 from jobflow.candidate.matching import normalise_requirements, quote_in_cv, score_requirements
 from jobflow.candidate.render import bullets, cut_order, without
@@ -201,7 +205,6 @@ def test_fact_check_flags_a_number_moved_to_another_job():
 def test_a_draft_fixed_by_hand_is_not_drafted_again(tmp_path):
     # A job whose draft failed the fact check is drafted again, which would overwrite a
     # draft you fixed yourself.
-    import os
     draft, review = tmp_path / "CV_dev_draft.yaml", tmp_path / "CV_REVIEW.md"
     draft.write_text("cv: {}")
     review.write_text("review")
@@ -389,9 +392,12 @@ def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkey
         json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))
     for suffix in (".pdf", ".docx", ".tex"):
         (tmp_path / f"CV_dev_draft{suffix}").write_bytes(b"from an earlier run")
+    # And from an earlier run with another CV (--redo --cv), which passed the check.
+    for suffix in (".yaml", ".pdf"):
+        (tmp_path / f"CV_strat_draft{suffix}").write_bytes(b"from an earlier run")
     target, errors, _ = tailoring.tailor_cv(1, output_dir=tmp_path, fmt="docx")
     assert errors and target == tmp_path / "CV_dev_draft.yaml"
-    assert sorted(p.name for p in tmp_path.glob("CV_dev_draft.*")) == ["CV_dev_draft.yaml"]
+    assert sorted(p.name for p in tmp_path.glob("CV_*_draft.*")) == ["CV_dev_draft.yaml"]
 
 
 def test_a_cv_photo_is_copied_beside_the_draft_and_never_outside_it(tmp_path):
@@ -408,3 +414,43 @@ def test_a_cv_photo_is_copied_beside_the_draft_and_never_outside_it(tmp_path):
     (tmp_path / "outside.png").write_bytes(b"x")   # found, but its copy would leave the folder
     copy_photo({"photo": "../outside.png"}, cv_folder, draft_folder)
     assert not (draft_folder.parent / "outside.png").exists()
+
+
+def test_the_cv_files_named_in_the_profile_are_read_as_text(tmp_path, monkeypatch):
+    from jobflow.candidate import cvs
+
+    write_docx(SOURCE_CV, tmp_path / "Resume 2026.docx")
+    (tmp_path / "strat-cv.tex").write_text(
+        "\\documentclass{article}\n\\begin{document}\n\\textbf{Built} ETL 100\\% % note\n"
+        "\\end{document}\n")
+    monkeypatch.setattr(cvs, "cv_directory", lambda: tmp_path)
+    monkeypatch.setattr(cvs, "chosen_cvs", lambda: ["Resume 2026.docx", "strat-cv.tex"])
+    sources = cvs.chosen_sources()
+    assert "Built Python ETL pipelines" in sources["Resume 2026"]
+    assert " ".join(sources["strat-cv"].split()) == "Built ETL 100%"
+
+
+def test_only_the_one_or_two_cv_files_named_in_the_profile_are_used(tmp_path, monkeypatch):
+    # Each CV is one LLM call per job, sending the whole CV and ad: more CVs multiply the
+    # bill, so the profile must name 1 or 2 files exactly, and nothing runs until it does.
+    from jobflow.candidate import cvs
+    for name in ("CV_dev.yaml", "CV_dev.pdf", "CV_harvard.yaml", "CV_strat.yaml"):
+        (tmp_path / name).write_text("cv:\n  name: " + name + "\n")
+    (tmp_path / "~$CV_dev.docx").write_bytes(b"Word lock file")
+    monkeypatch.setattr(cvs, "cv_directory", lambda: tmp_path)
+
+    def chosen(*names):
+        monkeypatch.setattr(cvs, "chosen_cvs", lambda: list(names))
+        return {variant: path.name for variant, path in cvs.chosen_files().items()}
+
+    with pytest.raises(RuntimeError, match=re.escape('set cvs = ["CV_dev.pdf", "CV_dev.yaml"]')):
+        chosen()
+    assert chosen("CV_strat.yaml", "CV_dev.pdf") == {"strat": "CV_strat.yaml", "dev": "CV_dev.pdf"}
+    with pytest.raises(RuntimeError, match="names 3 CVs"):
+        chosen("CV_dev.yaml", "CV_harvard.yaml", "CV_strat.yaml")
+    with pytest.raises(RuntimeError, match="names dev, which isn't a CV file"):
+        chosen("dev")
+    with pytest.raises(RuntimeError, match=re.escape("names ~$CV_dev.docx, which isn't")):
+        chosen("~$CV_dev.docx")
+    with pytest.raises(RuntimeError, match="same CV in two formats"):
+        chosen("CV_dev.yaml", "CV_dev.pdf")

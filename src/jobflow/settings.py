@@ -150,10 +150,9 @@ def timezone() -> ZoneInfo:
     name, where = os.environ.get("JOBFLOW_TIMEZONE"), "JOBFLOW_TIMEZONE"
     if not name:
         where = "locale.timezone in config/profile.toml"
-        try:
-            name = profile().get("locale", {}).get("timezone")
-        except RuntimeError:   # no profile, as in GitHub Actions without the variable
-            name = None
+        # No profile, as in GitHub Actions without the variable, means UTC; a broken one is
+        # an error, not a quiet switch of every date to UTC.
+        name = profile().get("locale", {}).get("timezone") if profile_path().exists() else None
     try:
         return ZoneInfo(name or "UTC")
     except (ZoneInfoNotFoundError, ValueError):

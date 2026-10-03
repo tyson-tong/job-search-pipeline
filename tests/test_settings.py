@@ -64,3 +64,16 @@ def test_a_database_on_another_machine_is_only_reached_encrypted():
         with pytest.raises(RuntimeError, match="sslmode=prefer") as caught:
             encrypted_url(url + "&sslmode=prefer")
         assert "secret" not in str(caught.value)
+
+
+def test_a_broken_profile_is_an_error_not_a_quiet_switch_to_utc(monkeypatch, tmp_path):
+    # Every date (today, follow-ups, archiving) would silently move to UTC.
+    from jobflow.settings import timezone
+
+    monkeypatch.delenv("JOBFLOW_TIMEZONE")
+    profile = tmp_path / "profile.toml"
+    monkeypatch.setenv("JOBFLOW_PROFILE", str(profile))
+    assert timezone().key == "UTC"   # no profile at all, as in GitHub Actions
+    profile.write_text('[locale]\ntimezone = "Australia/Sydney\n')   # unclosed quote
+    with pytest.raises(RuntimeError, match="not valid TOML"):
+        timezone()

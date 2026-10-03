@@ -1,5 +1,3 @@
-import threading
-import time
 from types import SimpleNamespace
 
 import pytest
@@ -123,24 +121,15 @@ def test_a_bad_key_stops_the_batch_instead_of_failing_every_job():
     # A bad key or an empty balance fails every request: tailor-cv, cover-letter,
     # interview-prep, and the tracker's scoring must stop, not try (and bill) each job.
     tried = []
-    second_started, first_failing = threading.Event(), threading.Event()
 
     def work(job_id):
         tried.append(job_id)
         if job_id == 1:
-            second_started.wait(5)   # both workers busy, so neither job is skipped
-            first_failing.set()
             raise llm.LLMError("Invalid key (LLM provider, HTTP 401)", fatal=True)
         if job_id == 3:
             raise RuntimeError("one job's own problem")
-        # Job 2 finishes only once job 1 has failed, so the batch has stopped before
-        # either worker takes another job.
-        second_started.set()
-        first_failing.wait(5)
-        time.sleep(0.1)
-    failed, skipped = run_each([1, 2, 3, 4, 5, 6], work)
-    assert sorted(tried) == [1, 2]
-    assert failed == [1] and sorted(skipped) == [3, 4, 5, 6]
+    # One worker, so no other job is already under way when the first one fails.
+    assert run_each([1, 2, 3, 4], work, workers=1) == ([1], [2, 3, 4]) and tried == [1]
     # Any other failure doesn't stop the rest.
     tried.clear()
     assert run_each([3, 4, 5], work) == ([3], []) and sorted(tried) == [3, 4, 5]

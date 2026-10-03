@@ -240,10 +240,12 @@ def tailor_cv(job_id: int, variant: str | None = None,
     target_dir = output_dir or job_directory(job_id, job)
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"CV_{variant}_draft.yaml"
-    # A PDF, .docx, or .tex left by an earlier run is not this draft: remove it, so if this
-    # one fails the check or doesn't render, nothing beside it looks like a checked CV.
-    for suffix in (".pdf", ".docx", ".tex"):
-        target.with_suffix(suffix).unlink(missing_ok=True)
+    # Files left by an earlier run, from this CV or another (--redo --cv), are not this
+    # draft: remove them, so if this one fails the check or doesn't render, nothing beside
+    # it looks like a checked CV, and its draft is the only one here.
+    for old in target_dir.glob("CV_*_draft.*"):
+        if old.suffix in (".yaml", ".pdf", ".docx", ".tex"):
+            old.unlink()
     write_cv(target, source_doc, draft_cv)
     copy_photo(draft_cv, cv_directory(), target_dir)   # so it renders in its folder too
     cut: list[dict] = []

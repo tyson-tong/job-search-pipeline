@@ -35,9 +35,11 @@ class PlannedRun:
 
 
 # Each site's {days: input value} for the windows it has, and its value for any time.
-POSTED_WITHIN: dict[str, tuple[Mapping[int, object], object]] = {"linkedin": (opt.LINKEDIN_POSTED_WITHIN, opt.LINKEDIN_POSTED_ANY_TIME),
-                 "indeed": (opt.INDEED_POSTED_WITHIN, opt.INDEED_POSTED_ANY_TIME),
-                 "seek": (opt.SEEK_POSTED_WITHIN, opt.SEEK_POSTED_ANY_TIME)}
+POSTED_WITHIN: dict[str, tuple[Mapping[int, object], object]] = {
+    "linkedin": (opt.LINKEDIN_POSTED_WITHIN, opt.LINKEDIN_POSTED_ANY_TIME),
+    "indeed": (opt.INDEED_POSTED_WITHIN, opt.INDEED_POSTED_ANY_TIME),
+    "seek": (opt.SEEK_POSTED_WITHIN, opt.SEEK_POSTED_ANY_TIME),
+}
 WINDOW_NAMES = {1: "24 hours", 7: "1 week", 14: "2 weeks", 30: "1 month"}
 
 

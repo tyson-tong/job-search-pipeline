@@ -225,3 +225,18 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
                updated_at=now()""",
         (note_line, APPLIED_STATUSES, follow_up_on if set_follow_up else None, job_id,
          set_follow_up))
+
+
+def move_job(conn, job_id: int, from_status: str, to_status: str, via: str,
+             filter_reason: str | None = None) -> bool:
+    """Move a job jobflow itself is moving (update-searches filtering or restoring it) from
+    one status to another, with filter_reason, recording it in status_history; False, and
+    nothing changed, if the job has left from_status since it was read. set_job_state is
+    for the changes you make."""
+    moved = conn.execute("""UPDATE jobs SET status=%s, filter_reason=%s, status_updated_at=now()
+                            WHERE id=%s AND status=%s""",
+                         (to_status, filter_reason, job_id, from_status)).rowcount
+    if moved:
+        conn.execute("""INSERT INTO status_history(job_id, from_status, to_status, via)
+                        VALUES (%s,%s,%s,%s)""", (job_id, from_status, to_status, via))
+    return bool(moved)

@@ -73,8 +73,9 @@ def reference() -> dict:
                                                      ("indeed", opt.INDEED_COUNTRIES),
                                                      ("seek", opt.SEEK_COUNTRIES)) if code in table]}
                       for code, cities in opt.CITIES.items()],
-        "seek_classifications": [{"key": key, "name": name,
-                             "subclassifications": [{"key": k, "name": n} for k, n in
-                                                    opt.SEEK_SUBCLASSIFICATIONS.get(key, {}).items()]}
-                            for key, name in opt.SEEK_CLASSIFICATIONS.items()],
+        "seek_classifications": [
+            {"key": key, "name": name,
+             "subclassifications": [{"key": k, "name": n} for k, n in
+                                    opt.SEEK_SUBCLASSIFICATIONS.get(key, {}).items()]}
+            for key, name in opt.SEEK_CLASSIFICATIONS.items()],
     }

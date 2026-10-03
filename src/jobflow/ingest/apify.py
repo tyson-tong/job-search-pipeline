@@ -4,6 +4,7 @@ import math
 import os
 import sys
 import threading
+import time
 from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
@@ -20,6 +21,10 @@ from .searches import load_searches
 # another in a daily GitHub job stopped at 180 minutes, where a run cut off keeps charging
 # on Apify: a short wait leaves room for several runs per site.
 MAX_WAIT_MINUTES = 30
+# How long one import may take. GitHub stops the daily job at 180 minutes (timeout-minutes
+# in .github/workflows/daily-ingest.yml), which would lose the runs not yet started and skip
+# the upkeep after them: a run is started only if it can end within this, wait included.
+INGEST_MINUTES = 150
 
 
 def make_client() -> ApifyClient:
@@ -130,15 +135,31 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
         by_site.setdefault(planned.site, []).append(planned)
     failed: list[str] = []
     skipped: list[str] = []
+    late: list[str] = []   # not started: they could have run past INGEST_MINUTES
     # Set by an error every later run would hit too (account_wide): the rest are skipped.
     stop = threading.Event()
+    deadline = time.monotonic() + INGEST_MINUTES * 60
 
     def run_site(client: ApifyClient, site_runs: list[PlannedRun]) -> None:
+        from .store import record_failed_run
+
         # One site's runs go one after another, so at most one Apify run per site.
         for planned in site_runs:
             run_name = f"{planned.search.name}/{planned.site} {planned.label}"
             if stop.is_set():
                 skipped.append(run_name)
+                continue
+            if time.monotonic() + max_wait.total_seconds() > deadline:
+                late.append(run_name)
+                try:   # recorded, so the tracker's header and jobflow status show it
+                    record_failed_run(f"{planned.site}:{planned.actor}", None, None,
+                                      "NOT_STARTED", "not started: the import could have run "
+                                      f"past its {INGEST_MINUTES}-minute limit",
+                                      search_name=planned.search.name,
+                                      run_input=planned.run_input)
+                except Exception as exc:
+                    print(f"{run_name}: could not record it as not started: {exc}",
+                          file=sys.stderr)
                 continue
             try:
                 run_search(client, planned, max_wait)
@@ -168,9 +189,15 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
     cleared = prune_archived_jobs()
     if cleared:
         print(f"Cleared the ads of {plural(cleared, 'job')} archived over 90 days ago")
+    if late:
+        print(f"Not started, to finish within {INGEST_MINUTES} minutes: {', '.join(late)}",
+              file=sys.stderr)
     if skipped:
         raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed, and the other "
                          f"{len(skipped)} weren't started: the error is your Apify account's "
                          "(its token, or its monthly usage limit), so they would fail too")
-    if failed:
-        raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed")
+    if failed or late:
+        raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed"
+                         + (f", and {len(late)} weren't started, to finish within "
+                            f"{INGEST_MINUTES} minutes: search fewer terms or places per site, or "
+                            "lower APIFY_MAX_WAIT_MINUTES" if late else ""))

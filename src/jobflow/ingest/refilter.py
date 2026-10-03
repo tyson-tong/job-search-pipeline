@@ -42,14 +42,7 @@ def exclude_inbox_jobs(searches: list, dry_run: bool = False,
                                 "reason": reason})
         if not dry_run:
             for job in matched:
-                changed = conn.execute(
-                    """UPDATE jobs SET status='filtered', filter_reason=%s,
-                           status_updated_at=now() WHERE id=%s AND status='new'""",
-                    (job["reason"], job["id"])).rowcount
-                if changed:
-                    conn.execute("""INSERT INTO status_history(job_id, from_status, to_status, via)
-                                    VALUES (%s, 'new', 'filtered', 'update-searches')""",
-                                 (job["id"],))
+                db.move_job(conn, job["id"], "new", "filtered", "update-searches", job["reason"])
     return matched, len(rows)
 
 
@@ -87,11 +80,5 @@ def restore_filtered_jobs(searches: list, dry_run: bool = False,
                                  "reason": reason})
         if not dry_run:
             for job in restored:
-                changed = conn.execute(
-                    """UPDATE jobs SET status='new', filter_reason=NULL, status_updated_at=now()
-                       WHERE id=%s AND status='filtered'""", (job["id"],)).rowcount
-                if changed:
-                    conn.execute("""INSERT INTO status_history(job_id, from_status, to_status, via)
-                                    VALUES (%s, 'filtered', 'new', 'update-searches')""",
-                                 (job["id"],))
+                db.move_job(conn, job["id"], "filtered", "new", "update-searches")
     return restored, len(rows)

@@ -30,7 +30,7 @@ function renderDetail() {
       el("input", { id: "d-follow", type: "date", value: current(target, "follow_up_on") ? fmtDate(current(target, "follow_up_on")) : "",
         onchange: (event) => setPending(target, "follow_up_on", event.target.value) }),
       el("textarea", { placeholder: "Add a note (dated when saved), e.g. spoke to recruiter, salary discussed…",
-        maxlength: 2000, oninput: (event) => setPending(target, "note", event.target.value) },
+        maxlength: state.summary.max_note, oninput: (event) => setPending(target, "note", event.target.value) },
         current(target, "note") || "")),
     job.notes ? [el("h3", {}, "Notes"), el("div", { className: "notes" }, job.notes)] : null,
     matchSection(job),

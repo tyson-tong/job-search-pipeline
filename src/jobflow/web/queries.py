@@ -11,7 +11,7 @@ from ..candidate.matching import score_sql, score_weights
 from ..db import CLOSED_STATUSES, STATUSES
 from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
 from ..ingest.similar import IN_PROGRESS, similar_jobs
-from ..ingest.store import recent_failed_runs
+from ..ingest.store import RECENT_RUNS, recent_failed_runs
 from ..settings import today
 from .grouping import group_duplicates
 
@@ -267,7 +267,9 @@ def summary() -> dict:
             "default_statuses": DEFAULT_STATUSES, "in_progress": list(IN_PROGRESS),
             "cv_variants": variants, "unscored": unscored,
             "outdated": outdated,
-            "scoring_problem": scoring_problem, "max_rows": MAX_ROWS}
+            "scoring_problem": scoring_problem, "max_rows": MAX_ROWS, "max_note": MAX_NOTE,
+            # The header flags a late import after this long, the window jobflow status uses.
+            "late_after_hours": RECENT_RUNS.total_seconds() / 3600}
 
 
 def job_detail(job_id: int) -> dict | None:

@@ -239,7 +239,7 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
 
 
 # Apify runs this recent count as the last import's: a day, with slack for GitHub starting
-# the daily import late.
+# the daily import late. The tracker's header calls an import late after this long too.
 RECENT_RUNS = timedelta(hours=36)
 
 
