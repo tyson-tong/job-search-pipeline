@@ -77,8 +77,9 @@ def find_conflicts(conn, changes: list[dict]) -> list[dict]:
                     ORDER BY changed_at DESC LIMIT 1) AS last_via
             FROM jobs j LEFT JOIN applications a ON a.job_id = j.id
             WHERE j.id = ANY(%s) FOR UPDATE OF j""", (list(expected),)).fetchall()
+    # Each job's version now, so the page can save over it once you've seen the change.
     return [{"id": pk, "title": title, "company": company, "status": status,
-             "follow_up_on": follow_up_on, "changed_via": via}
+             "follow_up_on": follow_up_on, "changed_via": via, "version": version}
             for pk, title, company, status, follow_up_on, version, via in rows
             if version != expected[pk]]
 

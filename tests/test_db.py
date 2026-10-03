@@ -297,10 +297,15 @@ def test_a_save_over_a_change_made_elsewhere_writes_nothing(database):
     job = list_jobs(parse_filters({"status": ["new"]}))[0]
     with connect() as conn:   # changed in another tab after this page loaded it
         set_job_state(conn, job["id"], status="interested", via="test")
-    with pytest.raises(Conflict):
+    with pytest.raises(Conflict) as caught:
         save_changes([{"id": job["id"], "status": "not_interested",
                        "expected_version": job["version"]}])
     assert _one("SELECT status FROM jobs")[0] == "interested"
+    # Once you've seen the change, saving against its version works: Cancel in the conflict
+    # dialog kept the old version, so every later Save conflicted again.
+    save_changes([{"id": job["id"], "status": "not_interested",
+                   "expected_version": caught.value.conflicts[0]["version"]}])
+    assert _one("SELECT status FROM jobs")[0] == "not_interested"
 
 
 def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(database):

@@ -67,6 +67,18 @@ def no_network(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
 
 
+@pytest.fixture(autouse=True)
+def no_github(monkeypatch):
+    """Refuse to run the GitHub CLI: it runs as a subprocess, which no_network can't stop,
+    with your own GitHub login, so a test that forgets to fake it could set your real
+    repository's variables. A test that needs gh fakes _gh (or subprocess.run) itself."""
+    from jobflow import github
+
+    def refuse(args, *rest, **kwargs):
+        raise RuntimeError(f"a test tried to run the real GitHub CLI: gh {' '.join(args)}")
+    monkeypatch.setattr(github, "_gh", refuse)
+
+
 class NullConnection:
     """A database connection that accepts every statement and returns no rows."""
 

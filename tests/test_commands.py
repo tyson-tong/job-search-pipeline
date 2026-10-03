@@ -35,3 +35,41 @@ def test_clean_up_deletes_only_closed_jobs_folders_and_only_on_yes(tmp_path, mon
     monkeypatch.setattr("builtins.input", lambda prompt: "Y")
     cleanup.clean_up()
     assert not closed.exists() and all(folder.exists() for folder in others)
+
+
+def test_clean_up_keeps_the_folder_of_a_job_that_moved_on_while_you_decided(tmp_path, monkeypatch):
+    # The tracker may move a job back to Interested while the prompt waits: its folder, with
+    # the CV you're about to send, must not be deleted.
+    answers = iter([[(4, "rejected"), (7, "rejected")],   # listed for the prompt
+                    [(4, "rejected")]])                    # checked again after "y"
+
+    class Conn:
+        def execute(self, *args): return self
+        def fetchall(self): return next(answers)
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+
+    monkeypatch.setattr(db, "connect", Conn)
+    monkeypatch.setattr(settings, "output_directory", lambda: tmp_path)
+    rejected, moved_on = tmp_path / "acme" / "analyst-4", tmp_path / "beta" / "quant-7"
+    for folder in (rejected, moved_on):
+        folder.mkdir(parents=True)
+    monkeypatch.setattr("builtins.input", lambda prompt: "y")
+    cleanup.clean_up()
+    assert not rejected.exists() and moved_on.exists()
+
+
+def test_the_daily_import_needs_no_document_libraries():
+    # The daily GitHub Action installs without the documents group (uv sync --no-group
+    # documents), so an import of one on ingest's path would break only the 00:30 run.
+    import subprocess
+    import sys
+
+    code = ("import sys\n"
+            "for name in ('docx', 'pypdf', 'rendercv', 'yaml'):\n"
+            "    sys.modules[name] = None   # importing it now fails, as in the Action\n"
+            "from jobflow import cli, db\n"
+            "from jobflow.ingest import apify, store, upkeep\n"
+            "cli.build_parser().parse_args(['ingest'])\n")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr

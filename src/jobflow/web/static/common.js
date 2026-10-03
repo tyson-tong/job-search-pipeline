@@ -161,8 +161,10 @@ async function resolveConflicts(conflicts) {
   const overwrite = confirm(`${conflicts.length === 1 ? "This job has" : "These jobs have"} changed since you `
     + `loaded ${conflicts.length === 1 ? "it" : "them"}, so nothing was saved:\n\n${lines.join("\n")}\n\n`
     + "OK: save your changes anyway (replacing the status and follow-up; notes are added).\n"
-    + "Cancel: keep your drafts and load the latest data to review.");
+    + "Cancel: keep your drafts and load the latest data to review; Save again to save them over it.");
   if (overwrite) return save(true);
+  // You've now seen these changes: the next Save goes over them, not into this conflict again.
+  conflicts.forEach((c) => { if (state.versions.has(c.id)) state.versions.set(c.id, c.version); });
   toast("Nothing saved. Showing the latest data; your drafts are kept.");
   await refresh();
   if (state.detail) await openDetail(state.detail.id);
