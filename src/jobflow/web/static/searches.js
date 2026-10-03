@@ -18,7 +18,7 @@ function renderSearches() {
     el("div", { className: "next" }, el("strong", {}, "To change your searches"),
       el("p", { className: "meta", style: "margin:4px 0" },
         "Edit the file in your editor, then click Reload to check it. After each change, run this: it checks "
-        + "the file, updates the copy the daily GitHub run uses, filters Inbox jobs from your excluded employers or matching your excluded titles, "
+        + "the file, updates the copy the daily GitHub run uses, filters Inbox jobs your searches would now filter, "
         + "and brings back Filtered jobs your searches would no longer filter:"),
       el("div", { className: "cmd" }, el("code", {}, "uv run jobflow update-searches"),
         el("button", { className: "btn small", onclick: () => copyCommand("uv run jobflow update-searches") }, "Copy")),

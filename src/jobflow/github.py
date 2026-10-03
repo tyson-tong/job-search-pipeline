@@ -34,13 +34,14 @@ def _gh(args: list[str], doing: str, input: str | None = None, hint: str = "") -
 
 def update_searches(dry_run: bool = False) -> None:
     """Check config/searches.toml, publish it as the JOBFLOW_SEARCHES GitHub variable that
-    the daily import reads, then filter Inbox jobs from its excluded employers or matching
-    its excluded title terms (imports only apply them to the jobs they bring in), and bring
-    back Filtered jobs its filters would now keep. An invalid file stops before anything
-    is published, so a typo never reaches the daily import."""
+    the daily import reads, then filter Inbox jobs its filters would now filter (imports
+    only apply them to the jobs they bring in), and bring back Filtered jobs its filters
+    would now keep. An invalid file stops before anything is published, so a typo never
+    reaches the daily import; so does a database that can't be reached, so the Inbox is
+    never left judged by the old searches while the import uses the new ones."""
     from .db import migrate, pending_migrations
     from .ingest.filters import search_warnings
-    from .ingest.refilter import exclude_inbox_jobs, restore_filtered_jobs
+    from .ingest.refilter import filter_inbox_jobs, restore_filtered_jobs
     from .ingest.searches import defaults_search, parse_config
     from .settings import searches_file, timezone
 
@@ -54,6 +55,14 @@ def update_searches(dry_run: bool = False) -> None:
     sys.stdout.flush()
     for warning in dict.fromkeys(w for s in searches for w in search_warnings(s)):
         print(f"warning: {warning}", file=sys.stderr)
+    if not dry_run:
+        migrate()
+    elif pending := pending_migrations():
+        # A migration can drop columns: a dry run must change nothing, so it stops here.
+        raise RuntimeError(f"{plural(len(pending), 'database migration')} not applied yet "
+                           f"({', '.join(pending)}), and a dry run changes nothing. Any other "
+                           "jobflow command (such as jobflow web) applies them; then run the "
+                           "dry run again")
     # The daily import has no config/profile.toml, so it gets your timezone this way too.
     zone = timezone().key
     if dry_run:
@@ -69,17 +78,9 @@ def update_searches(dry_run: bool = False) -> None:
             hint=f", or set the variable by hand: gh variable set JOBFLOW_TIMEZONE --body {zone}")
         print(f"Updated the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE ({zone}) GitHub variables: the "
               "daily import uses them now")
-    if not dry_run:
-        migrate()
-    elif pending := pending_migrations():
-        # A migration can drop columns: a dry run must change nothing, so it stops here.
-        raise RuntimeError(f"{plural(len(pending), 'database migration')} not applied yet "
-                           f"({', '.join(pending)}), and a dry run changes nothing. Any other "
-                           "jobflow command (such as jobflow web) applies them; then run the "
-                           "dry run again")
     # A job found by a search since renamed or removed is judged by [defaults].
     fallback = defaults_search(text)
-    matched, checked = exclude_inbox_jobs(searches, dry_run=dry_run, fallback=fallback)
+    matched, checked = filter_inbox_jobs(searches, dry_run=dry_run, fallback=fallback)
     for job in matched:
         print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
               f"{job['reason']}")

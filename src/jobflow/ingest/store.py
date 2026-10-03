@@ -37,7 +37,12 @@ def _same_copy(conn, key: str) -> tuple[int, bool] | None:
     row = conn.execute("""SELECT s.job_id, j.canonical_key = s.source_key
                           FROM job_sources s JOIN jobs j ON j.id = s.job_id
                           WHERE s.source_key=%s""", (key,)).fetchone()
-    return (row[0], row[1]) if row else None
+    if row:
+        return row[0], row[1]
+    # A job from before job_sources whose sightings' records were already pruned when the
+    # table was filled in has no row there, but its first copy's key is still unique in jobs.
+    row = conn.execute("SELECT id FROM jobs WHERE canonical_key=%s", (key,)).fetchone()
+    return (row[0], True) if row else None
 
 
 def _same_content(conn, fp: str | None, country: str | None) -> int | None:

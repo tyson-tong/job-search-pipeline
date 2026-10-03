@@ -20,8 +20,9 @@ STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "o
 # archive_old_jobs in ingest/upkeep.py).
 CLOSED_STATUSES = ["not_interested", "accepted", "declined", "rejected", "withdrawn", "filtered",
                    "archived"]
-# Statuses meaning you've applied; the first time a job reaches one sets applied_at.
-APPLIED_STATUSES = ["applied", "interviewing", "offered", "accepted", "declined"]
+# Statuses meaning you've applied; the first time a job reaches one sets applied_at. Rejected
+# too: a job can go straight from Interested to Rejected if you never marked it Applied.
+APPLIED_STATUSES = ["applied", "interviewing", "offered", "accepted", "declined", "rejected"]
 
 # The sslmode values that never fall back to an unencrypted connection.
 ENCRYPTED_SSLMODES = ("require", "verify-ca", "verify-full")

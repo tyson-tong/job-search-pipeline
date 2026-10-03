@@ -478,7 +478,7 @@ document.getElementById("score-btn").addEventListener("click", () => {
 });
 document.getElementById("rescore-btn").addEventListener("click", () => {
   const { jobs, calls } = state.summary.outdated;
-  startScoring({ rescore: true }, `Rescore ${jobs} interested job${jobs === 1 ? "" : "s"} against the CVs you've edited `
+  startScoring({ rescore: true }, `Rescore ${jobs} job${jobs === 1 ? "" : "s"} you're pursuing against the CVs you've edited `
     + `since ${jobs === 1 ? "it was" : "they were"} scored?\n\nThis makes ${calls} LLM call${calls === 1 ? "" : "s"}`
     + " (and scores any CV a job has no score against yet). Scores against CVs you haven't edited are kept.");
 });

@@ -123,10 +123,14 @@ def searches_file() -> Path:
     return configured_path("paths", "searches_file", "./searches.toml")
 
 
+# The required and preferred weights of a match score when the profile doesn't set them.
+DEFAULT_WEIGHTS = (0.75, 0.25)
+
+
 def matching_weights() -> tuple[float, float]:
     matching = profile().get("matching", {})
-    required = float(matching.get("required_weight", 0.75))
-    preferred = float(matching.get("preferred_weight", 0.25))
+    required = float(matching.get("required_weight", DEFAULT_WEIGHTS[0]))
+    preferred = float(matching.get("preferred_weight", DEFAULT_WEIGHTS[1]))
     # TOML allows nan and inf, which would make every score nan.
     if not (math.isfinite(required) and math.isfinite(preferred)) \
             or required < 0 or preferred < 0 or required + preferred <= 0:

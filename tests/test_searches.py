@@ -360,7 +360,7 @@ def test_each_run_knows_its_country_so_one_ad_in_two_countries_stays_two_jobs():
     assert search_url_country({}) is None
 
 
-def test_excluded_title_terms_keep_jobs_out_of_the_inbox():
+def test_excluded_titles_and_employers_keep_jobs_out_of_the_inbox():
     config = CONFIG.replace("max_results = 40",
                             'max_results = 40\nexclude_title_terms = ["Internship", "Fresh Grad", "Graduate"]')
     search = parse_config(config)[0]
@@ -379,39 +379,20 @@ def test_excluded_title_terms_keep_jobs_out_of_the_inbox():
                          "linkedin") == "title contains 'C++'"
     assert filter_reason(normalise({"title": "Series C Fintech Quant", "companyName": "Acme"}), cpp,
                          "linkedin") is None
+    # A kept title overrides an excluded term, but not an excluded employer.
+    kept = parse_config(CONFIG.replace("max_results = 40", 'max_results = 40\n'
+                                       'exclude_title_terms = ["Analyst"]\n'
+                                       'include_title_terms = ["Quant Analyst", "Quantitative Analyst"]\n'
+                                       'exclude_companies = ["Acme", "Big Bank"]'))[0]
 
-
-def test_included_title_terms_override_excluded_ones():
-    config = CONFIG.replace("max_results = 40", 'max_results = 40\nexclude_title_terms = ["Analyst"]\n'
-                            'include_title_terms = ["Quant Analyst", "Quantitative Analyst"]')
-    search = parse_config(config)[0]
-    def reason(title):
-        return filter_reason(normalise({"title": title, "companyName": "Acme"}), search, "linkedin")
-    assert reason("Credit Analyst") == "title contains 'Analyst'"
-    assert reason("Quant Analyst - Equities") is None
-    assert reason("MGR/AVP, Quantitative Analyst") is None
-
-
-def test_excluded_employers_keep_jobs_out_even_with_a_kept_title():
-    config = CONFIG.replace("max_results = 40", 'max_results = 40\nexclude_companies = ["Acme", "Big Bank"]\n'
-                            'include_title_terms = ["Quant Analyst"]')
-    search = parse_config(config)[0]
-    def reason(company):
-        return filter_reason(normalise({"title": "Quant Analyst", "companyName": company}), search, "linkedin")
-    assert reason("ACME Pty Ltd") == "employer matches 'Acme'"
-    assert reason("Big-Bank Group") == "employer matches 'Big Bank'"
+    def judged(title, company):
+        return filter_reason(normalise({"title": title, "companyName": company}), kept, "linkedin")
+    assert judged("Credit Analyst", "Beta") == "title contains 'Analyst'"
+    assert judged("MGR/AVP, Quantitative Analyst", "Beta") is None
+    assert judged("Quant Analyst", "ACME Pty Ltd") == "employer matches 'Acme'"
+    assert judged("Quant Analyst", "Big-Bank Group") == "employer matches 'Big Bank'"
     # Whole words only, and a job with no employer listed is kept.
-    assert reason("Acmera") is None
-    assert reason(None) is None
-
-
-def test_old_setting_names_still_work():
-    # The GitHub copy of a searches file may predate a rename; the daily import must still
-    # read it. Setting both names at once is an error rather than a silent choice.
-    old = parse_config(CONFIG.replace("seek_classifications = ", "classifications = "))
-    assert old == parse_config(CONFIG)
-    with pytest.raises(SearchConfigError, match="set seek_classifications only"):
-        parse_config(CONFIG.replace("seek_classifications = [", 'classifications = ["engineering"]\nseek_classifications = ['))
+    assert judged("Quant Analyst", "Acmera") is None and judged("Quant Analyst", None) is None
 
 
 def test_a_term_or_city_listed_twice_is_searched_and_paid_for_once():

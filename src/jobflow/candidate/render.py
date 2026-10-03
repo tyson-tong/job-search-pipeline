@@ -24,6 +24,9 @@ GAP_WARNING = 0.3
 # The longest one RenderCV render may take; one that hangs would otherwise hold its job,
 # and the lock that stops a second tailor-cv, for good.
 RENDER_TIMEOUT_SECONDS = 180
+# The exit code of a command line tool stopped by Ctrl+C (128 + SIGINT), as RenderCV is once
+# it's running.
+INTERRUPTED = 130
 
 
 class RenderFailed(RuntimeError):
@@ -61,6 +64,12 @@ def render(source: Path) -> Path:
     except subprocess.TimeoutExpired:
         raise RenderFailed(f"RenderCV took over {RENDER_TIMEOUT_SECONDS} seconds and was "
                            "stopped") from None
+    if result.returncode < 0 or result.returncode == INTERRUPTED:
+        # Stopped, as Ctrl+C stops it along with jobflow: killed by the signal, or exiting
+        # with 130 once its own handler catches it. Not RenderFailed, which tailor-cv
+        # records as a finished draft that couldn't be rendered: this job failed, and is
+        # tried again next time.
+        raise RuntimeError(f"RenderCV was stopped (exit code {result.returncode})")
     if result.returncode or not pdf.exists():
         # RenderCV draws its errors as a table; keep the words.
         output = " ".join(re.sub(r"[─-╿]", " ", result.stdout + result.stderr).split())
@@ -175,9 +184,18 @@ def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
         if cv_folder:
             copy_photo(cv, cv_folder, Path(scratch))
 
+        # Each candidate keeps a start of the cut order, so its bullet count names it. The
+        # last one rendered is the PDF in the scratch folder.
+        pages_by_bullets: dict[int, int] = {}
+        last_rendered: list[int] = []
+
         def pages_for(candidate: dict) -> int:
-            write_cv(source, source_doc, candidate)
-            return pdf_pages(render(source))
+            count = len(bullets(candidate))
+            if last_rendered[-1:] != [count]:
+                write_cv(source, source_doc, candidate)
+                pages_by_bullets[count] = pdf_pages(render(source))
+                last_rendered.append(count)
+            return pages_by_bullets[count]
 
         pages = pages_for(cv)
         cut: list[dict] = []

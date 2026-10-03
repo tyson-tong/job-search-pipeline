@@ -16,7 +16,7 @@ from ..llm import complete, parse_json
 from ..settings import matching_weights, now, output_directory
 from ..text import plural
 from .cvs import chosen_files
-from .matching import best_variant, current_digests, stored_assessments
+from .matching import PURSUING, best_variant, current_digests, stored_assessments
 from .pages import html_page
 
 # How much one unmet requirement counts towards a skill's rank.
@@ -25,7 +25,7 @@ STATUS_WEIGHT = {"not_evidenced": 1.0, "partial": 0.5}
 MAX_GAPS_SENT = 600
 # The jobs whose gaps count: the ones you're pursuing. Jobs still in the Inbox, and ones
 # rejected, withdrawn, declined, or accepted, don't.
-STATUSES = ["interested", "applied", "interviewing", "offered"]
+STATUSES = list(PURSUING)
 
 
 def outdated_note(jobs: int) -> str:
@@ -33,9 +33,7 @@ def outdated_note(jobs: int) -> str:
     still counts it as a gap."""
     return (f"{jobs} of these jobs {'was' if jobs == 1 else 'were'} scored against an earlier "
             "version of your CV, so a skill you've since added may still be listed: click "
-            "Rescore edited CVs in the tracker's My jobs, then run skill-gaps again. It "
-            "rescores Interested jobs only; ones you've applied for, or further along, keep "
-            "their scores.")
+            "Rescore edited CVs in the tracker's My jobs, then run skill-gaps again.")
 
 
 def collect_gaps() -> tuple[list[dict], int, int]:

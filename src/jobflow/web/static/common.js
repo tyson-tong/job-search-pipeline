@@ -13,7 +13,7 @@ const AUTO_REFRESH_MS = 3 * 60 * 1000;
 // Save so changes made elsewhere in the meantime are caught instead of overwritten.
 // statuses: My jobs' chosen statuses; null until recalled, or set to the server's defaults.
 const state = { view: "jobs", statuses: null, jobs: [], summary: null,
-  pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null,
+  pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null, saving: false,
   // Rows ticked for a bulk change (Inbox triage; Filtered and Not interested back to the Inbox); lastPicked anchors shift-click ranges.
   selected: new Set(), lastPicked: null,
   // Country and site filters: null for all, else the ticked ones (none ticked: no jobs); and
@@ -132,6 +132,10 @@ function renderSaveBar() {
   if (drawerUnsaved) drawerUnsaved.textContent = n ? `${n} unsaved` : "";
 }
 async function save(force = false) {
+  // Ctrl+S while a save is under way would send the same changes again, and their now
+  // outdated versions would come back as a conflict.
+  if (state.saving) return;
+  state.saving = true;
   const changes = [...state.pending].map(([id, change]) => {
     const version = state.versions.get(id);
     return version ? { id, ...change, expected_version: version } : { id, ...change };
@@ -147,9 +151,13 @@ async function save(force = false) {
     await refresh();
     if (state.detail) await openDetail(state.detail.id);
   } catch (error) {
-    if (error.status === 409 && error.data && error.data.conflicts) return resolveConflicts(error.data.conflicts);
+    if (error.status === 409 && error.data && error.data.conflicts) {
+      state.saving = false;   // resolveConflicts may save again
+      return await resolveConflicts(error.data.conflicts);
+    }
     toast(error.message, true);
   } finally {
+    state.saving = false;
     renderSaveBar();
   }
 }

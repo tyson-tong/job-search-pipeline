@@ -51,7 +51,7 @@ def _web_url(url: object) -> str:
     return url if re.match(r"https?://", url, re.I) else ""
 
 
-LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)"
+MARKDOWN_OR_BARE_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)"
                   r"|(https?://[^\s<>()\"']*[^\s<>()\"'.,;:!?])")
 
 
@@ -63,7 +63,7 @@ def _emphasis(escaped: str) -> str:
 def _inline(text: str) -> str:
     """Escape text, then render http(s) links, **bold**, and `code`."""
     out, pos = [], 0
-    for match in LINK.finditer(text):
+    for match in MARKDOWN_OR_BARE_LINK.finditer(text):
         out.append(_emphasis(html.escape(text[pos:match.start()])))
         label, url = (match[1], match[2]) if match[2] else (match[3], match[3])
         out.append(f'<a href="{html.escape(url, quote=True)}" rel="noreferrer">'
@@ -113,6 +113,27 @@ h1,h2,h3{line-height:1.25}code{background:#eef1f4;padding:0 .25em;border-radius:
 @media print{body{background:white;margin:0;max-width:none}header,main section{box-shadow:none;border:1px solid #ddd;break-inside:avoid}}"""
 
 
+def _briefing_page(job: dict, brief: str, sources: list[dict], model: str) -> str:
+    """The briefing as a whole HTML page: the editor's brief (Markdown, made safe), the
+    research sources, and links only to http(s) addresses."""
+    source_items = "\n".join(
+        (f'<li><a href="{html.escape(_web_url(s["url"]), quote=True)}" rel="noreferrer">'
+         f'{html.escape(s["title"] or s["url"])}</a>' if _web_url(s["url"])
+         else f'<li>{html.escape(s["title"] or s["url"])}')
+        + f'<p>{html.escape(s["content"])}</p></li>'
+        for s in sources)
+    posting_link = (f'<p><a href="{html.escape(_web_url(job["url"]), quote=True)}" rel="noreferrer">'
+                    "Open job posting</a></p>" if _web_url(job["url"]) else "")
+    generated = now().strftime("%Y-%m-%d %H:%M %Z")
+    return html_page(f"Interview preparation — {job['company'] or ''} — {job['title']}", f"""<header><p class="meta">Interview preparation • Generated {generated}</p>
+<h1>{html.escape(job['company'] or 'Company')} — {html.escape(job['title'])}</h1>
+<p>{html.escape(job['location'] or '')}</p>{posting_link}</header>
+<main><section><h2>Preparation brief</h2>{_safe_markup(brief)}</section>
+<section><h2>Research sources</h2><ul>{source_items}</ul></section></main>
+<footer><p>Generated with model {html.escape(model)}. Verify current facts and review every suggested answer against your own experience.</p></footer>""",
+        BRIEFING_STYLE)
+
+
 def prepare(job_id: int) -> Path:
     job = fetch_job(job_id)
     if job["company"]:
@@ -146,23 +167,7 @@ def prepare(job_id: int) -> Path:
                             json.dumps(synth_input, ensure_ascii=False))
     target = job_directory(job_id, job) / "interview-prep.html"
     target.parent.mkdir(parents=True, exist_ok=True)
-    source_items = "\n".join(
-        (f'<li><a href="{html.escape(_web_url(s["url"]), quote=True)}" rel="noreferrer">'
-         f'{html.escape(s["title"] or s["url"])}</a>' if _web_url(s["url"])
-         else f'<li>{html.escape(s["title"] or s["url"])}')
-        + f'<p>{html.escape(s["content"])}</p></li>'
-        for s in sources)
-    posting_link = (f'<p><a href="{html.escape(_web_url(job["url"]), quote=True)}" rel="noreferrer">'
-                    "Open job posting</a></p>" if _web_url(job["url"]) else "")
-    generated = now().strftime("%Y-%m-%d %H:%M %Z")
-    page = html_page(f"Interview preparation — {job['company'] or ''} — {job['title']}", f"""<header><p class="meta">Interview preparation • Generated {generated}</p>
-<h1>{html.escape(job['company'] or 'Company')} — {html.escape(job['title'])}</h1>
-<p>{html.escape(job['location'] or '')}</p>{posting_link}</header>
-<main><section><h2>Preparation brief</h2>{_safe_markup(brief)}</section>
-<section><h2>Research sources</h2><ul>{source_items}</ul></section></main>
-<footer><p>Generated with model {html.escape(model)}. Verify current facts and review every suggested answer against your own experience.</p></footer>""",
-        BRIEFING_STYLE)
-    target.write_text(page)
+    target.write_text(_briefing_page(job, brief, sources, model))
     with db.connect() as conn:
         db.record_workflow_run(conn, job_id, "interview-prep", "SUCCEEDED", model)
     return target

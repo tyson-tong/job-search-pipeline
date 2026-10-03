@@ -7,12 +7,12 @@ import math
 from datetime import datetime, timedelta
 
 from .. import db
-from ..candidate.matching import score_sql, score_weights
+from ..candidate.matching import ASSESSMENT_FORMAT, PURSUING, score_sql, score_weights
 from ..db import CLOSED_STATUSES, STATUSES
 from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
 from ..ingest.similar import IN_PROGRESS, similar_jobs
 from ..ingest.store import RECENT_RUNS, recent_failed_runs
-from ..settings import today
+from ..settings import DEFAULT_WEIGHTS, today
 from .grouping import group_duplicates
 
 DEFAULT_STATUSES = ["interested", "applied", "interviewing", "offered", "accepted"]
@@ -66,7 +66,7 @@ def _weights() -> dict[str, float]:
     try:
         return score_weights()
     except Exception:
-        return {"required_weight": 0.75, "preferred_weight": 0.25}
+        return dict(zip(("required_weight", "preferred_weight"), DEFAULT_WEIGHTS, strict=True))
 
 
 def _outdated(conn, job_ids: list[int], digests: dict[str, str]) -> dict[int, list[str]]:
@@ -75,8 +75,11 @@ def _outdated(conn, job_ids: list[int], digests: dict[str, str]) -> dict[int, li
         return {}
     outdated: dict[int, list[str]] = {}
     for job_id, variant, digest in conn.execute(
-            """SELECT DISTINCT ON (job_id, cv_variant) job_id, cv_variant, cv_sha256
-               FROM match_assessments WHERE job_id = ANY(%s)
+            # Only scores in the current format, as Rescore edited CVs counts them: an older
+            # one counts as no score, and is scored again by Score all jobs.
+            f"""SELECT DISTINCT ON (job_id, cv_variant) job_id, cv_variant, cv_sha256
+               FROM match_assessments
+               WHERE job_id = ANY(%s) AND evidence->>'format' = '{ASSESSMENT_FORMAT}'
                ORDER BY job_id, cv_variant, created_at DESC""", (job_ids,)).fetchall():
         if variant in digests and digest != digests[variant]:
             outdated.setdefault(job_id, []).append(variant)
@@ -265,6 +268,7 @@ def summary() -> dict:
             "last_import": last_import, "failed_runs": failed_runs,
             "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,
             "default_statuses": DEFAULT_STATUSES, "in_progress": list(IN_PROGRESS),
+            "pursuing": list(PURSUING),
             "cv_variants": variants, "unscored": unscored,
             "outdated": outdated,
             "scoring_problem": scoring_problem, "max_rows": MAX_ROWS, "max_note": MAX_NOTE,

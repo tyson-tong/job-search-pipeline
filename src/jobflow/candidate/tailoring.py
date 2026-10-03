@@ -14,7 +14,7 @@ from ..llm import complete, parse_json
 from ..settings import cv_directory
 from ..text import plural
 from . import documents
-from .cvs import check_cv_length, chosen_files, is_yaml, job_prompt
+from .cvs import check_cv_length, chosen_files, cv_section_yaml, is_yaml, job_prompt
 from .factcheck import fact_check
 from .matching import best_variant, match_job
 from .paths import job_directory
@@ -73,7 +73,7 @@ def load_source(job_id: int, variant: str | None) -> Source:
     source_doc = yaml.safe_load(files[variant].read_text())
     if not isinstance(source_doc, dict) or not isinstance(source_doc.get("cv"), dict):
         raise RuntimeError(f"{name} has no cv mapping")
-    source_yaml = yaml.safe_dump({"cv": source_doc["cv"]}, sort_keys=False, allow_unicode=True)
+    source_yaml = cv_section_yaml(source_doc)
     check_cv_length(f"{name}'s cv section", source_yaml)
     return Source(job, variant, reason, source_doc, source_yaml)
 
@@ -106,6 +106,12 @@ def _parse_draft(content: str) -> dict:
     if isinstance(parsed, dict) and "sections" in parsed:
         return parsed
     raise RuntimeError("LLM output is not a RenderCV document with a cv mapping")
+
+
+def cv_written(directory: Path) -> bool:
+    """Whether a tailor-cv run finished in this job's folder: its YAML draft is there, and
+    the CV_REVIEW.md written last. A run cut off in between left only a draft."""
+    return (directory / "CV_REVIEW.md").exists() and any(directory.glob("CV_*_draft.yaml"))
 
 
 def cv_fixed_by_hand(directory: Path) -> bool:
@@ -216,6 +222,35 @@ def _write_checked(job: dict, source_doc: dict, draft_cv: dict, target: Path, ma
     return draft_cv, cut, rendered, read_it
 
 
+def _fresh_target(target_dir: Path, variant: str) -> Path:
+    """The draft's path in the job's folder, with what an earlier run left there removed.
+
+    Files from an earlier run, from this CV or another (--redo --cv), are not this draft:
+    if this one fails the check or doesn't render, nothing beside it may look like a
+    checked CV, and its draft must be the only one. The old review goes too: if this run is
+    cut off before writing its own, a draft newer than an old review would look fixed by
+    hand (cv_fixed_by_hand), and the job would never be drafted again."""
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for old in target_dir.glob("CV_*_draft.*"):
+        if old.suffix in (".yaml", ".pdf", ".docx", ".tex"):
+            old.unlink()
+    for name in ("CV_REVIEW.md", "CV_REVIEW.docx"):
+        (target_dir / name).unlink(missing_ok=True)
+    return target_dir / f"CV_{variant}_draft.yaml"
+
+
+def _needs_fix(target: Path, fmt: str) -> tuple[str, str]:
+    """For a draft that failed the fact check: what was (not) rendered, and what to do."""
+    rendered = ("Not rendered as a PDF" + ("" if fmt == "pdf" else f" or written as {fmt}")
+                + ": fix the fact-check errors in the YAML draft first, then run "
+                f"{_render_command(target)}.")
+    read_it = (f"Read {target.name} line by line against your source CV and fix the errors "
+               "before you render it and send the CV with an application. Once you've "
+               "edited it, tailor-cv keeps your version; if you leave it, the next tailor-cv "
+               "drafts this job again, replacing this draft.")
+    return rendered, read_it
+
+
 def tailor_cv(job_id: int, variant: str | None = None,
               output_dir: Path | None = None,
               max_pages: int = DEFAULT_MAX_PAGES,
@@ -227,36 +262,23 @@ def tailor_cv(job_id: int, variant: str | None = None,
     researching = research_soon(job)
     draft_cv, model = _draft(job, source_yaml)
     job_text = f"{job['title']}\n{job['description']}"
-    errors, warnings = fact_check(source_doc["cv"], draft_cv, job_text)
+    first = fact_check(source_doc["cv"], draft_cv, job_text)
 
     sources, notes = researching.result()
-    draft_cv, (errors, warnings), critique = revise(
-        draft_cv, (errors, warnings),
-        lambda cv: _review(job, source_yaml, yaml.safe_dump(
-            {"cv": cv}, sort_keys=False, allow_unicode=True), sources),
+    revised = revise(
+        draft_cv, first,
+        lambda cv: _review(job, source_yaml, cv_section_yaml({"cv": cv}), sources),
         lambda answer: _parse_draft(str(answer.get("cv_yaml") or "")),
         lambda cv: fact_check(source_doc["cv"], cv, job_text), notes)
 
-    target_dir = output_dir or job_directory(job_id, job)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / f"CV_{variant}_draft.yaml"
-    # Files left by an earlier run, from this CV or another (--redo --cv), are not this
-    # draft: remove them, so if this one fails the check or doesn't render, nothing beside
-    # it looks like a checked CV, and its draft is the only one here.
-    for old in target_dir.glob("CV_*_draft.*"):
-        if old.suffix in (".yaml", ".pdf", ".docx", ".tex"):
-            old.unlink()
+    draft_cv, (errors, warnings) = revised.draft, revised.checked
+
+    target = _fresh_target(output_dir or job_directory(job_id, job), variant)
     write_cv(target, source_doc, draft_cv)
-    copy_photo(draft_cv, cv_directory(), target_dir)   # so it renders in its folder too
+    copy_photo(draft_cv, cv_directory(), target.parent)   # so it renders in its folder too
     cut: list[dict] = []
     if errors:
-        rendered = ("Not rendered as a PDF" + ("" if fmt == "pdf" else f" or written as {fmt}")
-                    + ": fix the fact-check errors in the YAML draft first, then run "
-                    f"{_render_command(target)}.")
-        read_it = (f"Read {target.name} line by line against your source CV and fix the errors "
-                   "before you render it and send the CV with an application. Once you've "
-                   "edited it, tailor-cv keeps your version; if you leave it, the next tailor-cv "
-                   "drafts this job again, replacing this draft.")
+        rendered, read_it = _needs_fix(target, fmt)
     else:
         draft_cv, cut, rendered, read_it = _write_checked(job, source_doc, draft_cv, target,
                                                           max_pages, fmt, warnings)
@@ -265,11 +287,11 @@ def tailor_cv(job_id: int, variant: str | None = None,
              "The least relevant to this job, cut in this order. Copy one back from your "
              "source CV if you want it.", ""] + [f"- {b['label']}: {b['text']}" for b in cut]
             if cut else [])
-    write_review(target_dir / "CV_REVIEW.md",
+    write_review(target.parent / "CV_REVIEW.md",
                  f"CV review: {job['company'] or 'Unknown employer'} — {job['title']} (job id {job_id})",
                  [reason, f"Draft: {target.name}. {rendered}", "",
                   read_it + " The automated check below catches common factual changes but is "
                   "not exhaustive."],
-                 notes, errors, warnings, critique, "CV", cuts)
+                 notes, errors, warnings, revised.critique, "CV", cuts)
     record_run(job_id, "tailor", errors, model)
     return target, errors, warnings

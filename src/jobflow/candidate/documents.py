@@ -20,7 +20,7 @@ from docx.shared import Cm, Pt
 from .. import settings
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 
 
 # --- The CV as a layout every format shares ------------------------------------------------
@@ -42,7 +42,7 @@ def _dates(entry: dict) -> str:
 
 def _text(value: object) -> str:
     """Markdown links become their text; **bold** is kept for the writers."""
-    return LINK.sub(r"\1", str(value or "")).strip()
+    return MARKDOWN_LINK.sub(r"\1", str(value or "")).strip()
 
 
 def _entry(entry: object) -> dict:

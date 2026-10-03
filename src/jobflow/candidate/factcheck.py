@@ -3,8 +3,16 @@ numbers made up, and new terms to confirm. The LLM drafts; these checks are code
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 from ..text import words
+
+
+class Checked(NamedTuple):
+    """A fact check's result: errors (likely factual changes, which stop the draft being
+    written as a finished document) and warnings (wording a human should confirm)."""
+    errors: list[str]
+    warnings: list[str]
 
 # Header fields other than these must stay exactly as in the source CV, and none may be
 # added. The headline may be reworded, so it is checked like section text instead.
@@ -179,8 +187,7 @@ def _new_terms(source_cv: dict, draft_cv: dict, job_text: str) -> list[str]:
                   and not set(words(t).split()) <= source_words)
 
 
-def fact_check(source_cv: dict, draft_cv: dict,
-               job_text: str = "") -> tuple[list[str], list[str]]:
+def fact_check(source_cv: dict, draft_cv: dict, job_text: str = "") -> Checked:
     """Compare a tailored draft with its source CV. job_text, the job's title and ad, names
     the terms a draft is most tempted to add, so they're looked for everywhere.
 
@@ -199,7 +206,7 @@ def fact_check(source_cv: dict, draft_cv: dict,
     new_terms = _new_terms(source_cv, draft_cv, job_text)
     warnings = (["Terms not in the source CV (check each is supported): "
                  + ", ".join(new_terms) + "."] if new_terms else [])
-    return list(dict.fromkeys(errors)), warnings
+    return Checked(list(dict.fromkeys(errors)), warnings)
 
 
 # Capitalised words any letter uses, never worth a warning.
@@ -211,7 +218,7 @@ LETTER_WORDS = {"i", "i'd", "i'm", "i've", "i'll", "dear", "hiring", "manager", 
 
 
 def check_letter(letter: str, source_cv: dict | str, job: dict,
-                 sources: list[dict]) -> tuple[list[str], list[str]]:
+                 sources: list[dict]) -> Checked:
     """Check a cover letter against what it may draw on: the source CV, the job ad, and
     the company research. Errors are numbers found in none of them; warnings are new
     capitalised or technical terms, and placeholders left in."""
@@ -231,4 +238,4 @@ def check_letter(letter: str, source_cv: dict | str, job: dict,
                         "is true): " + ", ".join(new_terms) + ".")
     if re.search(r"\[[^\]]*\]", letter):
         warnings.append("A [placeholder] is left in; fill it in or remove it.")
-    return errors, warnings
+    return Checked(errors, warnings)

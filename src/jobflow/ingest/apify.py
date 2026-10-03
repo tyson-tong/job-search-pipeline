@@ -5,7 +5,7 @@ import os
 import sys
 import threading
 import time
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from decimal import Decimal
 from functools import partial
@@ -119,6 +119,63 @@ def account_wide(exc: Exception) -> bool:
         or "usage hard limit" in str(exc).casefold()
 
 
+@dataclass
+class _Outcome:
+    """The run names an import didn't get through, filled in by each site's thread."""
+    failed: list[str] = field(default_factory=list)
+    # Not started after an error every later run would hit too (account_wide).
+    skipped: list[str] = field(default_factory=list)
+    # Not started: they could have run past INGEST_MINUTES.
+    late: list[str] = field(default_factory=list)
+    stop: threading.Event = field(default_factory=threading.Event)
+
+
+def _run_site(client: ApifyClient, site_runs: list[PlannedRun], max_wait: timedelta,
+              deadline: float, outcome: _Outcome) -> None:
+    """One site's runs, one after another, so at most one Apify run per site at a time."""
+    from .store import record_failed_run
+
+    for planned in site_runs:
+        run_name = f"{planned.search.name}/{planned.site} {planned.label}"
+        if outcome.stop.is_set():
+            outcome.skipped.append(run_name)
+            continue
+        if time.monotonic() + max_wait.total_seconds() > deadline:
+            outcome.late.append(run_name)
+            try:   # recorded, so the tracker's header and jobflow status show it
+                record_failed_run(f"{planned.site}:{planned.actor}", None, None,
+                                  "NOT_STARTED", "not started: the import could have run "
+                                  f"past its {INGEST_MINUTES}-minute limit",
+                                  search_name=planned.search.name,
+                                  run_input=planned.run_input)
+            except Exception as exc:
+                print(f"{run_name}: could not record it as not started: {exc}",
+                      file=sys.stderr)
+            continue
+        try:
+            run_search(client, planned, max_wait)
+        except Exception as exc:
+            outcome.failed.append(run_name)
+            print(f"{run_name}: FAILED — {exc}", file=sys.stderr)
+            if account_wide(exc):
+                outcome.stop.set()
+
+
+def _upkeep() -> None:
+    """Archiving and pruning, after every import."""
+    from .upkeep import archive_old_jobs, prune_archived_jobs, prune_sightings
+
+    archived = archive_old_jobs()
+    if archived:
+        print(f"Archived {plural(archived, 'filtered, not interested, or untriaged Inbox job')}")
+    pruned = prune_sightings()
+    if pruned:
+        print(f"Dropped the scraped records of {plural(pruned, 'sighting')} over 30 days old")
+    cleared = prune_archived_jobs()
+    if cleared:
+        print(f"Cleared the ads of {plural(cleared, 'job')} archived over 90 days ago")
+
+
 def ingest_searches(only_search: str | None = None, only_site: str | None = None,
                     posted_within_days: int | None = None) -> None:
     searches = load_searches()
@@ -133,62 +190,19 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
     by_site: dict[str, list[PlannedRun]] = {}
     for planned in runs:
         by_site.setdefault(planned.site, []).append(planned)
-    failed: list[str] = []
-    skipped: list[str] = []
-    late: list[str] = []   # not started: they could have run past INGEST_MINUTES
-    # Set by an error every later run would hit too (account_wide): the rest are skipped.
-    stop = threading.Event()
+    outcome = _Outcome()
     deadline = time.monotonic() + INGEST_MINUTES * 60
-
-    def run_site(client: ApifyClient, site_runs: list[PlannedRun]) -> None:
-        from .store import record_failed_run
-
-        # One site's runs go one after another, so at most one Apify run per site.
-        for planned in site_runs:
-            run_name = f"{planned.search.name}/{planned.site} {planned.label}"
-            if stop.is_set():
-                skipped.append(run_name)
-                continue
-            if time.monotonic() + max_wait.total_seconds() > deadline:
-                late.append(run_name)
-                try:   # recorded, so the tracker's header and jobflow status show it
-                    record_failed_run(f"{planned.site}:{planned.actor}", None, None,
-                                      "NOT_STARTED", "not started: the import could have run "
-                                      f"past its {INGEST_MINUTES}-minute limit",
-                                      search_name=planned.search.name,
-                                      run_input=planned.run_input)
-                except Exception as exc:
-                    print(f"{run_name}: could not record it as not started: {exc}",
-                          file=sys.stderr)
-                continue
-            try:
-                run_search(client, planned, max_wait)
-            except Exception as exc:
-                failed.append(run_name)
-                print(f"{run_name}: FAILED — {exc}", file=sys.stderr)
-                if account_wide(exc):
-                    stop.set()
-
     # Daemon threads so Ctrl+C ends ingest at once instead of waiting up to max_wait for
     # each site's Apify call; an interrupted import rolls back its transaction.
-    threads = [threading.Thread(target=run_site, args=(make_client(), site_runs),
-                                name=f"ingest-{site}", daemon=True)
+    threads = [threading.Thread(target=_run_site, name=f"ingest-{site}", daemon=True,
+                                args=(make_client(), site_runs, max_wait, deadline, outcome))
                for site, site_runs in by_site.items()]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
-    from .upkeep import archive_old_jobs, prune_archived_jobs, prune_sightings
-    archived = archive_old_jobs()
-    if archived:
-        print(f"Archived {plural(archived, 'filtered, not interested, or untriaged Inbox job')}")
-    pruned = prune_sightings()
-    if pruned:
-        print(f"Dropped the scraped records of {plural(pruned, 'sighting')} "
-              "over 30 days old")
-    cleared = prune_archived_jobs()
-    if cleared:
-        print(f"Cleared the ads of {plural(cleared, 'job')} archived over 90 days ago")
+    _upkeep()
+    failed, skipped, late = outcome.failed, outcome.skipped, outcome.late
     if late:
         print(f"Not started, to finish within {INGEST_MINUTES} minutes: {', '.join(late)}",
               file=sys.stderr)

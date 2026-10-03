@@ -54,4 +54,11 @@ def test_api_requires_the_token_and_a_local_host(server):
     status, _ = _request(port, "/api/save", {"Host": local, "Content-Type": "application/json"},
                          "POST", json.dumps({"changes": [{"id": 1, "status": "applied"}]}))
     assert status == 403
+    # The page runs only its own scripts and can't be framed by another site.
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request("GET", "/", headers={"Host": local})
+    response = conn.getresponse()
+    assert response.status == 200 and response.getheader("X-Frame-Options") == "DENY"
+    assert "script-src 'self'" in response.getheader("Content-Security-Policy")
+    assert "frame-ancestors 'none'" in response.getheader("Content-Security-Policy")
 

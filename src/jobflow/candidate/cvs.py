@@ -6,6 +6,8 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+import yaml
+
 from ..settings import chosen_cvs, cv_directory
 
 JOB_CHAR_LIMIT = 24000
@@ -86,11 +88,20 @@ def chosen_sources() -> dict[str, str]:
 
 @lru_cache(maxsize=64)
 def cv_text(path: Path, mtime_ns: int = 0, size: int = 0) -> str:
-    """A CV file's text: YAML as it is, the body of a .tex without its commands, and the
-    text of a .docx or .pdf. Cached until the file changes (mtime_ns and size)."""
+    """A CV file's text: a RenderCV YAML CV's cv section, the body of a .tex without its
+    commands, and the text of a .docx or .pdf. Cached until the file changes (mtime_ns and
+    size)."""
     suffix = path.suffix.casefold()
     if suffix in YAML_FORMATS:
         text = path.read_text()
+        try:
+            document = yaml.safe_load(text)
+        except yaml.YAMLError:
+            document = None
+        # Only the CV itself, as tailor-cv sends it: RenderCV's design, locale, and settings
+        # are no evidence, and changing them doesn't make earlier scores out of date.
+        if isinstance(document, dict) and isinstance(document.get("cv"), dict):
+            text = cv_section_yaml(document)
     elif suffix == ".tex":
         text = path.read_text()
         body = re.search(r"\\begin\{document\}(.*?)\\end\{document\}", text, re.S)
@@ -111,6 +122,11 @@ def cv_text(path: Path, mtime_ns: int = 0, size: int = 0) -> str:
     return text
 
 
+def cv_section_yaml(document: dict) -> str:
+    """A RenderCV document's cv section as YAML: what the LLM sees of a YAML CV."""
+    return yaml.safe_dump({"cv": document["cv"]}, sort_keys=False, allow_unicode=True)
+
+
 def job_prompt(job: dict) -> dict:
     """The job as every prompt shows it: title, employer, and the ad, cut to JOB_CHAR_LIMIT."""
     return {"title": job["title"], "company": job["company"],
@@ -128,8 +144,3 @@ def check_cv_length(name: str, text: str) -> None:
 
 def cv_digest(source: str) -> str:
     return hashlib.sha256(source.encode()).hexdigest()
-
-
-def slug(value: str | None) -> str:
-    value = re.sub(r"[^a-z0-9]+", "-", (value or "unknown").lower()).strip("-")
-    return value[:48] or "unknown"

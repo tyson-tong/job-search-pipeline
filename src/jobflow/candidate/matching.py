@@ -14,9 +14,15 @@ from .cvs import check_cv_length, chosen_sources, cv_digest, job_prompt
 # Bump when the stored assessment shape changes.
 ASSESSMENT_FORMAT = 2
 CREDIT = {"matched": 1.0, "partial": 0.5, "not_evidenced": 0.0}
-# The statuses a job can be scored in: Interested (Score all jobs, and tailor-cv), and the
-# Inbox, for jobs you pick to help you triage. Each is one LLM call per CV.
-SCORABLE = ("new", "interested")
+# The jobs you're pursuing: Score all jobs scores the Interested ones, Rescore edited CVs
+# rescores all of them (skill-gaps reads their scores), and tailor-cv and cover-letter score
+# one they're named for. Each score is one LLM call per CV.
+PURSUING = ("interested", "applied", "interviewing", "offered")
+# The jobs you can pick to score in the tracker: the Inbox's, to help you triage, and
+# Interested ones.
+PICKABLE = ("new", "interested")
+# Every status a job can be scored in.
+SCORABLE = ("new", *PURSUING)
 
 MATCH_INSTRUCTIONS = (
     "List the job's requirements (skills, experience, qualifications). Mark each as "
@@ -165,8 +171,8 @@ def stored_assessments(conn, job_id: int, weights: tuple[float, float]) -> list[
 
 def _cvs_to_score(job_id: int, rescore: bool) -> dict[str, str]:
     """{CV: its text} for the CVs this job needs scoring against: those it has no score
-    for, and, with rescore, those edited since. Only an Inbox or Interested job is scored
-    (SCORABLE); a job further along keeps the scores it has."""
+    for, and, with rescore, those edited since. Only an Inbox job or one you're pursuing is
+    scored (SCORABLE); any other keeps the scores it has."""
     with db.connect() as conn:
         assessed = _latest_digests(conn, job_id)
         status = conn.execute("SELECT status FROM jobs WHERE id=%s", (job_id,)).fetchone()
@@ -176,10 +182,11 @@ def _cvs_to_score(job_id: int, rescore: bool) -> dict[str, str]:
                if variant not in assessed
                or (rescore and assessed[variant] != cv_digest(source))}
     if sources and status[0] not in SCORABLE:
-        if assessed:   # scored in the Inbox or while Interested: it keeps what it has
+        if assessed:   # scored before it was closed: it keeps what it has
             return {}
-        raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only Inbox and "
-                           "interested jobs are scored")
+        raise RuntimeError(f"Job {job_id} is {status[0].replace('_', ' ')}; only Inbox jobs "
+                           "and those you're pursuing (interested, applied, interviewing, "
+                           "offered) are scored")
     return sources
 
 
@@ -238,8 +245,8 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
 
     A job is scored once against each CV, and again after that CV's content changes only
     when you ask (rescore: the tracker's Rescore edited CVs); a CV named later (added, or
-    renamed) is scored for it the next time. Only an Inbox or Interested job is scored
-    (SCORABLE). Returns every stored assessment, recomputed with the current profile
+    renamed) is scored for it the next time. Only an Inbox job or one you're pursuing is
+    scored (SCORABLE). Returns every stored assessment, recomputed with the current profile
     weights, including any against CVs no longer named.
     """
     weights = matching_weights()
@@ -270,8 +277,8 @@ UNSCORED_SQL = f"""FROM jobs j
 
 def jobs_needing_match(variants: list[str], only: list[int] | None = None) -> list[int]:
     """Jobs with no score against one of these CVs, newest first: every Interested job, or,
-    given `only` (jobs you picked), those of them in the Inbox or Interested."""
-    statuses = ["interested"] if only is None else list(SCORABLE)
+    given `only` (jobs you picked), those of them in the Inbox or Interested (PICKABLE)."""
+    statuses = ["interested"] if only is None else list(PICKABLE)
     with db.connect() as conn:
         rows = conn.execute(
             f"""SELECT j.id {UNSCORED_SQL} AND (%(only)s::bigint[] IS NULL OR j.id = ANY(%(only)s))
@@ -287,25 +294,28 @@ def count_needing_match(variants: list[str]) -> int:
                             {"variants": variants, "statuses": ["interested"]}).fetchone()[0]
 
 
-# Each Interested job's latest score against each CV named whose text has changed since:
-# (job id, CV) pairs, the %(digests)s being each CV's digest now, in %(variants)s' order.
-OUTDATED_SQL = """SELECT j.id, cv.variant FROM jobs j
+# The latest score of each job you're pursuing (%(statuses)s) against each CV named whose
+# text has changed since: (job id, CV) pairs, the %(digests)s being each CV's digest now, in
+# %(variants)s' order. Only scores in the current format: an older one counts as none
+# (UNSCORED_SQL), as when the job is scored.
+OUTDATED_SQL = f"""SELECT j.id, cv.variant FROM jobs j
     CROSS JOIN unnest(%(variants)s::text[], %(digests)s::text[]) AS cv(variant, digest)
     JOIN LATERAL (SELECT m.cv_sha256 FROM match_assessments m
                   WHERE m.job_id = j.id AND m.cv_variant = cv.variant
+                    AND m.evidence->>'format' = '{ASSESSMENT_FORMAT}'
                   ORDER BY m.created_at DESC LIMIT 1) latest ON true
-    WHERE j.status = 'interested' AND latest.cv_sha256 <> cv.digest
+    WHERE j.status = ANY(%(statuses)s) AND latest.cv_sha256 <> cv.digest
       AND (%(only)s::bigint[] IS NULL OR j.id = ANY(%(only)s))
     ORDER BY j.first_seen_at DESC"""
 
 
 def outdated_scores(digests: dict[str, str], only: list[int] | None = None) -> list[tuple[int, str]]:
-    """(job id, CV) for each Interested job's score made against an earlier version of
-    that CV (digests: current_digests()), newest job first; limited to `only` when given."""
+    """(job id, CV) for each score of a job you're pursuing made against an earlier version
+    of that CV (digests: current_digests()), newest job first; limited to `only` when given."""
     with db.connect() as conn:
         return [tuple(row) for row in conn.execute(
             OUTDATED_SQL, {"variants": list(digests), "digests": list(digests.values()),
-                           "only": only}).fetchall()]
+                           "only": only, "statuses": list(PURSUING)}).fetchall()]
 
 
 def best_variant(results: list[dict]) -> dict:

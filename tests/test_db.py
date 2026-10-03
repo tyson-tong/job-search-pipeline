@@ -118,6 +118,8 @@ def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
     save_run("linkedin:a", "r2", "d2", [ad("2", "Senior Data Analyst", "Hays", "Sydney", reposted)],
              country="AU")
     save_run("linkedin:a", "r3", "d3", [ad("3", "Data Analyst", "Acme", "Hong Kong SAR", duties)], country="HK")
+    # Only about 60% the same words, abroad: a similar role there, not the same ad.
+    save_run("linkedin:a", "r4", "d4", [ad("4", "Data Analyst", "Acme", "Singapore", reposted)], country="SG")
     ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
     listed = {job["id"]: job for job in list_jobs(parse_filters({"status": ["new"]}))}
     panel = job_detail(ids["1"])
@@ -160,12 +162,14 @@ def test_a_cv_named_later_is_scored_without_rescoring_the_others(database, monke
 def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, monkeypatch):
     # Scores were never redone, so a skill you added to your CV stayed a gap in skill-gaps.
     # Each rescore is an LLM call per job per CV, so an unedited CV must not be sent again.
+    # A job you've applied for is rescored too: skill-gaps reads its score, which was once
+    # frozen from the moment you applied.
     from jobflow.candidate import matching
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     job_id = _one("SELECT id FROM jobs")[0]
     with connect() as conn:
-        set_job_state(conn, job_id, status="interested", via="test")
+        set_job_state(conn, job_id, status="applied", via="test")
     asked = []
 
     def complete(system, user, **kwargs):
@@ -424,29 +428,44 @@ def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database
     with pytest.raises(RuntimeError, match=f"#{ids['3']} is new"):
         batch._run_jobs(tailor, only=[ids["3"]])
     assert ran == [ids["2"]]
+    # A letter for a job you've applied for: named with --job, but never in the batch.
+    with connect() as conn:
+        conn.execute("UPDATE jobs SET status='applied' WHERE source_job_id='3'")
+    pursuing = _tailor(ran.append, lambda folder: False, job_statuses=("interested", "applied"))
+    batch._run_jobs(pursuing)
+    assert sorted(ran[1:]) == sorted([ids[LINKEDIN["id"]], ids["2"]])
+    batch._run_jobs(pursuing, only=[ids["3"]])
+    assert ran[-1] == ids["3"]
 
 
 def test_update_searches_filters_the_inbox_but_not_a_job_moved_back_from_filtered(database):
-    from jobflow.ingest.refilter import exclude_inbox_jobs
+    from jobflow.ingest.refilter import filter_inbox_jobs
     from jobflow.ingest.searches import parse_config
 
+    # Every filter applies, not only the exclusions: raising a salary minimum once left the
+    # Inbox full of jobs below it. A posted-date window judges a job as on its import day.
     search = parse_config('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
-                          'exclude_title_terms = ["Intern"]\n')[0]
+                          'exclude_title_terms = ["Intern"]\nsalary_min = 100000\n'
+                          'posted_within_days = 14\n')[0]
 
-    def ad(job_id, title):
+    def ad(job_id, title, **more):
         return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}", "title": title,
-                "companyName": f"Employer {job_id}", "descriptionText": f"ad {job_id}"}
+                "companyName": f"Employer {job_id}", "descriptionText": f"ad {job_id}", **more}
     save_run("linkedin:a", "r1", "d1", [ad("1", "Intern Analyst"), ad("2", "Intern Trader"),
-                                         ad("3", "Analyst")], search_name="s", country="AU")
+                                         ad("3", "Analyst", postedAt="2026-01-01"),
+                                         ad("4", "Quant", salaryInfo=["$60,000/yr"])],
+             search_name="s", country="AU")
+    with connect() as conn:   # job 3 was posted the day before it was imported, long ago
+        conn.execute("UPDATE jobs SET first_seen_at='2026-01-02' WHERE source_job_id='3'")
     ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
     with connect() as conn:   # filtered earlier, then moved back to the Inbox by hand
         conn.execute("UPDATE jobs SET status='filtered' WHERE id=%s", (ids["2"],))
         set_job_state(conn, ids["2"], status="new", via="web")
-    assert [job["id"] for job in exclude_inbox_jobs([search], dry_run=True)[0]] == [ids["1"]]
+    assert [job["id"] for job in filter_inbox_jobs([search], dry_run=True)[0]] == [ids["1"], ids["4"]]
     assert _one("SELECT count(*) FROM jobs WHERE status='filtered'")[0] == 0   # dry run
-    exclude_inbox_jobs([search])
+    filter_inbox_jobs([search])
     assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {
-        "1": "filtered", "2": "new", "3": "new"}
+        "1": "filtered", "2": "new", "3": "new", "4": "filtered"}
 
 
 def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
@@ -454,7 +473,7 @@ def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
     from functools import partial
 
     from jobflow.ingest.filters import filter_reason
-    from jobflow.ingest.refilter import exclude_inbox_jobs, restore_filtered_jobs
+    from jobflow.ingest.refilter import filter_inbox_jobs, restore_filtered_jobs
     from jobflow.ingest.searches import parse_config
 
     base = ('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
@@ -476,18 +495,18 @@ def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
     # The salary filter still applies to the other job.
     assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {"1": "new", "2": "filtered"}
     # Brought back by update-searches, not by you: putting the term back filters it again.
-    assert [job["title"] for job in exclude_inbox_jobs([strict])[0]] == ["Intern Analyst"]
+    assert [job["title"] for job in filter_inbox_jobs([strict])[0]] == ["Intern Analyst"]
 
 
 def test_a_job_whose_search_was_renamed_is_judged_by_the_defaults(database):
-    from jobflow.ingest.refilter import exclude_inbox_jobs
+    from jobflow.ingest.refilter import filter_inbox_jobs
     from jobflow.ingest.searches import defaults_search, parse_config
 
     text = ('[defaults]\nexclude_title_terms = ["Intern"]\n'
             '[[search]]\nname = "renamed"\nterms = ["a"]\nlocations = { AU = [] }\n')
     save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "title": "Intern Analyst"}],
              search_name="old-name", country="AU")
-    matched, _ = exclude_inbox_jobs(parse_config(text), fallback=defaults_search(text))
+    matched, _ = filter_inbox_jobs(parse_config(text), fallback=defaults_search(text))
     assert [job["reason"] for job in matched] == ["title contains 'Intern'"]
 
 
@@ -585,7 +604,7 @@ def test_score_all_scores_only_interested_jobs_but_picked_inbox_jobs_can_be_scor
     picked = [ids["2"], ids["3"]]   # an Inbox job, and a Not interested one
     assert matching.jobs_needing_match(["dev"], picked) == [ids["2"]]
     assert [r["variant"] for r in matching.match_job(ids["2"])] == ["dev"]
-    with pytest.raises(RuntimeError, match="only Inbox and interested jobs are scored"):
+    with pytest.raises(RuntimeError, match="only Inbox jobs and those you're pursuing"):
         matching.match_job(ids["3"])
     # Marked Interested later, it keeps its score: Score all jobs has nothing to redo.
     with connect() as conn:
@@ -686,3 +705,51 @@ def test_a_dry_run_never_changes_the_database(database, tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match=f"1 database migration not applied yet \\({name}\\)"):
         github.update_searches(dry_run=True)
     assert _one("SELECT count(*) FROM schema_migrations WHERE name=%s", name)[0] == 0
+
+
+def test_a_job_from_before_job_sources_is_still_recognised_by_its_site_id(database):
+    # job_sources was filled in from the sightings still holding their record, so an older
+    # job could have no row there; seen again with an edited ad, its insert broke the
+    # unique key and the posting was skipped at every import.
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    with connect() as conn:
+        conn.execute("DELETE FROM job_sources")
+    edited = {**LINKEDIN, "descriptionText": "An entirely rewritten advert for this role."}
+    assert save_run("linkedin:a", "r2", "d2", [edited], country="AU") == 0
+    assert _one("SELECT count(*) FROM jobs")[0] == 1
+    assert _one("SELECT count(*) FROM job_observations")[0] == 2
+
+
+def test_the_job_list_filters_hide_only_what_they_say(database):
+    # Each filter is SQL no other test runs; a mistake would silently hide jobs.
+    from datetime import timedelta
+
+    from jobflow.settings import today
+    recently, long_ago = (today() - timedelta(days=2)).isoformat(), (today() - timedelta(days=60)).isoformat()
+    def ad(job_id, title, location, **more):
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}", "title": title,
+                "companyName": f"Employer {job_id}", "location": location,
+                "descriptionText": " ".join(f"{title}{i}" for i in range(40)), **more}
+    save_run("linkedin:a", "r1", "d1", [ad("1", "Analyst", "Sydney", salaryInfo=["$150,000/yr"],
+                                           postedAt=recently)], country="AU")
+    save_run("linkedin:a", "r2", "d2", [ad("2", "Trader", "Hong Kong", salaryInfo=["HK$600,000/yr"],
+                                           postedAt=long_ago)], country="HK")
+    save_run("linkedin:a", "r3", "d3", [ad("3", "Quant", "Remote")])   # no country, salary, or date
+    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    with connect() as conn:
+        conn.execute("UPDATE jobs SET first_seen_at = %s WHERE source_job_id = '3'", (long_ago,))
+
+    def shown(**params):
+        query = {"status": ["new"], **{k: [str(v)] if not isinstance(v, list) else v
+                                       for k, v in params.items()}}
+        return sorted(key for key, pk in ids.items()
+                      if pk in {job["id"] for job in list_jobs(parse_filters(query))})
+    assert shown() == ["1", "2", "3"]
+    # USD 100,000 a year: 150,000 AUD (about 99,000 USD) is under it, 600,000 HKD (about
+    # 77,000) too; a job without a salary or a known currency is kept.
+    assert shown(salary_min_usd=90000) == ["1", "3"]
+    assert shown(salary_min_usd=100000) == ["3"]
+    assert shown(country=["HK"]) == ["2"] and shown(country=["none"]) == ["3"]
+    assert shown(site=["indeed"]) == []
+    # Posted in the past week, or over a month ago, by the posted date, else the date first seen.
+    assert shown(posted=7) == ["1"] and shown(posted="older") == ["2", "3"]

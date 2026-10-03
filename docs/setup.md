@@ -131,7 +131,11 @@ The daily import runs in GitHub Actions, so it needs its own copy of two keys. I
 
 The LLM and Tavily keys stay on your machine; GitHub never needs them.
 
-Then open **Actions → "Daily job ingestion" → Run workflow** to test it once. After that it runs every day at 00:30 Sydney time (01:30 during daylight saving). To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. If a run fails, GitHub emails you, and the error is recorded in the database (`scraper_runs`). GitHub may start a scheduled run a few hours late when it's busy. `uv run jobflow status` shows it all at a glance: whether the import is on, its last run, which secrets are set, whether the published searches and timezone match yours, which sites it calls, and, from your database, why recent Apify runs failed (such as your Apify account reaching its monthly usage limit).
+Then open **Actions → "Daily job ingestion" → Run workflow** to test it once. After that it runs every day at 00:17 Sydney time (01:17 during daylight saving), off the hour, when GitHub starts scheduled runs latest. To change the time, edit the cron line in `.github/workflows/daily-ingest.yml`; cron times are in UTC. If a run fails, GitHub emails you, and the error is recorded in the database (`scraper_runs`). GitHub may start a scheduled run a few hours late when it's busy. `uv run jobflow status` shows it all at a glance: whether the import is on, its last run, which secrets are set, whether the published searches and timezone match yours, which sites it calls, and, from your database, why recent Apify runs failed (such as your Apify account reaching its monthly usage limit).
+
+## Backups
+
+Your job history, notes, and scores live only in your database. Check how far back your provider can restore it (Neon's restore window depends on your plan), and for a copy of your own, now and then run `pg_dump "$DATABASE_URL" > jobflow-backup.sql` (it needs PostgreSQL's client tools), or use **Export CSV (All)** in the tracker's My jobs tab.
 
 ## If a key leaks
 

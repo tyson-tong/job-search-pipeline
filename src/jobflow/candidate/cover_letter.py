@@ -104,13 +104,14 @@ def write_letter(job_id: int, variant: str | None = None,
     # web searches again on every run.
     sources, notes = research(job)
     letter, model = _draft(job, cv_for_llm, sources)
-    errors, warnings = check_letter(letter, source_cv, job, sources)
+    first = check_letter(letter, source_cv, job, sources)
 
-    letter, (errors, warnings), critique = revise(
-        letter, (errors, warnings), lambda draft: _review(job, cv_for_llm, draft, sources),
+    revised = revise(
+        letter, first, lambda draft: _review(job, cv_for_llm, draft, sources),
         lambda answer: str(answer.get("cover_letter") or "").strip() or None,
         lambda revision: check_letter(revision, source_cv, job, sources), notes)
 
+    letter, (errors, warnings) = revised.draft, revised.checked
     target_dir = output_dir or job_directory(job_id, job)
     target_dir.mkdir(parents=True, exist_ok=True)
     # Like a CV, a letter that fails the fact check is not written as a finished document:
@@ -136,6 +137,6 @@ def write_letter(job_id: int, variant: str | None = None,
                  [reason.replace("CV variant", "Written from CV variant"), "",
                   read_it + " The automated check below catches invented numbers and names but "
                   "is not exhaustive."],
-                 notes, errors, warnings, critique, "letter", unwritten)
+                 notes, errors, warnings, revised.critique, "letter", unwritten)
     record_run(job_id, "cover-letter", errors, model)
     return target, errors, warnings

@@ -13,8 +13,10 @@ from ..batch import run_each
 from ..candidate.cvs import chosen_sources
 from ..candidate.matching import current_digests, jobs_needing_match, match_job, outdated_scores
 from ..llm import credentials
+from .queries import MAX_ROWS
 
-MAX_JOBS = 500
+# As many as the job list can show, all of which you can tick.
+MAX_JOBS = MAX_ROWS
 _lock = threading.Lock()
 _state: dict = {"running": False, "total": 0, "done": 0, "errors": [],
                 "scored": [], "started_at": None, "finished_at": None}
@@ -31,31 +33,36 @@ def status() -> dict:
 
 def start(job_ids: list[int] | None = None, rescore: bool = False) -> dict:
     """Score the given jobs (Inbox or Interested ones), or every Interested job, against
-    each CV it has no score for yet; with rescore, instead against each CV edited since the job was scored against it
-    (and any it has no score for). Checks the LLM settings and CV files first, so a
-    configuration problem fails now rather than on every job."""
+    each CV it has no score for yet; with rescore, also against each CV edited since the job
+    was scored against it, for the jobs you're pursuing (matching.PURSUING). Checks the LLM
+    settings and CV files first, so a configuration problem fails now rather than on every
+    job."""
     credentials()
     variants = list(chosen_sources())
-    with _lock:
+    with _lock:   # claimed before the database is read, so a second start is Busy at once
         if _state["running"]:
             raise Busy("Scoring is already running")
+        _state.update(running=True, total=0, done=0, errors=[], scored=[],
+                      started_at=datetime.now(UTC), finished_at=None)
+    try:
+        ids = jobs_needing_match(variants, job_ids)
         if rescore:
-            unscored = jobs_needing_match(variants, job_ids)
             outdated = [job_id for job_id, _ in outdated_scores(current_digests(), job_ids)]
-            ids = list(dict.fromkeys(outdated + unscored))
-        else:
-            ids = jobs_needing_match(variants, job_ids)
+            ids = list(dict.fromkeys(outdated + ids))
         if job_ids and not ids:
             raise ValueError("Only Inbox and interested jobs with a CV they have no score "
-                             "against (or, to rescore, an interested job with a CV edited since) "
-                             "can be scored")
-        _state.update(running=bool(ids), total=len(ids), done=0, errors=[],
-                      scored=[], started_at=datetime.now(UTC), finished_at=None)
+                             "against (or, to rescore, a job you're pursuing with a CV edited "
+                             "since) can be scored")
+    except BaseException:
+        with _lock:
+            _state.update(running=False, finished_at=datetime.now(UTC))
+        raise
+    with _lock:
+        _state.update(running=bool(ids), total=len(ids))
+        if not ids:
+            _state["finished_at"] = datetime.now(UTC)
     if ids:
         threading.Thread(target=_run, args=(ids, rescore), daemon=True).start()
-    else:
-        with _lock:
-            _state["finished_at"] = datetime.now(UTC)
     return status()
 
 
@@ -74,10 +81,12 @@ def _run(ids: list[int], rescore: bool = False) -> None:
                 _state["done"] += 1
 
     # Jobs skipped after a fatal LLM error aren't counted as done, so the page says how
-    # many were left.
-    run_each(ids, score)
-    with _lock:
-        _state.update(running=False, finished_at=datetime.now(UTC))
+    # many were left. Finished whatever happens, or every later start would be Busy.
+    try:
+        run_each(ids, score)
+    finally:
+        with _lock:
+            _state.update(running=False, finished_at=datetime.now(UTC))
 
 
 def parse_request(payload: object) -> tuple[list[int] | None, bool]:

@@ -454,3 +454,47 @@ def test_only_the_one_or_two_cv_files_named_in_the_profile_are_used(tmp_path, mo
         chosen("~$CV_dev.docx")
     with pytest.raises(RuntimeError, match="same CV in two formats"):
         chosen("CV_dev.yaml", "CV_dev.pdf")
+
+
+def test_a_redraft_cut_off_part_way_is_drafted_again_not_kept_as_yours(tmp_path, monkeypatch,
+                                                                      no_database):
+    # The new draft was written beside the last run's review; cut off before its own review
+    # (the balance ran out while shortening it), it looked edited by hand and was never
+    # drafted again.
+    import yaml
+
+    from jobflow.candidate import tailoring
+    from jobflow.llm import LLMError
+
+    (tmp_path / "CV_dev_draft.yaml").write_text("cv: {}")
+    (tmp_path / "CV_REVIEW.md").write_text("the last run's review")
+    draft = yaml.safe_dump({"cv": SOURCE_CV})
+    monkeypatch.setattr(tailoring, "load_source", lambda job_id, variant: (
+        JOB, "dev", "CV variant dev.", {"cv": SOURCE_CV}, draft))
+    researched = Future()
+    researched.set_result(([], []))
+    monkeypatch.setattr(tailoring, "research_soon", lambda job: researched)
+    monkeypatch.setattr(tailoring, "complete", lambda system, user, **kw: (
+        json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))
+
+    def out_of_credit(*args, **kwargs):
+        raise LLMError("no credit", fatal=True)
+    monkeypatch.setattr(tailoring, "fit", out_of_credit)
+    with pytest.raises(LLMError):
+        tailoring.tailor_cv(1, output_dir=tmp_path)
+    assert not tailoring.cv_fixed_by_hand(tmp_path) and not tailoring.cv_written(tmp_path)
+
+
+def test_a_render_stopped_by_ctrl_c_fails_the_job(tmp_path, monkeypatch):
+    # Ctrl+C stops RenderCV too; taken for a draft RenderCV couldn't render, the job was
+    # recorded as done, with no PDF and never shortened to its page limit.
+    import subprocess
+
+    from jobflow.candidate import render
+    # Killed by the signal while starting, or exiting with 130 once RenderCV catches it.
+    for code in (-2, 130):
+        monkeypatch.setattr(render.subprocess, "run",
+                            lambda *a, code=code, **k: subprocess.CompletedProcess(a, code, "", ""))
+        with pytest.raises(RuntimeError, match="stopped") as caught:
+            render.render(tmp_path / "CV_dev_draft.yaml")
+        assert not isinstance(caught.value, render.RenderFailed)

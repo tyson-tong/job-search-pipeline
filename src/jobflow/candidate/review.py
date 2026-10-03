@@ -6,20 +6,29 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any, NamedTuple
 
 from .. import db
 from ..llm import LLMError
 from . import documents
+from .factcheck import Checked
 
 
-def revise(draft, checked: tuple[list[str], list[str]], review, revision_of, check,
-           notes: list[str]):
+class Revised(NamedTuple):
+    """What revise kept: the draft or the reviewer's revision, its fact check, and the
+    reviewer's critique of the first draft."""
+    draft: Any
+    checked: Checked
+    critique: list[str]
+
+
+def revise(draft, checked: Checked, review, revision_of, check, notes: list[str]) -> Revised:
     """The reviewer's revision of `draft` if it has no more fact-check errors than the
     draft's own check, else the draft. review(draft) returns (the reviewer's answer, the
     reviewer's model); revision_of(answer) is the revised draft, or None if there is none;
-    check(revision) is its (errors, warnings). What happened is added to `notes`; a failed
-    review keeps the draft, unless the provider will refuse every request (a fatal
-    LLMError), which is raised. Returns (draft or revision, its (errors, warnings), critique)."""
+    check(revision) is its Checked. What happened is added to `notes`; a failed review
+    keeps the draft, unless the provider will refuse every request (a fatal LLMError), which
+    is raised."""
     critique: list[str] = []
     try:
         answer, reviewer = review(draft)
@@ -31,8 +40,8 @@ def revise(draft, checked: tuple[list[str], list[str]], review, revision_of, che
         revision = revision_of(answer)
         if revision is not None:
             rechecked = check(revision)
-            if len(rechecked[0]) <= len(checked[0]):
-                return revision, rechecked, critique
+            if len(rechecked.errors) <= len(checked.errors):
+                return Revised(revision, rechecked, critique)
             notes.append("The reviewer's revision failed the fact check, so the first draft "
                          "is kept.")
     except Exception as exc:
@@ -42,7 +51,7 @@ def revise(draft, checked: tuple[list[str], list[str]], review, revision_of, che
             raise
         print(f"warning: review failed ({exc}); keeping the first draft", file=sys.stderr)
         notes.append(f"The review failed ({exc}), so this is the unreviewed first draft.")
-    return draft, checked, critique
+    return Revised(draft, checked, critique)
 
 
 def write_review(path: Path, title: str, intro: list[str], notes: list[str],

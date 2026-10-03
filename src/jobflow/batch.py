@@ -69,10 +69,10 @@ class _JobOutput:
 class JobCommand:
     """One piece of work done per job: tailor-cv, cover-letter, or interview-prep.
 
-    command: its name, for messages; status: the jobs it works on; kind: its workflow_runs
-    kind; what: what it makes, for messages ("a tailored CV"); run_one(job_id): does one
-    job; output_exists(folder):
-    whether its marker file is still in the job's folder; fixed_by_hand(folder), if given:
+    command: its name, for messages; status: the jobs it works on; job_statuses: the ones
+    --job may also name (status if empty); kind: its workflow_runs kind; what: what it makes,
+    for messages ("a tailored CV"); run_one(job_id): does one job; output_exists(folder):
+    whether its finished output is still in the job's folder; fixed_by_hand(folder), if given:
     whether you fixed a draft that failed the fact check; done_one(folder), if given: runs
     for each job already done and returns a line to print, or None."""
     command: str
@@ -83,6 +83,7 @@ class JobCommand:
     output_exists: Callable[[Path], bool]
     fixed_by_hand: Callable[[Path], bool] | None = None
     done_one: Callable[[Path], str | None] | None = None
+    job_statuses: tuple[str, ...] = ()
 
 
 def for_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> None:
@@ -119,33 +120,35 @@ class Plan(NamedTuple):
 
 
 def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> Plan:
-    """The jobs with the command's status (only those in `only`, if given) still to do, and
-    those done. A job in `only` without that status is an error. With redo, every
+    """The jobs with the command's status (or, given `only`, those of them, which may have
+    any of command.job_statuses) still to do, and those done. A job in `only` without one
+    of those statuses is an error. With redo, every
     job is to do, done or not. Reads only: _run_jobs records what it found.
 
     A run is recorded in workflow_runs only once it finishes, so a job is never done
     twice, and a failed job is retried next time. A job counts as done only while
-    command.output_exists(its folder) too, which checks the command's own marker file (a
-    CV_*_draft.yaml, cover-letter.docx, or interview-prep.html): one whose marker was
-    deleted (by clean-up, say) is done again. Deleting only a tailored CV's PDF doesn't
-    count. A job whose latest draft failed the fact check (NEEDS-FIX) is done again, for a
+    command.output_exists(its folder) too, which checks the command's own marker files (a
+    CV_*_draft.yaml with its CV_REVIEW.md, cover-letter.docx, or interview-prep.html): one
+    whose marker was deleted (by clean-up, say) is done again. Deleting only a tailored CV's
+    PDF doesn't count. A job whose latest draft failed the fact check (NEEDS-FIX) is done again, for a
     fresh draft, unless command.fixed_by_hand(its folder) says you fixed that draft
     yourself: then it's kept (Plan.fixed)."""
     from .candidate.paths import job_directory
     from .db import connect
 
-    status, kind = command.status, command.kind
+    statuses = list(command.job_statuses or (command.status,)) if only else [command.status]
+    kind = command.kind
     with connect() as conn:
         if only:
             found = dict(conn.execute("SELECT id, status FROM jobs WHERE id = ANY(%s)",
                                       (only,)).fetchall())
             wrong = [f"#{job_id} is {found[job_id].replace('_', ' ')}" if job_id in found
                      else f"#{job_id} doesn't exist" for job_id in only
-                     if found.get(job_id) != status]
+                     if found.get(job_id) not in statuses]
             if wrong:
-                raise RuntimeError(f"{'; '.join(wrong)}: this command works on "
-                                   f"{status.replace('_', ' ')} jobs (the job panel shows each "
-                                   "job's number)")
+                named = ", ".join(s.replace("_", " ") for s in statuses)
+                raise RuntimeError(f"{'; '.join(wrong)}: this command works on {named} jobs "
+                                   "(the job panel shows each job's number)")
         # Done or not by the job's latest run: a draft that failed the fact check after an
         # earlier one passed (its output deleted in between) is drafted again too.
         rows = conn.execute(
@@ -156,8 +159,8 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
                LEFT JOIN LATERAL (SELECT r.status FROM workflow_runs r
                                   WHERE r.job_id = j.id AND r.kind = %s
                                   ORDER BY r.id DESC LIMIT 1) last ON true
-               WHERE j.status = %s AND (%s::bigint[] IS NULL OR j.id = ANY(%s))
-               ORDER BY j.id""", (kind, status, only, only)).fetchall()
+               WHERE j.status = ANY(%s) AND (%s::bigint[] IS NULL OR j.id = ANY(%s))
+               ORDER BY j.id""", (kind, statuses, only, only)).fetchall()
         todo, done_jobs, fixed, redrafted, lost = [], [], [], 0, 0
         for job_id, company, title, done, tried in rows:
             name = f"#{job_id} {title} ({company or 'unknown employer'})"
@@ -189,7 +192,9 @@ def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = F
     again = [f"{plan.redrafted} drafted again: the last draft failed the fact check"] \
         if plan.redrafted else []
     again += [f"{plan.lost} done again: their output was deleted"] if plan.lost else []
-    print(f"{plural(plan.total, command.status.capitalize() + ' job')}: "
+    jobs = (f"{plural(plan.total, 'job')} named" if only
+            else plural(plan.total, command.status.capitalize() + " job"))
+    print(f"{jobs}: "
           f"{plan.total - len(todo)} already have {command.what}, {len(todo)} to do"
           + (f" ({'; '.join(again)})" if again else ""))
     from .db import connect, record_workflow_run

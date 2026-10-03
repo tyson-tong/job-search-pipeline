@@ -74,9 +74,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "import only (1, 7, 14, or 30 days; does not change your saved searches)")
     update = command("update-searches", run_update_searches, "After editing config/searches.toml: "
                      "check it, update the GitHub copy the daily import reads (with your "
-                     "timezone), filter Inbox jobs from its exclude_companies or matching "
-                     "its exclude_title_terms (and none of its include_title_terms), and bring "
-                     "back Filtered jobs it would no longer filter")
+                     "timezone), filter Inbox jobs its searches would now filter, and bring "
+                     "back Filtered jobs they would no longer filter")
     update.add_argument("--dry-run", action="store_true",
                         help="Check the file and list the jobs that would be filtered or brought "
                         "back; publish, move, and change nothing (it stops if the database "
@@ -106,10 +105,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "first)")
     prep = command("interview-prep", run_interview_prep, "Generate an interview briefing HTML "
                    "for every Interviewing job that doesn't have one yet")
-    for each_job in (tailor, letter, prep):
+    for each_job, also in ((tailor, " (or applied, interviewing, or offered)"),
+                           (letter, " (or applied, interviewing, or offered)"), (prep, "")):
         each_job.add_argument("--job", type=positive_int, action="append", metavar="ID",
                               help="Only this job, by the number the tracker's job panel shows "
-                              "(#42); repeat for several")
+                              f"(#42); repeat for several. It must have the command's status{also}")
         each_job.add_argument("--redo", action="store_true",
                               help="With --job: do those jobs again even if they're done, "
                               "replacing their files (and any fix you made by hand)")
@@ -172,7 +172,7 @@ def init() -> None:
 Next:
   1. config/.env           DATABASE_URL, APIFY_TOKEN, LLM_API_KEY, LLM_MODEL, WEB_SEARCH_API_KEY
   2. cv/                   your CVs (.yaml, .tex, .docx, or .pdf); name 1 or 2 with cvs in profile.toml
-  3. config/searches.toml  your job searches (it starts with example searches: replace them)
+  3. config/searches.toml  your job searches (it starts with an example search: replace it)
   4. uv run jobflow web, then the Searches tab to check your searches
   5. GitHub secrets        DATABASE_URL and APIFY_TOKEN (gh secret set NAME), then
                            uv run jobflow update-searches to schedule the daily import
@@ -215,8 +215,9 @@ def manual(commands: dict[str, argparse.ArgumentParser], command: str | None = N
             "tailor-cv, cover-letter, and interview-prep work on two jobs at a time and skip "
             "jobs they've already done (a job that failed, whose draft failed the fact "
             "check, or whose draft, letter, or briefing was deleted is tried again); --job "
-            "ID limits them to one job (or a few), by its number in the job panel, and "
-            "--redo with it does those jobs again even if they're done. Only "
+            "ID limits them to one job (or a few), by its number in the job panel (for "
+            "tailor-cv and cover-letter, also one you've applied for or are interviewing "
+            "for), and --redo with it does those jobs again even if they're done. Only "
             "one run of each can go at a time. Every command except init, help, status, and "
             "update-searches --dry-run brings the database tables up to date when it starts.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
@@ -277,7 +278,8 @@ def check_redo(args: argparse.Namespace) -> None:
 
 def run_tailor_cv(args: argparse.Namespace) -> None:
     from .batch import JobCommand, for_jobs
-    from .candidate.tailoring import add_format, cv_fixed_by_hand, tailor_cv
+    from .candidate.matching import PURSUING
+    from .candidate.tailoring import add_format, cv_fixed_by_hand, cv_written, tailor_cv
     from .db import migrate
     check_redo(args)
     variant = check_variant(args.cv, yaml_only=True)
@@ -298,9 +300,10 @@ def run_tailor_cv(args: argparse.Namespace) -> None:
         written = add_format(folder, args.format)
         return f"wrote {written}" if written else None
 
-    for_jobs(JobCommand(command="tailor-cv", status="interested", kind="tailor",
+    for_jobs(JobCommand(command="tailor-cv", status="interested", job_statuses=PURSUING,
+                        kind="tailor",
                         what="a tailored CV", run_one=tailor_one,
-                        output_exists=lambda folder: any(folder.glob("CV_*_draft.yaml")),
+                        output_exists=cv_written,
                         fixed_by_hand=cv_fixed_by_hand,
                         done_one=add_requested_format if args.format != "pdf" else None),
              args.job, args.redo)
@@ -309,6 +312,7 @@ def run_tailor_cv(args: argparse.Namespace) -> None:
 def run_cover_letter(args: argparse.Namespace) -> None:
     from .batch import JobCommand, for_jobs
     from .candidate.cover_letter import letter_fixed_by_hand, write_letter
+    from .candidate.matching import PURSUING
     from .db import migrate
     check_redo(args)
     variant = check_variant(args.cv, yaml_only=False)
@@ -325,7 +329,8 @@ def run_cover_letter(args: argparse.Namespace) -> None:
                             f"{target.parent / 'COVER_LETTER_REVIEW.md'}, before you send it "
                             "with your application.")
 
-    for_jobs(JobCommand(command="cover-letter", status="interested", kind="cover-letter",
+    for_jobs(JobCommand(command="cover-letter", status="interested", job_statuses=PURSUING,
+                        kind="cover-letter",
                         what="a cover letter", run_one=letter_one,
                         output_exists=lambda folder: (folder / "cover-letter.docx").exists(),
                         fixed_by_hand=letter_fixed_by_hand),

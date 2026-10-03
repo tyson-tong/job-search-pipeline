@@ -69,22 +69,23 @@ function detailHeader(job, target) {
     job.status === "filtered" && job.filter_reason ? el("div", { className: "banner" }, `Filtered on import: ${job.filter_reason}`) : null];
 }
 // The job's scores against each CV, with Score or Rescore when there's something to do.
-// Only a saved Inbox or Interested job is scored, once against each CV; only an Interested
-// one is rescored.
+// Only a saved Inbox or Interested job is scored here, once against each CV; any job you're
+// pursuing (Interested onwards) is rescored.
 function matchSection(job) {
   // The CVs named in config/profile.toml this job has no score against yet.
   const unscored = state.summary.cv_variants.filter((v) => !job.matches.some((m) => m.variant === v));
   // The CVs edited since this job was scored against them.
   const outdated = job.matches.filter((m) => m.outdated).map((m) => m.variant);
   const busy = Boolean(state.scoring && state.scoring.running);
-  const interested = job.status === "interested", scorable = interested || job.status === "new";
+  const scorable = ["new", "interested"].includes(job.status);
+  const pursuing = state.summary.pursuing.includes(job.status);
   return [
     el("div", { className: "h3-row" }, el("h3", {}, "Match with your CVs"),
       scorable && unscored.length
         ? el("button", { className: "btn small", disabled: busy,
             title: "Ask the LLM to compare this job with each CV", onclick: () =>
               startScoring({ job_ids: [job.id] }) }, "Score")
-        : interested && outdated.length
+        : pursuing && outdated.length
         ? el("button", { className: "btn small", disabled: busy,
             title: "Ask the LLM to compare this job again with each CV you've edited since", onclick: () =>
               startScoring({ job_ids: [job.id], rescore: true }) }, "Rescore")
@@ -93,16 +94,20 @@ function matchSection(job) {
     scorable && unscored.length
       ? el("p", { className: "meta" }, `Not scored yet against ${unscored.join(", ")}.`)
       : !job.matches.length ? el("p", { className: "meta" },
-          "Not scored: only Inbox and interested jobs are scored.") : null];
+          pursuing ? "Not scored: the tracker scores Inbox and interested jobs; tailor-cv and "
+            + "cover-letter score a job they're given with --job."
+            : "Not scored: only Inbox jobs and jobs you're pursuing are scored.") : null];
 }
-// The commands for this job, by its saved status: tailor-cv and cover-letter work on
-// Interested jobs, interview-prep on Interviewing ones.
+// The commands for this job, by its saved status: tailor-cv and cover-letter work on any job
+// you're pursuing (with --job; on their own, on Interested ones), interview-prep on
+// Interviewing ones.
 function nextSteps(job) {
-  const steps = { interested: [["tailor-cv", "Tailored CV draft"], ["cover-letter", "Cover letter (optional)"]],
-    interviewing: [["interview-prep", "Interview briefing"]] }[job.status];
+  const drafts = [["tailor-cv", "Tailored CV draft"], ["cover-letter", "Cover letter (optional)"]];
+  const steps = state.summary.pursuing.includes(job.status)
+    ? drafts.concat(job.status === "interviewing" ? [["interview-prep", "Interview briefing"]] : []) : null;
   if (!steps) return el("p", { className: "meta", style: "margin:4px 0 0" },
-    "tailor-cv and cover-letter work on Interested jobs, and interview-prep on Interviewing ones: "
-    + "save one of those statuses to get its command here.");
+    "tailor-cv and cover-letter work on jobs you're pursuing (Interested onwards), and interview-prep "
+    + "on Interviewing ones: save one of those statuses to get its command here.");
   return steps.map(([name, what]) => {
     const command = `uv run jobflow ${name} --job ${job.id}`;
     return el("div", { className: "cmd" }, el("span", { className: "meta", style: "min-width:120px" }, what),

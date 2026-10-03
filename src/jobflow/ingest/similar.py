@@ -6,6 +6,7 @@ from __future__ import annotations
 import threading
 
 from .dedupe import (
+    HIGHLY_SIMILAR,
     POSSIBLE_DESCRIPTION,
     POSSIBLE_TITLE,
     description_words,
@@ -50,8 +51,10 @@ def _ad_words(conn, job_ids: list[int]) -> dict[int, tuple[set[str], str, str | 
 def similar_jobs(conn, job_ids: list[int]) -> dict[int, list[dict]]:
     """Similar ads for each of these jobs, most alike first: {job id: [{id, status,
     country, same_country, level, title_similarity, similarity}]}. Titles first, then
-    ads only for jobs with a close title (only those not read before: _ad_words). Only same_country matches
-    are similar jobs; the others are one role advertised in several countries."""
+    ads only for jobs with a close title (only those not read before: _ad_words). Only
+    same_country matches are similar jobs; a job in another country is listed only when its
+    ad is at least HIGHLY_SIMILAR, since the tracker calls it the same ad there (one role
+    advertised in several countries)."""
     if not job_ids:
         return {}
     rows = conn.execute(
@@ -79,10 +82,11 @@ def similar_jobs(conn, job_ids: list[int]) -> dict[int, list[dict]]:
     found: dict[int, list[dict]] = {}
     for (pk, other), titles_alike in pairs.items():
         ads_alike = jaccard(details[pk][0], details[other][0])
-        if ads_alike >= POSSIBLE_DESCRIPTION:
+        home = same_country(details[pk][2], details[other][2])
+        if ads_alike >= (POSSIBLE_DESCRIPTION if home else HIGHLY_SIMILAR):
             found.setdefault(pk, []).append({
                 "id": other, "status": details[other][1], "country": details[other][2],
-                "same_country": same_country(details[pk][2], details[other][2]),
+                "same_country": home,
                 "level": similarity_level(titles_alike, ads_alike),
                 "title_similarity": titles_alike, "similarity": ads_alike})
     for similar in found.values():

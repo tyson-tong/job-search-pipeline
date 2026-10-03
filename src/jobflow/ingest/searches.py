@@ -18,9 +18,6 @@ SEARCH_KEYS = {"name", "terms", "locations", "sites", "posted_within_days", "max
                "max_cost_usd", "radius_km", "salary_min", "salary_max", "salary_period",
                "job_types", "work_arrangements", "seek_classifications", "exclude_title_terms",
                "include_title_terms", "exclude_companies"}
-# Earlier names still accepted, so a searches file (or the GitHub copy) written before a
-# rename keeps working until it is next edited.
-OLD_NAMES = {"classifications": "seek_classifications"}
 
 
 @dataclass(frozen=True)
@@ -81,17 +78,6 @@ def _all_classifications() -> set[str]:
     return keys
 
 
-def _current_names(raw: dict, where: str) -> dict:
-    """The settings with any earlier names (OLD_NAMES) changed to the current ones."""
-    raw = dict(raw)
-    for old, new in OLD_NAMES.items():
-        if old in raw:
-            if new in raw:
-                raise SearchConfigError(f"{where}: set {new} only ({old} is its old name)")
-            raw[new] = raw.pop(old)
-    return raw
-
-
 def _search_terms(terms: object, where: str) -> list[str]:
     if isinstance(terms, str):
         terms = [terms]
@@ -150,7 +136,6 @@ def _posted_within_days(days: object, where: str) -> int:
 def parse_search(raw: dict, defaults: dict) -> Search:
     name = str(raw.get("name") or "").strip()
     where = f"search {name!r}" if name else "a [[search]] entry"
-    raw = _current_names(raw, where)
     unknown = set(raw) - SEARCH_KEYS
     if unknown:
         raise SearchConfigError(f"{where}: unknown setting(s) {sorted(unknown)}")
@@ -244,7 +229,7 @@ def parse_config(text: str) -> list[Search]:
     if not isinstance(raw_searches, list) or not all(isinstance(s, dict) for s in raw_searches):
         raise SearchConfigError("each search must be a [[search]] section (with double "
                                 "brackets), one per search")
-    given_defaults = _current_names(data.get("defaults", {}), "[defaults]")
+    given_defaults = data.get("defaults", {})
     defaults = {**DEFAULTS, **given_defaults}
     unknown = set(given_defaults) - SEARCH_KEYS
     if unknown:
@@ -262,7 +247,7 @@ def parse_config(text: str) -> list[Search]:
 def defaults_search(text: str) -> Search:
     """The exclusions under [defaults] as a search of their own, to judge jobs found by a
     search that has since been renamed or removed. Call after parse_config(text)."""
-    raw = _current_names(tomllib.loads(text).get("defaults", {}), "[defaults]")
+    raw = tomllib.loads(text).get("defaults", {})
     return Search(name="[defaults]", terms=(), locations={}, sites=(), posted_within_days=1,
                   max_results=1,
                   exclude_title_terms=_title_terms(raw, "exclude_title_terms", "[defaults]"),
