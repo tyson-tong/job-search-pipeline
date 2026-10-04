@@ -15,7 +15,7 @@ import yaml
 from pypdf import PdfReader
 
 from ..llm import LLMError, complete, parse_json
-from ..text import plural
+from ..text import plural, whole_number
 from .cvs import job_prompt
 
 # A page (other than the last) this empty at the bottom gets a warning: RenderCV never
@@ -122,9 +122,7 @@ def cut_order(found: list[dict], ranking: object) -> list[dict]:
     always keeps at least one bullet; bad or repeated ids are ignored, and ids given as digit
     strings ("3") are read as numbers."""
     by_id = {b["id"]: b for b in found}
-    ids = [None if isinstance(i, bool) else i if isinstance(i, int)
-           else int(i) if str(i).isdigit() else None
-           for i in (ranking if isinstance(ranking, list) else [])]
+    ids = [whole_number(i) for i in (ranking if isinstance(ranking, list) else [])]
     ids = list(dict.fromkeys(i for i in ids if i in by_id))
     ids += [b["id"] for b in reversed(found) if b["id"] not in ids]
     left: dict[tuple, int] = {}
@@ -175,6 +173,25 @@ def rank_bullets(job: dict, found: list[dict]) -> object:
     return parse_json(content).get("least_relevant_first")
 
 
+class _Renderer:
+    """Renders candidate CVs at one path (in fit's scratch folder), so the PDF beside it is
+    always the candidate last asked about. Each candidate fit tries keeps a start of the
+    cut order, so its bullet count names it: asked about the candidate just rendered again,
+    it doesn't render it twice."""
+
+    def __init__(self, source: Path, source_doc: dict):
+        self.source, self.source_doc = source, source_doc
+        self.pdf = source.with_suffix(".pdf")
+        self._last: tuple[int, int] | None = None   # (bullets, pages) of the PDF there now
+
+    def pages(self, candidate: dict) -> int:
+        count = len(bullets(candidate))
+        if self._last is None or self._last[0] != count:
+            write_cv(self.source, self.source_doc, candidate)
+            self._last = (count, pdf_pages(render(self.source)))
+        return self._last[1]
+
+
 def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
         warnings: list[str], keep_pdf: Path | None = None,
         cv_folder: Path | None = None) -> tuple[dict, list[dict], Path | None]:
@@ -184,24 +201,10 @@ def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
     cv_folder, your CV's, is where a photo it names is found."""
     pages_text = plural(max_pages, "page")
     with tempfile.TemporaryDirectory() as scratch:
-        source = Path(scratch) / name
+        renderer = _Renderer(Path(scratch) / name, source_doc)
         if cv_folder:
             copy_photo(cv, cv_folder, Path(scratch))
-
-        # Each candidate keeps a start of the cut order, so its bullet count names it. The
-        # last one rendered is the PDF in the scratch folder.
-        pages_by_bullets: dict[int, int] = {}
-        last_rendered: list[int] = []
-
-        def pages_for(candidate: dict) -> int:
-            count = len(bullets(candidate))
-            if last_rendered[-1:] != [count]:
-                write_cv(source, source_doc, candidate)
-                pages_by_bullets[count] = pdf_pages(render(source))
-                last_rendered.append(count)
-            return pages_by_bullets[count]
-
-        pages = pages_for(cv)
+        pages = renderer.pages(cv)
         cut: list[dict] = []
         ranked = False
         if pages > max_pages:
@@ -217,14 +220,14 @@ def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
                                 "hand, or tailor it again with --job and --redo.")
         if ranked:
             cut = fewest_cuts(cv, cut_order(found, ranking),
-                              lambda trimmed: pages_for(trimmed) <= max_pages)
+                              lambda trimmed: renderer.pages(trimmed) <= max_pages)
             cv = without(cv, cut)
-            pages = pages_for(cv)
+            pages = renderer.pages(cv)
             if pages > max_pages:
                 warnings.append(f"The CV is still {pages} pages even with {len(cut)} bullets "
                                 f"cut (every entry keeps one); shorten it by hand to fit "
                                 f"{pages_text}, or allow more with --max-pages.")
-        pdf = source.with_suffix(".pdf")
+        pdf = renderer.pdf
         for page, empty in page_gaps(pdf):
             warnings.append(f"Page {page} is {empty:.0%} empty at the bottom (as RenderCV lays "
                             "it out): the next entry was too long for the space, so it moved "

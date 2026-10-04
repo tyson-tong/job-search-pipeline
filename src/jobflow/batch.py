@@ -6,6 +6,7 @@ import sys
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple, TextIO
@@ -207,41 +208,72 @@ def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = F
     the LLM provider refuses every request (no credit left, a bad key). With more than
     CONFIRM_ABOVE jobs to do, a run in a terminal without --job asks first."""
     plan = _plan_jobs(command, only, redo)
-    todo = plan.todo
+    _report(command, plan, only)
+    if not only and len(plan.todo) > CONFIRM_ABOVE and _in_terminal() \
+            and not _confirmed(command, len(plan.todo)):
+        print("Nothing done")
+        return
+    _keep_fixed(command, plan.fixed)
+    if command.done_one is not None:
+        _each_done(command.done_one, plan.done + [(name, folder) for _, name, folder in plan.fixed])
+    _run_todo(command, plan.todo)
+
+
+def _report(command: JobCommand, plan: Plan, only: list[int] | None) -> None:
+    """One line: how many jobs the command found, how many are done, and how many to do."""
     again = [f"{plan.redrafted} drafted again: their last draft failed the fact check or "
              "couldn't be rendered"] if plan.redrafted else []
     again += [f"{plan.lost} done again: their output was deleted"] if plan.lost else []
     jobs = (f"{plural(plan.total, 'job')} named" if only
             else plural(plan.total, command.status.capitalize() + " job"))
-    print(f"{jobs}: "
-          f"{plan.total - len(todo)} already have {command.what}, {len(todo)} to do"
-          + (f" ({'; '.join(again)})" if again else ""))
-    if not only and len(todo) > CONFIRM_ABOVE and _in_terminal() \
-            and not _confirmed(command, len(todo)):
-        print("Nothing done")
-        return
+    print(f"{jobs}: {plan.total - len(plan.todo)} already have {command.what}, "
+          f"{len(plan.todo)} to do" + (f" ({'; '.join(again)})" if again else ""))
+
+
+def _keep_fixed(command: JobCommand, fixed: list[tuple[int, str, Path]]) -> None:
+    """Record the drafts you fixed by hand as done, so the next run doesn't redraft them
+    either, and say so."""
     from .db import connect, record_workflow_run
 
-    if plan.fixed:
-        with connect() as conn:   # so the next run doesn't redraft them either
-            for job_id, _, _ in plan.fixed:
+    if fixed:
+        with connect() as conn:
+            for job_id, _, _ in fixed:
                 record_workflow_run(conn, job_id, command.kind, "FIXED-BY-HAND")
-    for _, name, _ in plan.fixed:
+    for _, name, _ in fixed:
         print(f"{name}: you fixed its draft yourself, so it's kept and not drafted again")
-    done_one = command.done_one
-    if done_one is not None:
-        for name, folder in plan.done + [(name, folder) for _, name, folder in plan.fixed]:
-            try:
-                line = done_one(folder)
-            except Exception as exc:   # one job's files (edited by hand, say) never stop the rest
-                print(f"{name}: warning: {exc}", file=sys.stderr)
-            else:
-                if line:
-                    print(f"{name}: {line}")
+
+
+def _each_done(done_one: Callable[[Path], str | None], jobs: list[tuple[str, Path]]) -> None:
+    """done_one for each job already done, printing what it returns."""
+    for name, folder in jobs:
+        try:
+            line = done_one(folder)
+        except Exception as exc:   # one job's files (edited by hand, say) never stop the rest
+            print(f"{name}: warning: {exc}", file=sys.stderr)
+        else:
+            if line:
+                print(f"{name}: {line}")
+
+
+@contextmanager
+def _held_output():
+    """While it lasts, what a job's thread prints, from anywhere, is held in its own list
+    (see _JobOutput); yields the (stdout, stderr) stand-ins."""
     out, err = _JobOutput(sys.stdout), _JobOutput(sys.stderr)
+    sys.stdout.flush()
+    sys.stdout, sys.stderr = out, err
+    try:
+        yield out, err
+    finally:
+        sys.stdout, sys.stderr = out.stream, err.stream
+
+
+def _run_todo(command: JobCommand, todo: list[tuple[int, str | None, str]]) -> None:
+    """command.run_one for each job to do, printing each job's output in one piece when it
+    finishes; exits with a message if any failed."""
     lock = threading.Lock()
 
-    def one(row) -> None:
+    def one(row, out: _JobOutput, err: _JobOutput) -> None:
         job_id, company, title = row
         lines: list[tuple[TextIO, str]] = []
         out.held.lines = err.held.lines = lines
@@ -258,12 +290,8 @@ def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = F
                     stream.write(text)
                     stream.flush()
 
-    sys.stdout.flush()
-    sys.stdout, sys.stderr = out, err
-    try:
-        failed, skipped = run_each(todo, one)
-    finally:
-        sys.stdout, sys.stderr = out.stream, err.stream
+    with _held_output() as (out, err):
+        failed, skipped = run_each(todo, lambda row: one(row, out, err))
     if skipped:
         raise SystemExit(f"Stopped: the LLM provider will refuse the other {len(skipped)} "
                          "job(s) too. Fix that, then run the command again")

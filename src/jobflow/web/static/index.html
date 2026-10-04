@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- The per-start token app.js sends with every API call; filled in by the server. -->
+<!-- The per-start token the page sends with every API call; filled in by the server. -->
 <meta name="jobflow-token" content="__JOBFLOW_TOKEN__">
 <link rel="icon" href="data:,">
 <title>Job Tracker</title>
@@ -234,9 +234,7 @@ pre.json { font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 </main>
 <aside class="drawer" id="drawer" hidden></aside>
 
-<script src="/common.js"></script>
-<script src="/detail.js"></script>
-<script src="/app.js"></script>
-<script src="/searches.js"></script>
+<!-- The page's entry point, which imports the other modules. -->
+<script type="module" src="/app.js"></script>
 </body>
 </html>

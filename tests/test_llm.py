@@ -54,6 +54,11 @@ def test_reviewer_llm_settings_fall_back_but_never_leak_the_main_key(monkeypatch
         llm.credentials(reviewer=True)
     monkeypatch.setenv("LLM_REVIEW_API_KEY", "other-key")
     assert llm.credentials(reviewer=True) == ("other-key", "review-model")
+    # Nor the main model's name, which the other provider would reject mid-batch.
+    monkeypatch.delenv("LLM_REVIEW_MODEL")
+    with pytest.raises(RuntimeError, match="LLM_REVIEW_MODEL"):
+        llm.credentials(reviewer=True)
+    monkeypatch.setenv("LLM_REVIEW_MODEL", "review-model")
     assert llm.base_url(reviewer=True) == "https://other.example/v1"
     # Plain http would send the key unencrypted, except to a server on this machine.
     monkeypatch.setenv("LLM_REVIEW_BASE_URL", "http://other.example/v1")

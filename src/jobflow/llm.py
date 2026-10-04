@@ -48,12 +48,14 @@ def credentials(reviewer: bool = False) -> tuple[str, str]:
     key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
     model = os.environ.get("LLM_MODEL")
     if reviewer:
-        review_key = os.environ.get("LLM_REVIEW_API_KEY")
-        # Never send the main provider's key to a different provider.
-        if base_url(reviewer=True) != base_url() and not review_key:
+        review_key, review_model = (os.environ.get("LLM_REVIEW_API_KEY"),
+                                    os.environ.get("LLM_REVIEW_MODEL"))
+        # Never send the main provider's key to a different provider, nor its model name,
+        # which the other provider would reject only once a batch is under way.
+        if base_url(reviewer=True) != base_url() and not (review_key and review_model):
             raise RuntimeError("LLM_REVIEW_BASE_URL is a different provider: set its "
-                               "LLM_REVIEW_API_KEY in config/.env too")
-        key, model = review_key or key, os.environ.get("LLM_REVIEW_MODEL") or model
+                               "LLM_REVIEW_API_KEY and LLM_REVIEW_MODEL in config/.env too")
+        key, model = review_key or key, review_model or model
     if not key or not model:
         raise RuntimeError("Set LLM_API_KEY and LLM_MODEL in config/.env")
     return key, model

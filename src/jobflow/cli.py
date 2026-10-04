@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import os
+import pydoc
+import re
 import sys
+import textwrap
 
 
 def positive_int(text: str) -> int:
@@ -32,8 +36,6 @@ def check_variant(variant: str | None, yaml_only: bool) -> str | None:
 def check_keys(reviewer: bool = False, web_search: bool = False) -> None:
     """Stop before any job is tried if a key it needs is missing: otherwise every job
     fails in turn with the same message (after spending its web searches)."""
-    import os
-
     from .llm import credentials
 
     credentials()
@@ -126,7 +128,6 @@ def build_parser() -> argparse.ArgumentParser:
     commands = dict(sub.choices)   # every command but help itself
 
     def show_manual(args: argparse.Namespace) -> None:
-        import pydoc
         pydoc.pager(manual(commands, args.topic))   # paged like man in a terminal
 
     manual_parser = command("help", show_manual, "Show every command, what it does, and its "
@@ -182,9 +183,6 @@ See docs/setup.md for each step.""")
 def manual(commands: dict[str, argparse.ArgumentParser], command: str | None = None) -> str:
     """Every command's usage, description, and options, laid out like a manual page; or
     just command's. Made from their parsers, so it always matches what they accept."""
-    import re
-    import textwrap
-
     if command:
         return commands[command].format_help()
 

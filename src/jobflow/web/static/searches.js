@@ -1,10 +1,11 @@
-"use strict";
 // The Searches tab: your config/searches.toml, the Apify runs it plans, and the allowed
-// values. Loaded last; uses common.js's helpers (el, fill, toast, copyCommand, state,
-// SITE_NAMES) and app.js's refresh, which calls renderSearches.
+// values. app.js's refresh calls renderSearches.
+import { refresh } from "./app.js";
+import { copyCommand, el, fill, state, toast } from "./common.js";
+import { SITE_NAMES } from "./format.js";
 
 const siteName = (s) => SITE_NAMES[s] || s;
-function renderSearches() {
+export function renderSearches() {
   const data = state.searches, box = document.getElementById("searches-view");
   const header = el("div", { className: "sv-card", id: "sv-top" },
     el("h2", {}, "Your searches"),

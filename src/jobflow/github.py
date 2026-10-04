@@ -2,9 +2,11 @@
 to it (update-searches), and reading back what it uses (status), with the GitHub CLI."""
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 
 from .text import plural
 
@@ -37,8 +39,10 @@ def update_searches(dry_run: bool = False) -> None:
     the daily import reads, then filter Inbox jobs its filters would now filter (imports
     only apply them to the jobs they bring in), and bring back Filtered jobs its filters
     would now keep. An invalid file stops before anything is published, so a typo never
-    reaches the daily import; so does a database that can't be reached, so the Inbox is
-    never left judged by the old searches while the import uses the new ones."""
+    reaches the daily import; so does a database that can't be reached at the start. The
+    Inbox is updated after publishing, so if the database fails in between, the import
+    uses the new searches while the Inbox is still judged by the old ones: run
+    update-searches again."""
     from .db import migrate, pending_migrations
     from .ingest.filters import search_warnings
     from .ingest.refilter import filter_inbox_jobs, restore_filtered_jobs
@@ -158,9 +162,6 @@ def status() -> None:
     last run, its secrets, its searches (and whether they match config/searches.toml), and
     which job sites (Apify scrapers) it calls; and from your database, why recent Apify
     runs failed. Changes nothing."""
-    import json
-    from datetime import datetime
-
     from .ingest.options import ACTORS, SITES
     from .settings import timezone
 

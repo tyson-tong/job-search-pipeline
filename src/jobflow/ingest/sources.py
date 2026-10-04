@@ -124,24 +124,25 @@ def to_date(value: object) -> date | None:
         return None
 
 
-def _period_from_amount(amount: float, country: str | None = None) -> str:
-    """The period of an amount with no period stated, from its size and the job's country.
-    Where pay is quoted by the month (Hong Kong, Singapore), S$2,500 is a month's pay,
-    not a day's."""
+def _period_from_amount(low: float, high: float, country: str | None = None) -> str:
+    """The period of amounts with no period stated, from their size and the job's country.
+    Where pay is quoted by the month (Hong Kong, Singapore), S$2,500 is a month's pay, not a
+    day's, and so is a range that starts under the monthly cutoff (S$25,000 - 35,000)."""
     monthly_below = MONTHLY_BELOW.get(country or "")
-    if amount < 300:
+    if high < 300:
         return "hourly"
-    if amount < (1000 if monthly_below else 3000):
+    if high < (1000 if monthly_below else 3000):
         return "daily"
+    amount = low if monthly_below else high
     return "monthly" if amount < (monthly_below or MONTHLY_BELOW_ELSEWHERE) else "annual"
 
 
-def _period(text: str, amounts: tuple[int, int], amount: float,
+def _period(text: str, span: tuple[int, int], low: float, high: float,
             ignore: list[tuple[int, int]], country: str | None) -> str:
-    """The period the salary text states for the amounts at text[amounts[0]:amounts[1]]:
-    the period word nearest after them (then nearest before), skipping words inside
-    `ignore` and any whose period is implausible for the amount. Else from the amount."""
-    start, end = amounts
+    """The period the salary text states for the amounts at text[span[0]:span[1]]: the
+    period word nearest after them (then nearest before), skipping words inside `ignore`
+    and any whose period is implausible for the amount. Else from the amounts."""
+    start, end = span
     found = []
     for period, pattern in PERIOD_WORDS:
         for word in re.finditer(pattern, text, re.I):
@@ -149,10 +150,10 @@ def _period(text: str, amounts: tuple[int, int], amount: float,
                 after = word.start() >= end
                 found.append((not after, word.start() - end if after else start - word.end(), period))
     for *_, period in sorted(found):
-        low, high = PLAUSIBLE[period]
-        if low <= amount < high:
+        least, most = PLAUSIBLE[period]
+        if least <= high < most:
             return period
-    return _period_from_amount(amount, country)
+    return _period_from_amount(low, high, country)
 
 
 def _next_word_end(text: str, start: int) -> int:
@@ -166,9 +167,81 @@ def _annual(low: float, high: float, period: str) -> tuple[float, float] | None:
     return None if high * factor > MAX_ANNUAL else (low * factor, high * factor)
 
 
+# One amount in a salary text: an optional currency, the number, and an optional k ("$80k");
+# a percentage ("11.5% super") is matched too, so that it is never taken for pay.
+AMOUNT = re.compile(r"(?P<cur>[$£€]|\b(?:A|AU|NZ|S|US|HK)\$)?\s*"
+                    r"(?P<num>\d[\d,]*(?:\.\d+)?)\s*(?P<k>[kK]\b)?(?P<pct>\s*%)?")
+# What joins the two ends of a range: "$60 - $80k", "$120,000 to $140,000", "between $90k
+# and $110k".
+RANGE_SEPARATOR = re.compile(r"\s*(?:-|to|and)\s*", re.I)
+
+
+@dataclass(frozen=True)
+class _Pay:
+    """A salary expression found in the text: one amount, or a range's two ends."""
+    low: float
+    high: float
+    start: int
+    end: int
+    marked: bool   # a currency or a k on either end: an amount, not a count of something
+
+
+def _amount(match: re.Match[str]) -> float:
+    return float(match["num"].replace(",", "")) * (1000 if match["k"] else 1)
+
+
+def _expressions(text: str) -> list[_Pay]:
+    """Each amount and range in the text, in order. A k on one end of a range is the whole
+    range's ("$60 - $80k" is 60,000 to 80,000, "$80k-90" 80,000 to 90,000)."""
+    found = [m for m in AMOUNT.finditer(text) if not m["pct"]]
+    expressions, i = [], 0
+    while i < len(found):
+        a = found[i]
+        b = found[i + 1] if i + 1 < len(found) else None
+        if b is not None and RANGE_SEPARATOR.fullmatch(text[a.end():b.start()]):
+            low, high = _amount(a), _amount(b)
+            if a["k"] and not b["k"] and high < 1000:
+                high *= 1000
+            elif b["k"] and not a["k"] and low < 1000:
+                low *= 1000
+            # "$100k and 2 weeks leave" is no range.
+            if low <= high:
+                expressions.append(_Pay(low, high, a.start(), b.end(),
+                                        bool(a["cur"] or a["k"] or b["cur"] or b["k"])))
+                i += 2
+                continue
+        expressions.append(_Pay(_amount(a), _amount(a), a.start(), a.end(),
+                                bool(a["cur"] or a["k"])))
+        i += 1
+    return expressions
+
+
+def _parse_text(text: str, country: str | None) -> tuple[float, float] | None:
+    """Annualised (min, max) from one salary text: its largest amount or range, so a sign-on
+    bonus beside the salary isn't taken for its bottom end."""
+    text = text.replace("\u2013", "-").replace("\u2014", "-")
+    expressions = _expressions(text)
+    # Once a currency is marked, an unmarked number is something else: "2 weeks", "38 hours".
+    if any(e.marked for e in expressions):
+        pay = [e for e in expressions if e.marked]
+    else:
+        pay = expressions
+    pay = [e for e in pay if e.high >= 5]
+    if not pay:
+        return None
+    chosen = max(pay, key=lambda e: e.high)
+    # A number that isn't pay takes its next word with it, so "2 weeks leave" and
+    # "11.5% super" don't read as a period.
+    ignore = [(e.start, _next_word_end(text, e.end)) for e in expressions if e not in pay]
+    ignore += [(m.start(), _next_word_end(text, m.end())) for m in AMOUNT.finditer(text) if m["pct"]]
+    period = _period(text, (chosen.start, chosen.end), chosen.low, chosen.high, ignore, country)
+    return _annual(chosen.low, chosen.high, period)
+
+
 def parse_salary(value: object, country: str | None = None) -> tuple[float, float] | None:
-    """Annualised (min, max) from Indeed's salary object or free-text salary strings, in
-    the job's country when known (it decides whether an amount with no period is monthly).
+    """Annualised (min, max) from Indeed's salary object, free-text salary strings, or a
+    list of them (each read on its own, then combined), in the job's country when known (it
+    decides whether an amount with no period is monthly).
 
     Returns None when no amount can be found (for example "Competitive"), or when the
     amount is too large to be a real salary.
@@ -179,44 +252,15 @@ def parse_salary(value: object, country: str | None = None) -> tuple[float, floa
         if not amounts:
             return None
         period = INDEED_PERIODS.get(str(value.get("type") or "").upper()) or \
-            _period_from_amount(max(amounts), country)
+            _period_from_amount(min(amounts), max(amounts), country)
         return _annual(min(amounts), max(amounts), period)
     if isinstance(value, list):
-        value = " - ".join(str(v) for v in value)
+        parts = [parse_salary(v, country) for v in value if isinstance(v, str)]
+        found = [part for part in parts if part]
+        return (min(lo for lo, _ in found), max(hi for _, hi in found)) if found else None
     if not isinstance(value, str) or not value.strip():
         return None
-    text = value.replace("\u2013", "-").replace("\u2014", "-")
-    matches = list(re.finditer(r"(?P<cur>[$£€]|\b(?:A|AU|NZ|S|US|HK)\$)?\s*"
-                               r"(?P<num>\d[\d,]*(?:\.\d+)?)\s*(?P<k>[kK]\b)?(?P<pct>\s*%)?", text))
-    amounts = []
-    skipped: list[re.Match[str]] = []
-    spans: list[tuple[int, int]] = []
-    has_currency = any(m["cur"] for m in matches)
-    kept: re.Match[str] | None = None
-    for m in matches:
-        # Once a currency is marked, an unmarked number is kept only as the top of a range
-        # ("$120,000 - 140,000"); others are things like "2 weeks" or "11.5% super".
-        range_end = kept is not None and re.fullmatch(r"\s*(?:-|to)\s*",
-                                                      text[kept.end():m.start()], re.I)
-        if m["pct"] or (has_currency and not m["cur"] and not m["k"] and not range_end):
-            skipped.append(m)
-            kept = None
-            continue
-        amount = float(m["num"].replace(",", "")) * (1000 if m["k"] else 1)
-        # "$60 - $80k": the k is the whole range's, not just its top.
-        if range_end and kept is not None and m["k"] and not kept["k"] and amounts \
-                and spans[-1] == kept.span() and amounts[-1] < 1000:
-            amounts[-1] *= 1000
-        if amount >= 5:
-            amounts.append(amount)
-            spans.append(m.span())
-        kept = m
-    if not amounts:
-        return None
-    # A skipped number takes its next word with it, so "2 weeks leave" doesn't read as weekly pay.
-    ignore = [(m.start(), _next_word_end(text, m.end())) for m in skipped]
-    period = _period(text, (spans[0][0], spans[-1][1]), max(amounts), ignore, country)
-    return _annual(min(amounts), max(amounts), period)
+    return _parse_text(value, country)
 
 
 def _as_list(value: object) -> list:

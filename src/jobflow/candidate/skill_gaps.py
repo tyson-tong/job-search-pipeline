@@ -14,7 +14,7 @@ from pathlib import Path
 from .. import db
 from ..llm import complete, parse_json
 from ..settings import matching_weights, now, output_directory
-from ..text import plural
+from ..text import plural, whole_number
 from .cvs import chosen_files
 from .matching import PURSUING, best_variant, current_digests, stored_assessments
 from .pages import html_page
@@ -80,8 +80,7 @@ def rank_skills(gaps: list[dict], groups: object) -> tuple[list[dict], int]:
             continue
         members = []
         for raw in group.get("gap_ids") or []:
-            gap_id = None if isinstance(raw, bool) else raw if isinstance(raw, int) \
-                else int(raw) if str(raw).isdigit() else None
+            gap_id = whole_number(raw)
             if gap_id is not None and gap_id in by_id and gap_id not in used:
                 used.add(gap_id)
                 members.append(by_id[gap_id])

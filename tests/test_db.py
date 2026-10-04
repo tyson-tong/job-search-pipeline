@@ -767,28 +767,33 @@ def test_the_job_list_filters_hide_only_what_they_say(database):
 
 def test_clean_up_keeps_the_folder_of_every_job_you_applied_for(database, tmp_path, monkeypatch):
     # Its folder holds the CV and letter you sent, wanted for a follow-up or a new
-    # application; clean-up once deleted it as soon as the job was Rejected.
+    # application; clean-up once deleted it as soon as the job was Rejected, and a job
+    # rejected straight from Interested (never marked Applied) never counted as applied.
     from jobflow import cleanup, settings
     from jobflow.candidate import paths
 
     save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "id": key, "title": title}
                                         for key, title in (("1", "Analyst"), ("2", "Quant"),
-                                                           ("3", "Trader"))], country="AU")
+                                                           ("3", "Trader"), ("4", "Engineer"))],
+             country="AU")
     ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
     with connect() as conn:
-        # Applied, then rejected; applied, then withdrawn; withdrawn before applying.
+        # Applied, then rejected; applied, then withdrawn; withdrawn before applying;
+        # rejected without ever being marked Applied, then withdrawn: rejected, so you
+        # applied.
         for key, statuses in (("1", ["interested", "applied", "rejected"]),
                               ("2", ["interested", "applied", "withdrawn"]),
-                              ("3", ["interested", "withdrawn"])):
+                              ("3", ["interested", "withdrawn"]),
+                              ("4", ["interested", "rejected", "withdrawn"])):
             for status in statuses:
                 set_job_state(conn, ids[key], status=status, via="test")
     monkeypatch.setattr(settings, "output_directory", lambda: tmp_path)
     monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
     folders = {}
-    for key, title in (("1", "Analyst"), ("2", "Quant"), ("3", "Trader")):
+    for key, title in (("1", "Analyst"), ("2", "Quant"), ("3", "Trader"), ("4", "Engineer")):
         folders[key] = paths.job_directory(ids[key], {"company": "Acme", "title": title})
         folders[key].mkdir(parents=True)
     monkeypatch.setattr("builtins.input", lambda prompt: "y")
     cleanup.clean_up()
     assert {key: folder.exists() for key, folder in folders.items()} == {
-        "1": True, "2": True, "3": False}
+        "1": True, "2": True, "3": False, "4": True}

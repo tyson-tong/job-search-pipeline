@@ -340,8 +340,9 @@ def test_shortening_never_empties_an_entry_or_rewrites_anything():
         "Presented dashboards to executives using Tableau"]
     assert trimmed["sections"]["experiences"][1]["highlights"] == ["Only bullet"]
     assert fact_check(cv, trimmed) == ([], [])  # only removals, so nothing to flag
-    # Ids sent as strings were dropped, and with no usable ranking each entry's first
-    # bullet, usually its strongest, was cut first.
+    # Ids sent as digit strings count as numbers (they were once dropped, so each entry's
+    # first bullet, usually its strongest, was cut first); with no ranking at all, each
+    # entry's last bullets go first.
     assert [b["text"] for b in cut_order(found, ["0"])] == [
         "Built Python ETL pipelines processing 2M records daily"]
     assert [b["text"] for b in cut_order(found, None)] == [

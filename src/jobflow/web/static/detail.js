@@ -1,8 +1,11 @@
-"use strict";
 // The job panel (the drawer a job's title opens): its details, scores, next steps, similar
 // jobs, and edits, which go through the same unsaved changes as the list (common.js).
+import { statusSelect } from "./app.js";
+import { api, copyCommand, current, el, fill, renderSaveBar, save, setPending, state, toast } from "./common.js";
+import { fmtDate, fmtSalary, label, safeUrl, SITE_NAMES } from "./format.js";
+import { startScoring } from "./scoring.js";
 
-async function openDetail(id) {
+export async function openDetail(id) {
   try {
     const drawer = document.getElementById("drawer");
     const sameJob = state.detail && state.detail.id === id;
@@ -12,8 +15,8 @@ async function openDetail(id) {
     drawer.scrollTop = scroll;  // a refresh of the same job keeps your place
   } catch (error) { toast(error.message, true); }
 }
-function closeDetail() { state.detail = null; document.getElementById("drawer").hidden = true; }
-function renderDetail() {
+export function closeDetail() { state.detail = null; document.getElementById("drawer").hidden = true; }
+export function renderDetail() {
   const job = state.detail;
   const listed = state.jobs.find((j) => j.id === job.id);
   // Edits go through the same pending changes as the table, using the list row if shown.

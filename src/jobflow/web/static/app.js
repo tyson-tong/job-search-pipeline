@@ -1,10 +1,19 @@
-"use strict";
-// The job list: loading it, its tabs, columns, filters, paging, bulk selection, and
-// scoring, then the page's wiring and start. Uses common.js and detail.js.
+// The page's entry point, and the job list: loading it, its tabs, columns, filters, and
+// paging, then the page's wiring and start. Ticking rows is in selection.js, scoring in
+// scoring.js, the job panel in detail.js, and the Searches tab in searches.js.
+import {
+  api, AUTO_REFRESH_MS, current, el, fill, NOT_MY_JOBS, QUICK_STATUSES, recall, remember,
+  renderSaveBar, RETURN_TABS, save, setPending, sortInput, state, TAB_STATUS, toast, TOKEN,
+  TRIAGE_STATUSES,
+} from "./common.js";
+import { closeDetail, openDetail, renderDetail } from "./detail.js";
+import { fmtDate, fmtSalary, label, SITE_NAMES } from "./format.js";
+import { pollScoring, renderScoring } from "./scoring.js";
+import { renderSearches } from "./searches.js";
+import { pick, renderBulk } from "./selection.js";
 
 // ---- Loading -------------------------------------------------------------------------
-const qInput = document.getElementById("q"),
-  salaryInput = document.getElementById("salary"), sortInput = document.getElementById("sort");
+const qInput = document.getElementById("q"), salaryInput = document.getElementById("salary");
 // Column filters beyond the search, site, and minimum salary: [input, query parameter].
 const COLUMN_FILTERS = [["f-score", "score_min"], ["f-posted", "posted"]].map(([id, param]) => [document.getElementById(id), param]);
 function statusParams() {
@@ -49,7 +58,7 @@ function filterParams() {
 // Each refresh's number: a slower, older one (two quick filter clicks, say) must not land
 // after a newer one, showing jobs for a filter no longer chosen.
 let refreshes = 0;
-async function refresh() {
+export async function refresh() {
   const mine = ++refreshes;
   try {
     if (state.view === "searches") {
@@ -144,7 +153,7 @@ function renderStatusMenu() {
   document.getElementById("status-summary").textContent =
     "Status: " + (!chosen.length ? "none" : chosen.length > 3 ? `${chosen.length} selected` : chosen.join(", ")) + " ▾";
 }
-function statusSelect(job) {
+export function statusSelect(job) {
   const value = current(job, "status");
   // A new, not interested, or filtered job can only be triaged (or go back to the Inbox);
   // any other doesn't go back to New.
@@ -198,7 +207,7 @@ function renderSortHeads() {
 }
 // Where each page starts in state.jobs: every pageSize rows, except that similar jobs, and
 // the same ad in other countries, stay together on one page (so a page can run longer).
-function pageStarts() {
+export function pageStarts() {
   const starts = [0];
   let count = 0;
   state.jobs.forEach((job, i) => {
@@ -234,7 +243,7 @@ function renderExports(first, end) {
 function goToPage(page) {
   state.page = page; state.lastPicked = null; renderRows();
 }
-function renderRows() {
+export function renderRows() {
   renderSortHeads();
   renderCountryFilter();
   renderSiteFilter();
@@ -368,126 +377,6 @@ function renderSiteFilter() {
   renderMultiFilter("site", Object.entries(SITE_NAMES).map(([site, name]) => [site, name, counts[site] || 0]),
     state.sites, (site) => SITE_NAMES[site], (next) => { state.sites = next; remember(); refresh(); });
 }
-
-// ---- Selecting rows (Inbox, Filtered, Not interested) for bulk changes -------------------
-function pick(id, index, event) {
-  const on = !state.selected.has(id);
-  const anchor = event.shiftKey && state.lastPicked !== null ? state.lastPicked : index;
-  // Shift-click sets every row between the last click and this one.
-  for (let i = Math.min(anchor, index); i <= Math.max(anchor, index); i++) {
-    const rowId = state.jobs[i] && state.jobs[i].id;
-    if (rowId === undefined) continue;
-    on ? state.selected.add(rowId) : state.selected.delete(rowId);
-  }
-  state.lastPicked = index;
-  renderRows();
-}
-function markSelected(status, done = `marked ${label(status).toLowerCase()}`) {
-  const jobs = state.jobs.filter((job) => state.selected.has(job.id));
-  jobs.forEach((job) => stagePending(job, "status", status));
-  state.selected.clear();
-  state.lastPicked = null;
-  renderSaveBar();
-  renderRows();
-  if (state.detail && jobs.some((job) => job.id === state.detail.id)) renderDetail();
-  toast(`${jobs.length} job${jobs.length === 1 ? "" : "s"} ${done}: click Save to keep`);
-}
-function pageJobs() {
-  const starts = pageStarts();
-  return state.jobs.slice(starts[state.page] ?? 0, starts[state.page + 1] ?? state.jobs.length);
-}
-function renderBulk() {
-  const inbox = state.view === "inbox";
-  const selectable = inbox || RETURN_TABS.includes(state.view), n = state.selected.size;
-  const onPage = pageJobs(), pageSelected = onPage.filter((job) => state.selected.has(job.id)).length;
-  document.getElementById("select-col").hidden = !selectable;
-  document.getElementById("select-col-filter").hidden = !selectable;
-  const all = document.getElementById("select-all");
-  all.checked = selectable && onPage.length > 0 && pageSelected === onPage.length;
-  all.indeterminate = pageSelected > 0 && pageSelected < onPage.length;
-  const bar = document.getElementById("bulk");
-  bar.hidden = !selectable || !n;
-  if (bar.hidden) return;
-  fill(bar, [el("strong", {}, `${n} selected`),
-    inbox ? [el("button", { className: "btn small", onclick: () => markSelected("interested") }, "Mark interested"),
-      el("button", { className: "btn small", onclick: () => markSelected("not_interested") }, "Mark not interested"),
-      el("button", { className: "btn small", disabled: Boolean(state.scoring && state.scoring.running),
-        title: "Ask the LLM to compare the ticked jobs with each of your CVs, to help you decide",
-        onclick: scoreSelected }, "Score selected")]
-      : el("button", { className: "btn small", onclick: () => markSelected("new", "moved to the Inbox") }, "Move to Inbox"),
-    el("button", { className: "btn small", onclick: () => { state.selected.clear(); state.lastPicked = null; renderRows(); } }, "Clear selection"),
-    el("span", { className: "meta" }, "Shift-click a checkbox to select a range.")]);
-}
-document.getElementById("select-all").addEventListener("change", (event) => {
-  // Ticks or clears this page's jobs; ticks on other pages stay.
-  pageJobs().forEach((job) => event.target.checked ? state.selected.add(job.id) : state.selected.delete(job.id));
-  state.lastPicked = null;
-  renderRows();
-});
-
-// ---- Scoring (LLM match scores run on this machine, in the background) -------------------
-function renderScoring() {
-  const button = document.getElementById("score-btn"), chip = document.getElementById("scoring");
-  const running = state.scoring && state.scoring.running;
-  const { unscored, scoring_problem: problem } = state.summary || {};
-  // Score all jobs scores the jobs you're pursuing, which live in My jobs.
-  button.hidden = state.view !== "jobs";
-  button.disabled = running || !unscored;
-  // Scores made against a CV you've edited since; only shown when there are some.
-  const rescore = document.getElementById("rescore-btn"), outdated = (state.summary || {}).outdated;
-  rescore.hidden = state.view !== "jobs" || !outdated || !outdated.jobs;
-  rescore.disabled = running;
-  if (outdated && outdated.jobs) rescore.textContent = `Rescore edited CVs (${outdated.jobs})`;
-  // Only a configuration problem needs explaining, usually the CVs chosen in
-  // config/profile.toml; it stops tailor-cv, cover-letter, skill-gaps, and interview-prep too.
-  button.title = problem ? `Scoring unavailable: ${problem}` : "";
-  const notice = document.getElementById("cv-problem");
-  notice.hidden = !problem;
-  if (problem) fill(notice, [el("strong", {}, "Scoring, tailor-cv, cover-letter, skill-gaps, and interview-prep can't run: "), problem]);
-  chip.hidden = !running;
-  if (running) chip.textContent = `Scoring ${state.scoring.done} / ${state.scoring.total}…`;
-}
-async function startScoring(body, confirmText) {
-  if (confirmText && !confirm(confirmText)) return;
-  try {
-    state.scoring = await api("/api/scoring", { method: "POST",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    renderScoring();
-    if (state.scoring.running) pollScoring();
-    else toast("Nothing to score.");
-  } catch (error) { toast(error.message, true); }
-}
-async function pollScoring() {
-  try { state.scoring = await api("/api/scoring"); } catch (error) { toast(error.message, true); return; }
-  renderScoring();
-  if (state.scoring.running) { setTimeout(pollScoring, 2000); return; }
-  const { scored, errors, done, total } = state.scoring;
-  toast(`Scored ${scored.length} job${scored.length === 1 ? "" : "s"}` + (errors.length
-    ? `; ${errors.length} failed (${errors[0].error})` : "")
-    + (done < total ? `. Stopped: the other ${total - done} would fail the same way` : ""), errors.length > 0);
-  await refresh();  // unsaved drafts are kept; rows just gain their new scores
-  if (state.detail && !state.pending.size) await openDetail(state.detail.id);
-}
-// Inbox jobs you tick, scored to help you triage them; each keeps its score if you mark it
-// Interested.
-function scoreSelected() {
-  const ids = state.jobs.filter((job) => state.selected.has(job.id)).map((job) => job.id);
-  const cvs = state.summary.cv_variants.length;
-  startScoring({ job_ids: ids }, `Score ${ids.length} selected job${ids.length === 1 ? "" : "s"} against each of `
-    + `your CVs it has no score for?\n\nThis makes at most ${ids.length * cvs} LLM call${ids.length * cvs === 1 ? "" : "s"}. `
-    + "You can keep working while it runs.");
-}
-document.getElementById("score-btn").addEventListener("click", () => {
-  const jobs = state.summary.unscored, cvs = state.summary.cv_variants.length;
-  startScoring({}, `Score ${jobs} job${jobs === 1 ? "" : "s"} you're pursuing against each of your CVs it has no score for?`
-    + `\n\nThis makes at most ${jobs * cvs} LLM call${jobs * cvs === 1 ? "" : "s"}, newest jobs first. You can keep working while it runs.`);
-});
-document.getElementById("rescore-btn").addEventListener("click", () => {
-  const { jobs, calls } = state.summary.outdated;
-  startScoring({ rescore: true }, `Rescore ${jobs} job${jobs === 1 ? "" : "s"} you're pursuing against the CVs you've edited `
-    + `since ${jobs === 1 ? "it was" : "they were"} scored?\n\nThis makes ${calls} LLM call${calls === 1 ? "" : "s"}`
-    + " (and scores any CV a job has no score against yet). Scores against CVs you haven't edited are kept.");
-});
 
 // ---- Wiring ----------------------------------------------------------------------------
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {

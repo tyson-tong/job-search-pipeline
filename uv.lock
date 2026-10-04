@@ -284,7 +284,6 @@ dependencies = [
     { name = "apify-client" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
-    { name = "pyyaml" },
     { name = "requests" },
 ]
 
@@ -299,6 +298,7 @@ dev = [
 documents = [
     { name = "pypdf" },
     { name = "python-docx" },
+    { name = "pyyaml" },
     { name = "rendercv", extra = ["full"] },
 ]
 
@@ -307,7 +307,6 @@ requires-dist = [
     { name = "apify-client", specifier = ">=3.2,<4" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "psycopg-pool", specifier = ">=3.2,<4" },
-    { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "requests", specifier = ">=2.32,<3" },
 ]
 
@@ -322,6 +321,7 @@ dev = [
 documents = [
     { name = "pypdf", specifier = ">=5,<7" },
     { name = "python-docx", specifier = ">=1.1,<2" },
+    { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "rendercv", extras = ["full"], specifier = "==2.8" },
 ]
 

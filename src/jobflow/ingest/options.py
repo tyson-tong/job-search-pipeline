@@ -88,9 +88,10 @@ LINKEDIN_CITY_NAMES = {"Charlotte": "Charlotte, North Carolina", "Miami": "Miami
 LINKEDIN_POSTED_WITHIN = {1: "r86400", 7: "r604800", 30: "r2592000"}
 LINKEDIN_POSTED_ANY_TIME = None  # no f_TPR parameter
 
-# How LinkedIn output reports job types and workplace types (lower-cased).
+# How LinkedIn output reports job types and workplace types (lower-cased). A temporary role
+# counts as contract on every site, as Seek's "Contract/Temp" does.
 LINKEDIN_JOB_TYPES = {"full-time": "full-time", "part-time": "part-time",
-                      "contract": "contract", "temporary": "casual"}
+                      "contract": "contract", "temporary": "contract"}
 LINKEDIN_WORK_ARRANGEMENTS = {"on-site": "on-site", "hybrid": "hybrid", "remote": "remote"}
 
 # --- Indeed --------------------------------------------------------------------------
@@ -104,7 +105,7 @@ INDEED_POSTED_ANY_TIME = ""
 
 # How Indeed output reports job types (jobTypes / attributes labels, lower-cased).
 INDEED_JOB_TYPES = {"full-time": "full-time", "part-time": "part-time",
-                    "contract": "contract", "casual": "casual", "temporary": "casual"}
+                    "contract": "contract", "casual": "casual", "temporary": "contract"}
 # Indeed attribute labels that indicate a work arrangement (lower-cased).
 INDEED_WORK_ARRANGEMENTS = {"remote": "remote", "work from home": "remote",
                             "hybrid work": "hybrid", "hybrid remote": "hybrid",

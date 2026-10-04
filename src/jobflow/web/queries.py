@@ -251,19 +251,24 @@ def summary() -> dict:
         # would otherwise only show in GitHub's email.
         failed_runs = recent_failed_runs(conn)
     # Scoring reads your CV files; a missing CV folder shouldn't break the rest of the page.
-    from ..candidate.cvs import chosen_sources
+    # Only that is reported as a scoring problem: a database error fails the request, and
+    # the page shows it as one.
     from ..candidate.matching import count_needing_match, current_digests, outdated_scores
+    digests: dict[str, str] | None = None
+    scoring_problem: str | None = None
     try:
         score_weights()   # a bad weight in config/profile.toml would rank every job wrongly
-        variants = list(chosen_sources())
-        unscored, scoring_problem = count_needing_match(variants), None
+        digests = current_digests()   # any CV that can't be read, or cvs set wrongly
+    except Exception as exc:
+        scoring_problem = str(exc)
+    variants, unscored, outdated = [], None, {"jobs": 0, "calls": 0}
+    if digests is not None:
+        variants = list(digests)
+        unscored = count_needing_match(variants)
         # Scores against a CV edited since, which Rescore edited CVs updates: one LLM
         # call per (job, CV).
-        pairs = outdated_scores(current_digests())
+        pairs = outdated_scores(digests)
         outdated = {"jobs": len({job_id for job_id, _ in pairs}), "calls": len(pairs)}
-    except Exception as exc:
-        variants, unscored, scoring_problem = [], None, str(exc)
-        outdated = {"jobs": 0, "calls": 0}
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,
             "last_import": last_import, "failed_runs": failed_runs,
             "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,

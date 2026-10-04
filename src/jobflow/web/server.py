@@ -35,10 +35,9 @@ def make_handler(token: str, port: int):
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
     static = resources.files("jobflow.web") / "static"
     page = (static / "index.html").read_text().replace("__JOBFLOW_TOKEN__", token)
-    # The page's scripts, by path: what they share, the job panel, the job list, and the
-    # Searches tab.
-    scripts = {f"/{name}": (static / name).read_bytes()
-               for name in ("common.js", "detail.js", "app.js", "searches.js")}
+    # The page's script modules, by path (app.js, the entry point, imports the others).
+    scripts = {f"/{entry.name}": entry.read_bytes() for entry in static.iterdir()
+               if entry.name.endswith(".js")}
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "jobflow"

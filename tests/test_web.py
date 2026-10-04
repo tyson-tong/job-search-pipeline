@@ -85,3 +85,31 @@ def test_a_failed_scoring_run_never_leaves_scoring_stuck(monkeypatch):
         time.sleep(0.01)
     state = scoring.status()
     assert not state["running"] and state["errors"] == [{"id": 1, "error": "LLM timed out"}]
+
+
+def test_changing_a_status_back_leaves_no_unsaved_change():
+    # Statuses were compared cut to a date's 10 characters, so "not_interested" and
+    # "interviewing" never matched themselves: undoing a click left an unsaved change, which
+    # stopped the page refreshing and asked before you left it.
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("needs node to run the page's JavaScript")
+    from jobflow.db import STATUSES
+
+    module = Path(__file__).parents[1] / "src/jobflow/web/static/format.js"
+    script = (f"import {{ isSaved }} from {json.dumps(module.as_uri())};\n"
+              f"const statuses = {json.dumps(list(STATUSES))};\n"
+              "console.log(JSON.stringify({\n"
+              "  back: statuses.filter((s) => !isSaved('status', s, s)),\n"
+              "  changed: isSaved('status', 'offered', 'interviewing'),\n"
+              "  date: isSaved('follow_up_on', '2026-10-09', '2026-10-09'),\n"
+              "  cleared: isSaved('follow_up_on', '', null),\n"
+              "  note: isSaved('note', 'Called them', null)}));\n")
+    result = subprocess.run([node, "--input-type=module", "-e", script],
+                            capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == {"back": [], "changed": False, "date": True,
+                                         "cleared": True, "note": False}

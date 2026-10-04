@@ -207,6 +207,10 @@ def test_parse_salary_formats():
     # The k is the range's: read as 60 to 80,000.
     assert parse_salary("$60 - $80k") == (60000, 80000)
     assert parse_salary("$60-80K + super") == (60000, 80000)
+    assert parse_salary("$80k-90") == (80000, 90000)   # once 90 to 80,000
+    # A Singapore range starting under the monthly cutoff is monthly, though its top is
+    # over it: read as annual, S$25-35k a month failed a S$100k minimum.
+    assert parse_salary("25000-35000", "SG") == (300000, 420000)
     # Too large to be a salary: one such value once failed the import of a whole paid run.
     assert parse_salary("Up to $1,000,000,000 per month") is None
 
