@@ -94,10 +94,10 @@ def indeed_runs(search: Search) -> list[PlannedRun]:
 def seek_runs(search: Search) -> list[PlannedRun]:
     window, window_note = site_window("seek", search.posted_within_days)
     runs, notes = [], _notes("seek", search, window_note)
+    notes += [f"country {country} skipped (Seek covers {', '.join(opt.SEEK_COUNTRIES)})"
+              for country in search.locations if country not in opt.SEEK_COUNTRIES]
     for term, (country, city) in product(search.terms, search.places()):
         if country not in opt.SEEK_COUNTRIES:
-            notes.append(f"country {country} skipped (Seek covers "
-                         f"{', '.join(opt.SEEK_COUNTRIES)})")
             continue
         run_input: dict = {
             "searchTerm": term, "country": opt.SEEK_COUNTRIES[country],

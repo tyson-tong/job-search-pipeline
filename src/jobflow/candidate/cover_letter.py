@@ -138,5 +138,5 @@ def write_letter(job_id: int, variant: str | None = None,
                   read_it + " The automated check below catches invented numbers and names but "
                   "is not exhaustive."],
                  notes, errors, warnings, revised.critique, "letter", unwritten)
-    record_run(job_id, "cover-letter", errors, model)
+    record_run(job_id, "cover-letter", bool(errors), model)
     return target, errors, warnings

@@ -130,9 +130,10 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
     command.output_exists(its folder) too, which checks the command's own marker files (a
     CV_*_draft.yaml with its CV_REVIEW.md, cover-letter.docx, or interview-prep.html): one
     whose marker was deleted (by clean-up, say) is done again. Deleting only a tailored CV's
-    PDF doesn't count. A job whose latest draft failed the fact check (NEEDS-FIX) is done again, for a
-    fresh draft, unless command.fixed_by_hand(its folder) says you fixed that draft
-    yourself: then it's kept (Plan.fixed)."""
+    PDF doesn't count. A job whose latest draft failed the fact check, or couldn't be
+    rendered (NEEDS-FIX), is done again, for a fresh draft, unless
+    command.fixed_by_hand(its folder) says you fixed that draft yourself: then it's kept
+    (Plan.fixed)."""
     from .candidate.paths import job_directory
     from .db import connect
 
@@ -189,8 +190,8 @@ def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = F
     the LLM provider refuses every request (no credit left, a bad key)."""
     plan = _plan_jobs(command, only, redo)
     todo = plan.todo
-    again = [f"{plan.redrafted} drafted again: the last draft failed the fact check"] \
-        if plan.redrafted else []
+    again = [f"{plan.redrafted} drafted again: their last draft failed the fact check or "
+             "couldn't be rendered"] if plan.redrafted else []
     again += [f"{plan.lost} done again: their output was deleted"] if plan.lost else []
     jobs = (f"{plural(plan.total, 'job')} named" if only
             else plural(plan.total, command.status.capitalize() + " job"))

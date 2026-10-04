@@ -8,21 +8,25 @@ from .text import plural
 
 # The statuses whose jobs' output folders clean-up deletes, with how it names them. Only a
 # job moved to Not interested from My jobs has a folder: Inbox jobs are never worked on.
-# Such a job is archived 2 weeks later, still with its folder.
+# Such a job is archived 2 weeks later, still with its folder. A job you applied for keeps
+# its folder whatever its status: it holds the CV and letter you sent, for a follow-up or
+# for applying again. (Rejected and Declined jobs always count as applied for.)
 CLEAN_UP_STATUSES = {"not_interested": "Not interested", "withdrawn": "Withdrawn",
-                     "declined": "Declined", "rejected": "Rejected", "archived": "Archived"}
+                     "archived": "Archived"}
 
 
 def clean_up() -> None:
     """Delete the output folders (CVs, letters, reviews, briefings) of jobs that are
-    Not interested, Withdrawn, Declined, Rejected, or Archived, once you confirm. The jobs,
-    their notes, and their history stay in the database."""
+    Not interested, Withdrawn, or Archived and that you never applied for, once you confirm.
+    The jobs, their notes, and their history stay in the database."""
     root = settings.output_directory()
 
     def closed_jobs(ids: list[int] | None = None) -> list[tuple[int, str]]:
         with db.connect() as conn:
             return conn.execute(
-                "SELECT id, status FROM jobs WHERE status = ANY(%s) "
+                "SELECT id, status FROM jobs j WHERE status = ANY(%s) "
+                "AND NOT EXISTS (SELECT 1 FROM applications a "
+                "                WHERE a.job_id = j.id AND a.applied_at IS NOT NULL) "
                 "AND (%s::bigint[] IS NULL OR id = ANY(%s)) ORDER BY id",
                 (list(CLEAN_UP_STATUSES), ids, ids)).fetchall()
 
@@ -31,8 +35,8 @@ def clean_up() -> None:
     folders = [(folder, job_id, status) for job_id, status in closed_jobs()
                for folder in sorted(root.glob(f"*/*-{job_id}")) if folder.is_dir()]
     if not folders:
-        print("Nothing to clean up: no Not interested, Withdrawn, Declined, Rejected, or "
-              f"Archived job has a folder in {root}")
+        print("Nothing to clean up: no Not interested, Withdrawn, or Archived job you never "
+              f"applied for has a folder in {root}")
         return
     for folder, _, status in folders:
         print(f"  {CLEAN_UP_STATUSES[status]:<14}  {folder.relative_to(root)}")

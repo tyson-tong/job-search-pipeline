@@ -145,6 +145,12 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     terms = _search_terms(merged.get("terms"), where)
     locations = _locations(merged.get("locations"), where)
     sites = _sites(merged.get("sites"), where)
+    # Seek is the only site that skips countries: a search on Seek alone for countries it
+    # lacks would plan no runs, and be skipped by every import without a word.
+    if set(sites) == {"seek"} and not set(locations) & set(opt.SEEK_COUNTRIES):
+        raise SearchConfigError(f"{where}: Seek covers only {', '.join(opt.SEEK_COUNTRIES)}, so "
+                                f"this search would never run; add linkedin or indeed to its "
+                                "sites, or a country Seek covers")
     days = _posted_within_days(merged.get("posted_within_days"), where)
     max_results = int(_number(merged, "max_results", where, whole=True) or 0)
     if max_results < 1:
@@ -159,7 +165,8 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     if salary_min is not None and salary_max is not None and salary_min > salary_max:
         raise SearchConfigError(f"{where}: salary_min is greater than salary_max")
     excluded = _title_terms(merged, "exclude_title_terms", where)
-    included = _title_terms(merged, "include_title_terms", where)
+    included = _title_terms(merged, "include_title_terms", where,
+                            example='["Quant Analyst", "Quantitative Analyst"]')
     companies = _title_terms(merged, "exclude_companies", where, example='["Acme", "Randstad"]')
     period = merged.get("salary_period", "annual")
     _choices(f"{where} salary_period", [period], opt.SALARY_PERIODS)

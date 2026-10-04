@@ -69,16 +69,16 @@ function detailHeader(job, target) {
     job.status === "filtered" && job.filter_reason ? el("div", { className: "banner" }, `Filtered on import: ${job.filter_reason}`) : null];
 }
 // The job's scores against each CV, with Score or Rescore when there's something to do.
-// Only a saved Inbox or Interested job is scored here, once against each CV; any job you're
-// pursuing (Interested onwards) is rescored.
+// Only a saved Inbox job or one you're pursuing (Interested onwards) is scored here, once
+// against each CV, and one you're pursuing is rescored.
 function matchSection(job) {
   // The CVs named in config/profile.toml this job has no score against yet.
   const unscored = state.summary.cv_variants.filter((v) => !job.matches.some((m) => m.variant === v));
   // The CVs edited since this job was scored against them.
   const outdated = job.matches.filter((m) => m.outdated).map((m) => m.variant);
   const busy = Boolean(state.scoring && state.scoring.running);
-  const scorable = ["new", "interested"].includes(job.status);
   const pursuing = state.summary.pursuing.includes(job.status);
+  const scorable = job.status === "new" || pursuing;
   return [
     el("div", { className: "h3-row" }, el("h3", {}, "Match with your CVs"),
       scorable && unscored.length
@@ -93,10 +93,9 @@ function matchSection(job) {
     job.matches.map(renderMatch),
     scorable && unscored.length
       ? el("p", { className: "meta" }, `Not scored yet against ${unscored.join(", ")}.`)
-      : !job.matches.length ? el("p", { className: "meta" },
-          pursuing ? "Not scored: the tracker scores Inbox and interested jobs; tailor-cv and "
-            + "cover-letter score a job they're given with --job."
-            : "Not scored: only Inbox jobs and jobs you're pursuing are scored.") : null];
+      : !job.matches.length
+      ? el("p", { className: "meta" }, "Not scored: only Inbox jobs and jobs you're pursuing are scored.")
+      : null];
 }
 // The commands for this job, by its saved status: tailor-cv and cover-letter work on any job
 // you're pursuing (with --job; on their own, on Interested ones), interview-prep on

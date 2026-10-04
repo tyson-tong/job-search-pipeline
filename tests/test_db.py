@@ -582,25 +582,29 @@ def test_dates_are_in_your_timezone_in_python_and_the_database(database, monkeyp
     assert _one("SELECT current_setting('TimeZone'), now()::date") == ("Pacific/Kiritimati", today())
 
 
-def test_score_all_scores_only_interested_jobs_but_picked_inbox_jobs_can_be_scored(database,
-                                                                                    monkeypatch):
+def test_score_all_scores_the_jobs_you_are_pursuing_and_picked_inbox_jobs(database, monkeypatch):
     # Each job is an LLM call per CV: Score all jobs must never score the whole Inbox, but
-    # Inbox jobs you tick are scored to help you triage them.
+    # Inbox jobs you tick are scored to help you triage them. A job you've applied for is
+    # scored too: one against a CV added later was never scored, so skill-gaps kept judging
+    # it by the old CV alone.
     from jobflow.candidate import matching
 
     save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "id": key, "title": title}
                                         for key, title in (("1", "Analyst"), ("2", "Quant"),
-                                                           ("3", "Trader"))], country="AU")
+                                                           ("3", "Trader"), ("4", "Engineer"))],
+             country="AU")
     ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
     with connect() as conn:
         set_job_state(conn, ids["1"], status="interested", via="test")
         set_job_state(conn, ids["3"], status="not_interested", via="test")
+        set_job_state(conn, ids["4"], status="applied", via="test")
     monkeypatch.setattr(matching, "complete", lambda system, user, **kw: (json.dumps(
         {"requirements": [{"requirement": "SQL", "status": "matched", "evidence": ["SQL"]}]}), "m"))
     monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
     monkeypatch.setattr(matching, "chosen_sources", lambda: {"dev": "I write SQL."})
-    assert matching.jobs_needing_match(["dev"]) == [ids["1"]]
-    assert matching.count_needing_match(["dev"]) == 1
+    pursued = sorted([ids["1"], ids["4"]])
+    assert sorted(matching.jobs_needing_match(["dev"])) == pursued
+    assert matching.count_needing_match(["dev"]) == 2
     picked = [ids["2"], ids["3"]]   # an Inbox job, and a Not interested one
     assert matching.jobs_needing_match(["dev"], picked) == [ids["2"]]
     assert [r["variant"] for r in matching.match_job(ids["2"])] == ["dev"]
@@ -609,7 +613,7 @@ def test_score_all_scores_only_interested_jobs_but_picked_inbox_jobs_can_be_scor
     # Marked Interested later, it keeps its score: Score all jobs has nothing to redo.
     with connect() as conn:
         set_job_state(conn, ids["2"], status="interested", via="test")
-    assert matching.jobs_needing_match(["dev"]) == [ids["1"]]
+    assert sorted(matching.jobs_needing_match(["dev"])) == pursued
 
 
 def test_skill_gaps_count_the_jobs_you_are_pursuing(database, monkeypatch):
@@ -753,3 +757,32 @@ def test_the_job_list_filters_hide_only_what_they_say(database):
     assert shown(site=["indeed"]) == []
     # Posted in the past week, or over a month ago, by the posted date, else the date first seen.
     assert shown(posted=7) == ["1"] and shown(posted="older") == ["2", "3"]
+
+
+def test_clean_up_keeps_the_folder_of_every_job_you_applied_for(database, tmp_path, monkeypatch):
+    # Its folder holds the CV and letter you sent, wanted for a follow-up or a new
+    # application; clean-up once deleted it as soon as the job was Rejected.
+    from jobflow import cleanup, settings
+    from jobflow.candidate import paths
+
+    save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "id": key, "title": title}
+                                        for key, title in (("1", "Analyst"), ("2", "Quant"),
+                                                           ("3", "Trader"))], country="AU")
+    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    with connect() as conn:
+        # Applied, then rejected; applied, then withdrawn; withdrawn before applying.
+        for key, statuses in (("1", ["interested", "applied", "rejected"]),
+                              ("2", ["interested", "applied", "withdrawn"]),
+                              ("3", ["interested", "withdrawn"])):
+            for status in statuses:
+                set_job_state(conn, ids[key], status=status, via="test")
+    monkeypatch.setattr(settings, "output_directory", lambda: tmp_path)
+    monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
+    folders = {}
+    for key, title in (("1", "Analyst"), ("2", "Quant"), ("3", "Trader")):
+        folders[key] = paths.job_directory(ids[key], {"company": "Acme", "title": title})
+        folders[key].mkdir(parents=True)
+    monkeypatch.setattr("builtins.input", lambda prompt: "y")
+    cleanup.clean_up()
+    assert {key: folder.exists() for key, folder in folders.items()} == {
+        "1": True, "2": True, "3": False}

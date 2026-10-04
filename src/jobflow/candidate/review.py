@@ -23,8 +23,8 @@ class Revised(NamedTuple):
 
 
 def revise(draft, checked: Checked, review, revision_of, check, notes: list[str]) -> Revised:
-    """The reviewer's revision of `draft` if it has no more fact-check errors than the
-    draft's own check, else the draft. review(draft) returns (the reviewer's answer, the
+    """The reviewer's revision of `draft` if it has fewer fact-check errors than the
+    draft's own check, or as many and no more warnings; else the draft. review(draft) returns (the reviewer's answer, the
     reviewer's model); revision_of(answer) is the revised draft, or None if there is none;
     check(revision) is its Checked. What happened is added to `notes`; a failed review
     keeps the draft, unless the provider will refuse every request (a fatal LLMError), which
@@ -40,10 +40,15 @@ def revise(draft, checked: Checked, review, revision_of, check, notes: list[str]
         revision = revision_of(answer)
         if revision is not None:
             rechecked = check(revision)
-            if len(rechecked.errors) <= len(checked.errors):
+            # Fewer errors wins; with as many, fewer warnings (new terms to confirm), so a
+            # revision can't slip in unsupported terms while the errors stay level.
+            if (len(rechecked.errors), len(rechecked.warnings)) \
+                    <= (len(checked.errors), len(checked.warnings)):
                 return Revised(revision, rechecked, critique)
             notes.append("The reviewer's revision failed the fact check, so the first draft "
-                         "is kept.")
+                         "is kept." if len(rechecked.errors) > len(checked.errors) else
+                         "The reviewer's revision added terms not in the source (more "
+                         "warnings than the first draft), so the first draft is kept.")
     except Exception as exc:
         # A bad reviewer key or model, or no credit left, fails every job the same way:
         # stop the batch rather than write unreviewed drafts for all of them.
@@ -78,8 +83,10 @@ def write_review(path: Path, title: str, intro: list[str], notes: list[str],
     documents.write_review_docx(text, path.with_suffix(".docx"))
 
 
-def record_run(job_id: int, kind: str, errors: list[str], model: str) -> None:
-    """Record the finished run: NEEDS-FIX if its draft failed the fact check, so the next
-    run drafts the job again (unless you fix it yourself), else SUCCEEDED."""
+def record_run(job_id: int, kind: str, needs_fix: bool, model: str) -> None:
+    """Record the finished run: NEEDS-FIX if its draft can't be used as it is (it failed
+    the fact check, or RenderCV couldn't render it), so the next run drafts the job again
+    (unless you fix it yourself), else SUCCEEDED."""
     with db.connect() as conn:
-        db.record_workflow_run(conn, job_id, kind, "NEEDS-FIX" if errors else "SUCCEEDED", model)
+        db.record_workflow_run(conn, job_id, kind, "NEEDS-FIX" if needs_fix else "SUCCEEDED",
+                               model)

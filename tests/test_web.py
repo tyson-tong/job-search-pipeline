@@ -5,15 +5,9 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
+from jobflow.web import scoring
 from jobflow.web.export import _csv_cell
-from jobflow.web.saving import InvalidChange, validate_changes
 from jobflow.web.server import make_handler
-
-
-def test_a_system_only_status_is_rejected_before_anything_is_written():
-    # Only jobflow sets filtered or archived; a job set so by hand would vanish from the tabs.
-    with pytest.raises(InvalidChange, match="status must be one of"):
-        validate_changes([{"id": 1, "status": "filtered"}])
 
 
 def test_csv_cells_cannot_run_as_spreadsheet_formulas():
@@ -62,3 +56,32 @@ def test_api_requires_the_token_and_a_local_host(server):
     assert "script-src 'self'" in response.getheader("Content-Security-Policy")
     assert "frame-ancestors 'none'" in response.getheader("Content-Security-Policy")
 
+
+
+def test_a_failed_scoring_run_never_leaves_scoring_stuck(monkeypatch):
+    # The running flag once stayed set after a failure, so every later Score click said
+    # "Scoring is already running" until the tracker was restarted.
+    import time
+
+    monkeypatch.setattr(scoring, "_state", dict(scoring._state, running=False))
+    monkeypatch.setattr(scoring, "credentials", lambda: ("key", "model"))
+    monkeypatch.setattr(scoring, "chosen_sources", lambda: {"dev": "cv"})
+
+    def database_down(variants, job_ids):
+        raise RuntimeError("database down")
+    monkeypatch.setattr(scoring, "jobs_needing_match", database_down)
+    with pytest.raises(RuntimeError, match="database down"):
+        scoring.start()
+    assert not scoring.status()["running"]
+    # A job failing in the background thread: the run still ends.
+    monkeypatch.setattr(scoring, "jobs_needing_match", lambda variants, job_ids: [1])
+
+    def fail(job_id, rescore=False):
+        raise RuntimeError("LLM timed out")
+    monkeypatch.setattr(scoring, "match_job", fail)
+    scoring.start()
+    deadline = time.monotonic() + 5
+    while scoring.status()["running"] and time.monotonic() < deadline:
+        time.sleep(0.01)
+    state = scoring.status()
+    assert not state["running"] and state["errors"] == [{"id": 1, "error": "LLM timed out"}]

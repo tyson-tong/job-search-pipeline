@@ -32,9 +32,9 @@ def status() -> dict:
 
 
 def start(job_ids: list[int] | None = None, rescore: bool = False) -> dict:
-    """Score the given jobs (Inbox or Interested ones), or every Interested job, against
-    each CV it has no score for yet; with rescore, also against each CV edited since the job
-    was scored against it, for the jobs you're pursuing (matching.PURSUING). Checks the LLM
+    """Score the given jobs (Inbox ones, or ones you're pursuing), or every job you're
+    pursuing (matching.PURSUING), against each CV it has no score for yet; with rescore,
+    also against each CV edited since the job was scored against it. Checks the LLM
     settings and CV files first, so a configuration problem fails now rather than on every
     job."""
     credentials()
@@ -50,9 +50,8 @@ def start(job_ids: list[int] | None = None, rescore: bool = False) -> dict:
             outdated = [job_id for job_id, _ in outdated_scores(current_digests(), job_ids)]
             ids = list(dict.fromkeys(outdated + ids))
         if job_ids and not ids:
-            raise ValueError("Only Inbox and interested jobs with a CV they have no score "
-                             "against (or, to rescore, a job you're pursuing with a CV edited "
-                             "since) can be scored")
+            raise ValueError("Only Inbox jobs and jobs you're pursuing with a CV they have no "
+                             "score against (or, to rescore, a CV edited since) can be scored")
     except BaseException:
         with _lock:
             _state.update(running=False, finished_at=datetime.now(UTC))

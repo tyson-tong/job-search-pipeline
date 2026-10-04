@@ -118,11 +118,15 @@ def bullets(cv: dict) -> list[dict]:
 
 def cut_order(found: list[dict], ranking: object) -> list[dict]:
     """Bullets in the order to cut them: the ranking's ids, least relevant first, then any
-    it left out. An entry always keeps at least one bullet; bad or repeated ids are ignored."""
+    it left out, last first (an entry's first bullets are usually its strongest). An entry
+    always keeps at least one bullet; bad or repeated ids are ignored, and ids given as digit
+    strings ("3") are read as numbers."""
     by_id = {b["id"]: b for b in found}
-    ids = [i for i in (ranking if isinstance(ranking, list) else []) if isinstance(i, int)]
+    ids = [None if isinstance(i, bool) else i if isinstance(i, int)
+           else int(i) if str(i).isdigit() else None
+           for i in (ranking if isinstance(ranking, list) else [])]
     ids = list(dict.fromkeys(i for i in ids if i in by_id))
-    ids += [b["id"] for b in found if b["id"] not in ids]
+    ids += [b["id"] for b in reversed(found) if b["id"] not in ids]
     left: dict[tuple, int] = {}
     for b in found:
         left[b["entry"]] = left.get(b["entry"], 0) + 1

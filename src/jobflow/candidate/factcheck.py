@@ -10,7 +10,8 @@ from ..text import words
 
 class Checked(NamedTuple):
     """A fact check's result: errors (likely factual changes, which stop the draft being
-    written as a finished document) and warnings (wording a human should confirm)."""
+    written as a finished document) and warnings (wording a human should confirm, one per
+    new term)."""
     errors: list[str]
     warnings: list[str]
 
@@ -203,9 +204,9 @@ def fact_check(source_cv: dict, draft_cv: dict, job_text: str = "") -> Checked:
     if new_markup:
         errors.append("Markup not in the source CV, which RenderCV would run or hide in the "
                       "PDF: " + ", ".join(new_markup) + ".")
-    new_terms = _new_terms(source_cv, draft_cv, job_text)
-    warnings = (["Terms not in the source CV (check each is supported): "
-                 + ", ".join(new_terms) + "."] if new_terms else [])
+    # One warning per term, so a revision adding terms has more warnings (see review.revise).
+    warnings = [f"New term not in the source CV (check it's supported): {term}."
+                for term in _new_terms(source_cv, draft_cv, job_text)]
     return Checked(list(dict.fromkeys(errors)), warnings)
 
 
@@ -233,9 +234,8 @@ def check_letter(letter: str, source_cv: dict | str, job: dict,
     allowed_words = set(words(" ".join(_strings(allowed))).split())
     new_terms = sorted(t for t in _terms([letter], skip_first=True)
                        if t.casefold() not in vocab and not set(words(t).split()) <= allowed_words)
-    if new_terms:
-        warnings.append("Terms not in your CV, the job ad, or the company research (check each "
-                        "is true): " + ", ".join(new_terms) + ".")
+    warnings += [f"New term not in your CV, the job ad, or the company research (check it's "
+                 f"true): {term}." for term in new_terms]
     if re.search(r"\[[^\]]*\]", letter):
         warnings.append("A [placeholder] is left in; fill it in or remove it.")
     return Checked(errors, warnings)

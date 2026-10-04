@@ -117,8 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
             "scored jobs you're pursuing (interested, applied, interviewing, offered) ask for "
             "most, with how to close each gap")
     command("clean-up", run_clean_up, "Delete the output folders of Not interested, Withdrawn, "
-            "Declined, Rejected, and Archived jobs, after asking you to confirm (the jobs stay "
-            "in the database)")
+            "and Archived jobs you never applied for, after asking you to confirm (the jobs "
+            "stay in the database; a job you applied for keeps the CV and letter you sent)")
     command("status", run_status, "Show the daily GitHub import, read from GitHub: "
             "whether it's on, its last run, its secrets, whether its searches and timezone match "
             "yours, and which job sites it calls; and, from your database, why recent Apify "
@@ -214,11 +214,11 @@ def manual(commands: dict[str, argparse.ArgumentParser], command: str | None = N
         section("NOTES", para(
             "tailor-cv, cover-letter, and interview-prep work on two jobs at a time and skip "
             "jobs they've already done (a job that failed, whose draft failed the fact "
-            "check, or whose draft, letter, or briefing was deleted is tried again); --job "
-            "ID limits them to one job (or a few), by its number in the job panel (for "
-            "tailor-cv and cover-letter, also one you've applied for or are interviewing "
-            "for), and --redo with it does those jobs again even if they're done. Only "
-            "one run of each can go at a time. Every command except init, help, status, and "
+            "check or couldn't be rendered, or whose draft, letter, or briefing was deleted "
+            "is tried again); --job ID limits them to one job (or a few), by its number in "
+            "the job panel (for tailor-cv and cover-letter, also one you've applied for, are "
+            "interviewing for, or were offered), and --redo with it does those jobs again "
+            "even if they're done. Only one run of each can go at a time. Every command except init, help, status, and "
             "update-searches --dry-run brings the database tables up to date when it starts.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
                 "docs/structure.html"),
@@ -290,10 +290,14 @@ def run_tailor_cv(args: argparse.Namespace) -> None:
         target, errors, warnings = tailor_cv(job_id, variant, max_pages=args.max_pages,
                                              fmt=args.format)
         review = target.parent / "CV_REVIEW.md"
+        rendered = target.with_suffix(".pdf").exists()
         _print_draft_result(target, errors, warnings,
                             f"Read {review}. Fix {target.name} yourself and it's kept; otherwise "
                             "the next tailor-cv drafts this job again.",
-                            f"Read {review}, then the CV itself, before you send it.")
+                            f"Read {review}, then the CV itself, before you send it." if rendered
+                            else f"RenderCV couldn't render it (see {review}). Fix {target.name} "
+                            "yourself and it's kept; otherwise the next tailor-cv drafts this "
+                            "job again.")
 
     def add_requested_format(folder) -> str | None:
         # A job tailored before gets --format's file from its checked draft, no LLM call.

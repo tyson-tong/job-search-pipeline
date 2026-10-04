@@ -9,7 +9,7 @@ def test_update_searches_never_publishes_an_invalid_file(tmp_path, monkeypatch):
     broken = tmp_path / "searches.toml"
     broken.write_text('[[search]]\nname = "x"\nterms = ["quant"]\nlocations = { AU = ["Syndey"] }\n')
     monkeypatch.setattr(settings, "searches_file", lambda: broken)
-    monkeypatch.setattr(github.subprocess, "run", lambda *a, **k: pytest.fail("published anyway"))
+    # conftest's no_github fails the test if gh runs.
     with pytest.raises(SearchConfigError, match="unknown AU city"):
         github.update_searches()
 
@@ -17,7 +17,7 @@ def test_update_searches_never_publishes_an_invalid_file(tmp_path, monkeypatch):
 def test_clean_up_deletes_only_closed_jobs_folders_and_only_on_yes(tmp_path, monkeypatch):
     class Conn:
         def execute(self, *args): return self
-        def fetchall(self): return [(4, "rejected")]
+        def fetchall(self): return [(4, "withdrawn")]
         def __enter__(self): return self
         def __exit__(self, *args): pass
 
@@ -40,8 +40,8 @@ def test_clean_up_deletes_only_closed_jobs_folders_and_only_on_yes(tmp_path, mon
 def test_clean_up_keeps_the_folder_of_a_job_that_moved_on_while_you_decided(tmp_path, monkeypatch):
     # The tracker may move a job back to Interested while the prompt waits: its folder, with
     # the CV you're about to send, must not be deleted.
-    answers = iter([[(4, "rejected"), (7, "rejected")],   # listed for the prompt
-                    [(4, "rejected")]])                    # checked again after "y"
+    answers = iter([[(4, "withdrawn"), (7, "withdrawn")],  # listed for the prompt
+                    [(4, "withdrawn")]])                   # checked again after "y"
 
     class Conn:
         def execute(self, *args): return self
@@ -51,17 +51,17 @@ def test_clean_up_keeps_the_folder_of_a_job_that_moved_on_while_you_decided(tmp_
 
     monkeypatch.setattr(db, "connect", Conn)
     monkeypatch.setattr(settings, "output_directory", lambda: tmp_path)
-    rejected, moved_on = tmp_path / "acme" / "analyst-4", tmp_path / "beta" / "quant-7"
-    for folder in (rejected, moved_on):
+    withdrawn, moved_on = tmp_path / "acme" / "analyst-4", tmp_path / "beta" / "quant-7"
+    for folder in (withdrawn, moved_on):
         folder.mkdir(parents=True)
     monkeypatch.setattr("builtins.input", lambda prompt: "y")
     cleanup.clean_up()
-    assert not rejected.exists() and moved_on.exists()
+    assert not withdrawn.exists() and moved_on.exists()
 
 
 def test_the_daily_import_needs_no_document_libraries():
     # The daily GitHub Action installs without the documents group (uv sync --no-group
-    # documents), so an import of one on ingest's path would break only the 00:30 run.
+    # documents), so an import of one on ingest's path would break only the daily run.
     import subprocess
     import sys
 

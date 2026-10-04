@@ -48,29 +48,25 @@ def test_defaults_are_inherited_and_overridden():
                                 ("SG", "Singapore"), ("GB", "London")]
 
 
-@pytest.mark.parametrize("bad, message", [
-    ('job_types = ["fulltime"]', "unknown value.*choose from.*full-time"),
-    ("keywords = 'x'", "unknown setting"),  # a typo'd setting must not be silently ignored
-    # A misspelt city would otherwise search for nothing.
-    ('locations = { AU = ["Syndey"] }', "unknown AU city.*choose from Sydney"),
-    ("sites = []", "at least one"),  # an empty list would silently run nothing
-    # A quoted number crashed instead of stopping update-searches with a reason.
-    ('salary_min = "100k"', "salary_min must be a number"),
-    # 0 was sent to Apify as no cost cap at all.
-    ("max_cost_usd = 0", "max_cost_usd must be more than 0"),
-    ("max_cost_usd = nan", "max_cost_usd must be a number"),
-])
-def test_invalid_config_is_rejected(bad, message):
-    base = '[[search]]\nname = "x"\nterms = ["a"]\n'
-    text = base + (bad if bad.startswith("locations") else f"locations = {{ AU = [] }}\n{bad}")
-    with pytest.raises(SearchConfigError, match=message):
-        parse_config(text + "\n")
-
-
 SEARCH = 'name = "x"\nterms = ["a"]\nlocations = { AU = [] }\n'
+NO_LOCATIONS = '[[search]]\nname = "x"\nterms = ["a"]\n'
 
 
 @pytest.mark.parametrize("text, message", [
+    ("[[search]]\n" + SEARCH + 'job_types = ["fulltime"]\n', "unknown value.*choose from.*full-time"),
+    # A typo'd setting must not be silently ignored.
+    ("[[search]]\n" + SEARCH + "keywords = 'x'\n", "unknown setting"),
+    # A misspelt city would otherwise search for nothing.
+    (NO_LOCATIONS + 'locations = { AU = ["Syndey"] }\n', "unknown AU city.*choose from Sydney"),
+    # Each of these would run nothing, and say nothing: an empty sites list, and a search on
+    # Seek alone for a country Seek doesn't cover.
+    ("[[search]]\n" + SEARCH + "sites = []\n", "at least one"),
+    (NO_LOCATIONS + 'sites = ["seek"]\nlocations = { US = [] }\n', "would never run"),
+    # A quoted number crashed instead of stopping update-searches with a reason.
+    ("[[search]]\n" + SEARCH + 'salary_min = "100k"\n', "salary_min must be a number"),
+    # 0 was sent to Apify as no cost cap at all.
+    ("[[search]]\n" + SEARCH + "max_cost_usd = 0\n", "max_cost_usd must be more than 0"),
+    ("[[search]]\n" + SEARCH + "max_cost_usd = nan\n", "max_cost_usd must be a number"),
     # Each crashed with a traceback (or a 500 in the Searches tab) instead of saying why.
     ("[search]\n" + SEARCH, "double brackets"),
     ("defaults = 3\n[[search]]\n" + SEARCH, "defaults must be"),
@@ -79,7 +75,7 @@ SEARCH = 'name = "x"\nterms = ["a"]\nlocations = { AU = [] }\n'
     ("[[search]]\n" + SEARCH + 'seek_classifications = [["a"]]\n', "must be a list"),
     ("[[search]]\n" + SEARCH + "posted_within_days = true\n", "posted_within_days must be"),
 ])
-def test_a_malformed_file_is_rejected_with_a_reason(text, message):
+def test_invalid_config_is_rejected_with_a_reason(text, message):
     with pytest.raises(SearchConfigError, match=message):
         parse_config(text)
 

@@ -184,7 +184,10 @@ def _draft(job: dict, source_yaml: str) -> tuple[dict, str]:
 
 
 def _render_command(target: Path) -> str:
-    return f"`uv run rendercv render {target.name}` in its folder"
+    # --pdf-path, so the PDF beside the draft is replaced: by default RenderCV writes to
+    # rendercv_output/, and the PDF of the draft before your edit would stay beside it.
+    pdf = target.with_suffix(".pdf").name
+    return f"`uv run rendercv render {target.name} --pdf-path {pdf}` in its folder"
 
 
 def _write_checked(job: dict, source_doc: dict, draft_cv: dict, target: Path, max_pages: int,
@@ -192,7 +195,8 @@ def _write_checked(job: dict, source_doc: dict, draft_cv: dict, target: Path, ma
     """For a draft that passed the fact check: fit it to max_pages as RenderCV lays it out,
     write the YAML, RenderCV's PDF, and fmt's .docx or .tex beside it. Adds any warnings to
     `warnings`. Returns the CV as written, the bullets cut, what was rendered, and what to
-    read before sending it, for the review."""
+    read before sending it, for the review. A draft RenderCV can't render gets no PDF
+    (tailor_cv then records it to be drafted again)."""
     pages = plural(max_pages, "page")
     cut: list[dict] = []
     try:
@@ -215,10 +219,15 @@ def _write_checked(job: dict, source_doc: dict, draft_cv: dict, target: Path, ma
         rendered += (f" Also written as {target.with_suffix('.tex').name}; compile it with "
                      f"lualatex (or pdflatex for plain Western text). It was fitted to {pages} "
                      "as RenderCV lays it out, so check the page count of yours.")
-    shown = pdf.name if pdf else target.name
-    read_it = (f"Read {shown} line by line against your source CV before you send it with an "
-               f"application. If you edit {target.name}, render it again with "
-               f"{_render_command(target)}.")
+    if pdf:
+        read_it = (f"Read {pdf.name} line by line against your source CV before you send it "
+                   f"with an application. If you edit {target.name}, render it again with "
+                   f"{_render_command(target)}.")
+    else:
+        read_it = (f"Fix {target.name} so RenderCV can render it, with "
+                   f"{_render_command(target)}, then read the PDF line by line against your "
+                   "source CV. Once you've edited it, tailor-cv keeps your version; if you leave "
+                   "it, the next tailor-cv drafts this job again, replacing this draft.")
     return draft_cv, cut, rendered, read_it
 
 
@@ -293,5 +302,7 @@ def tailor_cv(job_id: int, variant: str | None = None,
                   read_it + " The automated check below catches common factual changes but is "
                   "not exhaustive."],
                  notes, errors, warnings, revised.critique, "CV", cuts)
-    record_run(job_id, "tailor", errors, model)
+    # A draft RenderCV couldn't render has no PDF and was never fitted to the page limit:
+    # drafted again next time, like one that failed the fact check, unless you fix it.
+    record_run(job_id, "tailor", bool(errors) or not target.with_suffix(".pdf").exists(), model)
     return target, errors, warnings

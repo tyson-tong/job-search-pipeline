@@ -50,15 +50,21 @@ def excluded_title_term(title: str | None, terms: tuple[str, ...],
     return next((term for term in terms if found(term)), None)
 
 
+# How the reasons for the two exclusions begin. update-searches (refilter.py) tells them from
+# the other reasons by these, so they're shared rather than written out twice.
+EXCLUDED_EMPLOYER = "employer matches "
+EXCLUDED_TITLE = "title contains "
+
+
 def excluded_reason(title: str | None, company: str | None, search: Search) -> str | None:
     """Why the search's excluded employers or title terms keep a job out, or None. An
     excluded employer is matched like a title term (whole words, so "Acme" excludes "Acme
     Pty Ltd" but not "Acmera") and include_title_terms don't override it."""
     employer = excluded_title_term(company, search.exclude_companies)
     if employer:
-        return f"employer matches {employer!r}"
+        return f"{EXCLUDED_EMPLOYER}{employer!r}"
     term = excluded_title_term(title, search.exclude_title_terms, search.include_title_terms)
-    return f"title contains {term!r}" if term else None
+    return f"{EXCLUDED_TITLE}{term!r}" if term else None
 
 
 def local_filters(site: str, search: Search) -> list[str]:

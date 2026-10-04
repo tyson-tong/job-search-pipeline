@@ -46,10 +46,15 @@ function filterParams() {
   params.set("sort", sortInput.value);
   return params;
 }
+// Each refresh's number: a slower, older one (two quick filter clicks, say) must not land
+// after a newer one, showing jobs for a filter no longer chosen.
+let refreshes = 0;
 async function refresh() {
+  const mine = ++refreshes;
   try {
     if (state.view === "searches") {
       const [summary, searches] = await Promise.all([api("/api/summary"), api("/api/searches")]);
+      if (mine !== refreshes) return;
       state.summary = summary; state.searches = searches; state.loadedAt = new Date();
       renderAll();
       return;
@@ -60,6 +65,7 @@ async function refresh() {
       nothingChosen() ? [] : api("/api/jobs?" + filterParams()),
       noStatuses() ? { counts: {}, names: before ? before.names : {}, unknown: before && before.unknown, sites: {} }
         : api("/api/countries?" + statusParams())]);
+    if (mine !== refreshes) return;
     state.summary = summary;
     state.jobs = jobs;
     state.countryCounts = countries;
@@ -69,7 +75,7 @@ async function refresh() {
     state.loadedAt = new Date();
     renderAll();
   } catch (error) {
-    toast(error.message, true);
+    if (mine === refreshes) toast(error.message, true);
   }
 }
 
@@ -213,7 +219,7 @@ function renderPager(starts) {
   document.getElementById("page-next").disabled = state.page >= pages - 1;
 }
 // All: every job in the tab (for My jobs, with the chosen statuses), ignoring the other
-// filters. Filtered: just the rows on this page, in the same order.
+// filters. This page: just the rows on this page, in the same order.
 function renderExports(first, end) {
   const all = statusParams();
   all.set("sort", sortInput.value);
@@ -424,7 +430,7 @@ function renderScoring() {
   const button = document.getElementById("score-btn"), chip = document.getElementById("scoring");
   const running = state.scoring && state.scoring.running;
   const { unscored, scoring_problem: problem } = state.summary || {};
-  // Interested jobs, the only ones scored, live in My jobs: saving one moves it out of the Inbox.
+  // Score all jobs scores the jobs you're pursuing, which live in My jobs.
   button.hidden = state.view !== "jobs";
   button.disabled = running || !unscored;
   // Scores made against a CV you've edited since; only shown when there are some.
@@ -473,7 +479,7 @@ function scoreSelected() {
 }
 document.getElementById("score-btn").addEventListener("click", () => {
   const jobs = state.summary.unscored, cvs = state.summary.cv_variants.length;
-  startScoring({}, `Score ${jobs} interested job${jobs === 1 ? "" : "s"} against each of your CVs it has no score for?`
+  startScoring({}, `Score ${jobs} job${jobs === 1 ? "" : "s"} you're pursuing against each of your CVs it has no score for?`
     + `\n\nThis makes at most ${jobs * cvs} LLM call${jobs * cvs === 1 ? "" : "s"}, newest jobs first. You can keep working while it runs.`);
 });
 document.getElementById("rescore-btn").addEventListener("click", () => {

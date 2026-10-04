@@ -14,14 +14,13 @@ from .cvs import check_cv_length, chosen_sources, cv_digest, job_prompt
 # Bump when the stored assessment shape changes.
 ASSESSMENT_FORMAT = 2
 CREDIT = {"matched": 1.0, "partial": 0.5, "not_evidenced": 0.0}
-# The jobs you're pursuing: Score all jobs scores the Interested ones, Rescore edited CVs
-# rescores all of them (skill-gaps reads their scores), and tailor-cv and cover-letter score
-# one they're named for. Each score is one LLM call per CV.
+# The jobs you're pursuing: Score all jobs scores each against any CV it has no score for
+# (a CV added later too), Rescore edited CVs rescores them (skill-gaps reads their scores),
+# and tailor-cv and cover-letter score one they're named for. Each score is one LLM call
+# per CV.
 PURSUING = ("interested", "applied", "interviewing", "offered")
-# The jobs you can pick to score in the tracker: the Inbox's, to help you triage, and
-# Interested ones.
-PICKABLE = ("new", "interested")
-# Every status a job can be scored in.
+# Every status a job can be scored in: those, and the Inbox's, which you can pick to score
+# to help you triage.
 SCORABLE = ("new", *PURSUING)
 
 MATCH_INSTRUCTIONS = (
@@ -276,9 +275,10 @@ UNSCORED_SQL = f"""FROM jobs j
 
 
 def jobs_needing_match(variants: list[str], only: list[int] | None = None) -> list[int]:
-    """Jobs with no score against one of these CVs, newest first: every Interested job, or,
-    given `only` (jobs you picked), those of them in the Inbox or Interested (PICKABLE)."""
-    statuses = ["interested"] if only is None else list(PICKABLE)
+    """Jobs with no score against one of these CVs, newest first: every job you're pursuing
+    (PURSUING), or, given `only` (jobs you picked), those of them in the Inbox or pursuing
+    (SCORABLE)."""
+    statuses = list(PURSUING) if only is None else list(SCORABLE)
     with db.connect() as conn:
         rows = conn.execute(
             f"""SELECT j.id {UNSCORED_SQL} AND (%(only)s::bigint[] IS NULL OR j.id = ANY(%(only)s))
@@ -288,10 +288,10 @@ def jobs_needing_match(variants: list[str], only: list[int] | None = None) -> li
 
 
 def count_needing_match(variants: list[str]) -> int:
-    """How many Interested jobs Score all jobs would score."""
+    """How many jobs you're pursuing Score all jobs would score."""
     with db.connect() as conn:
         return conn.execute(f"SELECT count(*) {UNSCORED_SQL}",
-                            {"variants": variants, "statuses": ["interested"]}).fetchone()[0]
+                            {"variants": variants, "statuses": list(PURSUING)}).fetchone()[0]
 
 
 # The latest score of each job you're pursuing (%(statuses)s) against each CV named whose

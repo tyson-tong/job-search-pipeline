@@ -140,8 +140,8 @@ def test_fact_check_warns_on_a_new_term_that_starts_a_list_or_a_bullet():
         "Spearheaded dashboards for executives using Tableau"]
     _, warnings = fact_check(SOURCE_CV, draft, "Data Engineer: Terraform and Kubernetes")
     # Spearheaded is a reworded verb, not a claim, and isn't in the ad.
-    assert warnings == ["Terms not in the source CV (check each is supported): Kubernetes, "
-                        "PyTorch, Terraform."]
+    assert warnings == [f"New term not in the source CV (check it's supported): {term}."
+                        for term in ("Kubernetes", "PyTorch", "Terraform")]
 
 
 def test_fact_check_flags_a_changed_location_and_markup_rendercv_would_run():
@@ -229,8 +229,8 @@ def test_letter_check_flags_numbers_and_terms_from_nowhere():
     errors, warnings = check_letter(letter, SOURCE_CV, JOB, research)
     # 2M (CV), 3 (job ad), and 1998 (research) are allowed; 40 appears nowhere.
     assert errors == ["Numbers not in your CV, the job ad, or the company research: 40."]
-    assert warnings == ["Terms not in your CV, the job ad, or the company research (check each "
-                        "is true): Kubernetes."]
+    assert warnings == ["New term not in your CV, the job ad, or the company research (check "
+                        "it's true): Kubernetes."]
     assert ("A [placeholder] is left in; fill it in or remove it."
             in check_letter("Dear [Name], I built dashboards.", SOURCE_CV, JOB, [])[1])
 
@@ -264,6 +264,24 @@ def test_a_revision_with_more_fact_check_errors_is_discarded(tmp_path, monkeypat
     assert not errors and target.name == "cover-letter.docx"
     report = (tmp_path / "COVER_LETTER_REVIEW.md").read_text()
     assert "failed the fact check, so the first draft is kept" in report
+
+
+def test_a_revision_adding_unsupported_terms_is_discarded():
+    # Kept on error count alone, a revision with as many errors could add any number of
+    # terms the CV doesn't support.
+    from jobflow.candidate.factcheck import Checked
+    from jobflow.candidate.review import revise
+
+    def run(revision_warnings):
+        notes: list[str] = []
+        kept = revise("draft", Checked([], ["New term: Python."]),
+                      lambda draft: ({"critique": []}, "m"), lambda answer: "revision",
+                      lambda revision: Checked([], revision_warnings), notes)
+        return kept.draft, notes
+    assert run(["New term: Python.", "New term: Kubernetes."]) == (
+        "draft", ["Reviewed by model m.", "The reviewer's revision added terms not in the "
+                  "source (more warnings than the first draft), so the first draft is kept."])
+    assert run(["New term: Python."])[0] == "revision"
 
 
 def test_a_reviewer_every_job_would_fail_on_stops_the_batch(tmp_path, monkeypatch):
@@ -314,6 +332,12 @@ def test_shortening_never_empties_an_entry_or_rewrites_anything():
         "Presented dashboards to executives using Tableau"]
     assert trimmed["sections"]["experiences"][1]["highlights"] == ["Only bullet"]
     assert fact_check(cv, trimmed) == ([], [])  # only removals, so nothing to flag
+    # Ids sent as strings were dropped, and with no usable ranking each entry's first
+    # bullet, usually its strongest, was cut first.
+    assert [b["text"] for b in cut_order(found, ["0"])] == [
+        "Built Python ETL pipelines processing 2M records daily"]
+    assert [b["text"] for b in cut_order(found, None)] == [
+        "Presented dashboards to executives using Tableau"]
     assert cv["sections"]["experiences"][0]["highlights"][0].startswith("Built")  # input untouched
 
 
@@ -483,6 +507,35 @@ def test_a_redraft_cut_off_part_way_is_drafted_again_not_kept_as_yours(tmp_path,
     with pytest.raises(LLMError):
         tailoring.tailor_cv(1, output_dir=tmp_path)
     assert not tailoring.cv_fixed_by_hand(tmp_path) and not tailoring.cv_written(tmp_path)
+
+
+def test_a_draft_rendercv_cant_render_is_drafted_again(tmp_path, monkeypatch, no_database):
+    # Recorded as done, it had no PDF, was never fitted to its page limit, and was skipped
+    # by every later run.
+    import yaml
+
+    from jobflow.candidate import tailoring
+    from jobflow.candidate.render import RenderFailed
+
+    draft = yaml.safe_dump({"cv": SOURCE_CV})
+    monkeypatch.setattr(tailoring, "load_source", lambda job_id, variant: (
+        JOB, "dev", "CV variant dev.", {"cv": SOURCE_CV}, draft))
+    researched = Future()
+    researched.set_result(([], []))
+    monkeypatch.setattr(tailoring, "research_soon", lambda job: researched)
+    monkeypatch.setattr(tailoring, "complete", lambda system, user, **kw: (
+        json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))
+
+    def unrenderable(*args, **kwargs):
+        raise RenderFailed("invalid date")
+    monkeypatch.setattr(tailoring, "fit", unrenderable)
+    recorded = []
+    monkeypatch.setattr(tailoring, "record_run", lambda job_id, kind, needs_fix, model:
+                        recorded.append(needs_fix))
+    target, errors, _ = tailoring.tailor_cv(1, output_dir=tmp_path)
+    assert not errors and recorded == [True]
+    # The draft is kept, so a fix by hand is still recognised.
+    assert target.exists() and not tailoring.cv_fixed_by_hand(tmp_path)
 
 
 def test_a_render_stopped_by_ctrl_c_fails_the_job(tmp_path, monkeypatch):
