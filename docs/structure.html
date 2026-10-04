@@ -155,6 +155,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>cli.py</code></td><td>The <code>jobflow</code> command: parses arguments, loads <code>config/.env</code>, calls the modules below, prints one-line errors.</td></tr>
   <tr><td><code>settings.py</code></td><td>Reads <code>config/.env</code> (never overriding real environment variables) and <code>config/profile.toml</code>: CV folder, output folders, searches file, scoring weights, timezone.</td></tr>
   <tr><td><code>db.py</code> · <code>migrations/</code></td><td>Connection, schema migrations (applied once each, in order), job lookup, and <code>set_job_state</code> (the changes you make: status, notes, follow-up) and <code>move_job</code> (<code>update-searches</code> filtering or restoring a job), each recording the change in history. Imports set <code>new</code> or <code>filtered</code> on a new job, and archiving (<code>ingest/upkeep.py</code>) moves old jobs in one statement, also with history.</td></tr>
+  <tr><td><code>text.py</code></td><td>Small text helpers shared across jobflow: words for comparing text regardless of case and punctuation, and plurals for messages.</td></tr>
   <tr><td><code>llm.py</code></td><td>One call to any OpenAI-compatible chat-completions endpoint.</td></tr>
   <tr><td><code>batch.py</code></td><td>Working through jobs two at a time: which jobs tailor-cv, cover-letter, and interview-prep still have to do, one run of each at a time, and each job's output printed in one piece; also the tracker's scoring runs.</td></tr>
   <tr><td><code>cleanup.py</code></td><td><code>jobflow clean-up</code>: deleting the output folders of jobs you're done with, after you confirm.</td></tr>
@@ -260,7 +261,7 @@ applications      42   notes "2026-09-25: Applied via referral"</div>
     <li>Score = matched 1, partial 0.5, averaged per group, weighted by <code>required_weight</code> / <code>preferred_weight</code>.</li>
     <li>Jobs you're pursuing, and Inbox jobs you pick with Score selected, against the 1 or 2 CVs <code>cvs</code> names (a YAML CV's <code>cv</code> section only); each is scored once against each CV; a score made against an earlier version of a CV is marked, and Rescore edited CVs redoes it; a CV added or renamed later is scored the next time.</li></ul></div>
   <div class="card"><h3>Tailoring</h3>
-    <ul><li>Runs for every Interested job without a draft; jobs already done are skipped, unless their YAML draft or CV_REVIEW.md was deleted. <code>--job</code> also takes a job you've applied for, are interviewing for, or were offered. A draft that failed the fact check is drafted again, unless you've edited it. <code>--format docx</code> or <code>latex</code> for a job already done writes that file from its re-checked draft, with no LLM call.</li>
+    <ul><li>Runs for every Interested job without a draft; jobs already done are skipped, unless their YAML draft or CV_REVIEW.md was deleted. <code>--job</code> also takes a job you've applied for, are interviewing for, or were offered. A draft that failed the fact check, or that RenderCV couldn't render, is drafted again, unless you've edited it. <code>--format docx</code> or <code>latex</code> for a job already done writes that file from its re-checked draft, with no LLM call.</li>
     <li>Uses each job's best-matching CV unless <code>--cv</code> is given (an unscored job is scored first).</li>
     <li>A hiring-manager reviewer revises the draft; the revision is kept only if it has fewer fact-check errors than the first draft, or as many and no more warnings.</li>
     <li>Only the <code>cv</code> section goes to the LLM; design and settings are kept.</li>
@@ -284,6 +285,7 @@ applications      42   notes "2026-09-25: Applied via referral"</div>
   <tr><td>Searches</td><td><code>config/searches.toml</code></td><td>variable JOBFLOW_SEARCHES (same text; <code>jobflow update-searches</code> updates it)</td></tr>
   <tr><td>LLM and Tavily keys</td><td><code>config/.env</code></td><td>not needed</td></tr>
   <tr><td>Timezone</td><td><code>config/profile.toml</code> <code>[locale]</code></td><td>variable JOBFLOW_TIMEZONE (<code>jobflow update-searches</code> updates it)</td></tr>
+  <tr><td>Wait per Apify run (optional)</td><td><code>config/.env</code> APIFY_MAX_WAIT_MINUTES</td><td>variable APIFY_MAX_WAIT_MINUTES (you set it: <code>gh variable set</code>)</td></tr>
   <tr><td>CV folder, output root, weights</td><td><code>config/profile.toml</code></td><td>not needed</td></tr>
 </table></div>
 <p class="small muted" style="margin-top:8px"><code>jobflow init</code> creates <code>config/.env</code>, <code>config/profile.toml</code>, and <code>config/searches.toml</code> from the templates, never overwriting existing files.</p>

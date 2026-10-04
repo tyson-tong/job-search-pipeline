@@ -83,7 +83,7 @@ It checks the file (an invalid one stops everything, so a typo never reaches the
 | `jobflow init` | Create your settings files (first time only) |
 | `jobflow help [COMMAND]` | Every command with its options, like a manual page (or one command's; `COMMAND -h` works too) |
 
-`tailor-cv`, `cover-letter`, and `interview-prep` work through every job at their status (Interested, or for `interview-prep` Interviewing), or only the ones `--job` names (repeat it for several), two jobs at a time, printing each job's output together once it's done. Only one run of each can go at a time: start a second (in another terminal, say) and it stops, saying the first is still running.
+`tailor-cv`, `cover-letter`, and `interview-prep` work through every job at their status (Interested, or for `interview-prep` Interviewing), or only the ones `--job` names (repeat it for several), two jobs at a time, printing each job's output together once it's done. Only one run of each can go at a time: start a second (in another terminal, say) and it stops, saying the first is still running. With more than 5 jobs to do, each making several LLM calls, a run in a terminal asks before it starts (one naming its jobs with `--job` doesn't).
 
 Every command except `init`, `help`, `status`, and `update-searches --dry-run` brings the database tables up to date when it starts. `tailor-cv`, `cover-letter`, `interview-prep`, and `skill-gaps` check your LLM (and, for `interview-prep`, Tavily) settings before starting any job.
 

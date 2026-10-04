@@ -204,13 +204,21 @@ def test_fact_check_flags_a_number_moved_to_another_job():
 
 def test_a_draft_fixed_by_hand_is_not_drafted_again(tmp_path):
     # A job whose draft failed the fact check is drafted again, which would overwrite a
-    # draft you fixed yourself.
+    # draft you fixed yourself. Only a changed draft counts: one saved unchanged, or copied
+    # or synced with its folder, has a newer file time and once looked fixed.
+    from jobflow.candidate import tailoring
+
     draft, review = tmp_path / "CV_dev_draft.yaml", tmp_path / "CV_REVIEW.md"
     draft.write_text("cv: {}")
+    tailoring._record_written(tmp_path, draft=tailoring._digest(draft))
     review.write_text("review")
-    os.utime(draft, ns=(1, 1))  # written by the run, before its review
+    os.utime(draft, ns=(2 * review.stat().st_mtime_ns,) * 2)  # touched, not changed
     assert not cv_fixed_by_hand(tmp_path)
-    os.utime(draft, ns=(2 * review.stat().st_mtime_ns,) * 2)  # edited since
+    draft.write_text("cv: {name: Fixed}")
+    assert cv_fixed_by_hand(tmp_path)
+    # A folder from before the record is judged by file times, so a fix there is kept too.
+    (tmp_path / tailoring.WRITTEN).unlink()
+    os.utime(review, ns=(1, 1))   # the draft was changed after its review was written
     assert cv_fixed_by_hand(tmp_path)
     assert not letter_fixed_by_hand(tmp_path)
     (tmp_path / "cover-letter.docx").write_bytes(b"")
@@ -381,7 +389,6 @@ def test_format_for_a_job_already_tailored_comes_from_its_checked_draft(tmp_path
     trimmed["sections"]["experiences"][0]["highlights"].pop()
     draft.write_text(yaml.safe_dump({"cv": trimmed}))
     docx = folder / "CV_dev_draft.docx"
-    os.utime(draft, ns=(docx.stat().st_mtime_ns + 10**9,) * 2)
     assert tailoring.add_format(folder, "docx") == docx
     assert "Presented dashboards" not in " ".join(p.text for p in Document(docx).paragraphs)
     # A draft edited since into something the check fails never becomes a .tex.
@@ -551,3 +558,36 @@ def test_a_render_stopped_by_ctrl_c_fails_the_job(tmp_path, monkeypatch):
         with pytest.raises(RuntimeError, match="stopped") as caught:
             render.render(tmp_path / "CV_dev_draft.yaml")
         assert not isinstance(caught.value, render.RenderFailed)
+
+
+def test_rendercv_renders_a_draft_where_tailor_cv_expects_it(tmp_path):
+    # Every other test fakes RenderCV. An upgrade that changed its command line (--pdf-path,
+    # -nomd) would leave every tailored CV "couldn't render", with no test failing.
+    from jobflow.candidate import render
+
+    warnings: list[str] = []
+    _, cut, pdf = render.fit(JOB, {"cv": SOURCE_CV}, copy.deepcopy(SOURCE_CV),
+                             "CV_dev_draft.yaml", 1, warnings, keep_pdf=tmp_path)
+    assert pdf == tmp_path / "CV_dev_draft.pdf" and render.pdf_pages(pdf) == 1
+    assert not cut and not warnings
+
+
+def test_a_design_change_to_a_yaml_cv_is_not_an_edit(tmp_path, monkeypatch):
+    # Only the cv section is scored. A new theme or font marking every score out of date
+    # would have Rescore edited CVs pay to redo them all.
+    import yaml
+
+    from jobflow.candidate import cvs, matching
+
+    monkeypatch.setattr(cvs, "cv_directory", lambda: tmp_path)
+    monkeypatch.setattr(cvs, "chosen_cvs", lambda: ["CV_dev.yaml"])
+
+    def digest(document):
+        (tmp_path / "CV_dev.yaml").write_text(yaml.safe_dump(document))
+        return matching.current_digests()["dev"]
+    before = digest({"cv": SOURCE_CV, "design": {"theme": "classic"}})
+    assert digest({"cv": SOURCE_CV, "design": {"theme": "sb2nov"},
+                   "locale": {"language": "english"}}) == before
+    edited = copy.deepcopy(SOURCE_CV)
+    edited["sections"]["skills"][0]["details"] += ", Spark"
+    assert digest({"cv": edited, "design": {"theme": "sb2nov"}}) != before

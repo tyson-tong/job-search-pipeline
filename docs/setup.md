@@ -30,7 +30,7 @@ Sign-up screens and prices change, so the steps below describe what to look for 
 
 Keep every key out of Git: `config/.env` is ignored by Git, and should be readable only by you (as `init` creates it). Never paste a key into `config/searches.toml`, `config/profile.toml`, or an issue.
 
-Optional: `APIFY_MAX_WAIT_MINUTES` in `config/.env` sets how long to wait for each Apify run (default and at most 30); a run still going then is stopped, so it can't keep charging, and recorded as failed. `JOBFLOW_PROFILE` names another profile file, and `CV_DIRECTORY`, `OUTPUT_DIRECTORY`, and `SEARCHES_FILE` override those paths in it. `OPENAI_API_KEY` works in place of `LLM_API_KEY`. `jobflow` reads `config/.env` by itself; variables already set in your shell take precedence. The database tables are created the first time you run any command other than `init`, `help`, `status`, or `update-searches --dry-run`.
+Optional: `APIFY_MAX_WAIT_MINUTES` sets how long to wait for each Apify run (default and at most 30); a run still going then is stopped, so it can't keep charging, and recorded as failed. In `config/.env` it applies to `jobflow ingest` on your machine; for the daily import, set it as a GitHub variable too: `gh variable set APIFY_MAX_WAIT_MINUTES --body 20`. `JOBFLOW_PROFILE` names another profile file, and `CV_DIRECTORY`, `OUTPUT_DIRECTORY`, and `SEARCHES_FILE` override those paths in it. `OPENAI_API_KEY` works in place of `LLM_API_KEY`. `jobflow` reads `config/.env` by itself; variables already set in your shell take precedence. The database tables are created the first time you run any command other than `init`, `help`, `status`, or `update-searches --dry-run`.
 
 ## 1. Database (Neon)
 
@@ -127,7 +127,7 @@ The [GitHub CLI](https://cli.github.com), `gh`, sets the `JOBFLOW_SEARCHES` and 
 The daily import runs in GitHub Actions, so it needs its own copy of two keys. In your repository on GitHub, open **Settings → Secrets and variables → Actions**:
 
 - **Secrets:** `DATABASE_URL` and `APIFY_TOKEN`, with the same values as in `config/.env`. Or from this folder: `gh secret set DATABASE_URL` and `gh secret set APIFY_TOKEN`, pasting each value when asked (it isn't echoed or saved in your shell history).
-- **Variables:** `JOBFLOW_SEARCHES`, your searches, and `JOBFLOW_TIMEZONE`, the timezone in `config/profile.toml`. Run `uv run jobflow update-searches` to set both.
+- **Variables:** `JOBFLOW_SEARCHES`, your searches, and `JOBFLOW_TIMEZONE`, the timezone in `config/profile.toml`. Run `uv run jobflow update-searches` to set both. Optionally `APIFY_MAX_WAIT_MINUTES` ([above](#accounts-and-keys)), which you set yourself.
 
 The LLM and Tavily keys stay on your machine; GitHub never needs them.
 

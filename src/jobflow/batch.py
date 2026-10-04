@@ -17,6 +17,9 @@ from .text import plural
 # sending whole CVs and ads, and providers cap tokens per minute (rate-limited calls are
 # retried; see llm.complete).
 JOBS_AT_ONCE = 2
+# A run in a terminal with more jobs than this to do asks before it starts, as each makes
+# several LLM calls (and web searches); one naming its jobs with --job doesn't.
+CONFIRM_ABOVE = 5
 
 
 def run_each(items: list, work, workers: int = JOBS_AT_ONCE) -> tuple[list, list]:
@@ -183,11 +186,26 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
     return Plan(len(rows), todo, done_jobs, fixed, redrafted, lost)
 
 
+def _in_terminal() -> bool:
+    return sys.stdin is not None and sys.stdin.isatty()
+
+
+def _confirmed(command: JobCommand, count: int) -> bool:
+    """Whether you answer yes to starting the command on `count` jobs."""
+    try:
+        answer = input(f"Start {command.command} on {count} jobs? Each makes several LLM calls "
+                       "(and web searches, if set up). (Y/N) ")
+    except EOFError:
+        answer = ""
+    return answer.strip().casefold() in ("y", "yes")
+
+
 def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> None:
     """Run command.run_one(job_id) for each job not yet done (see _plan_jobs), JOBS_AT_ONCE
     at a time, printing each job's output in one piece when it finishes, and
     command.done_one for each job already done. One failure doesn't stop the rest, unless
-    the LLM provider refuses every request (no credit left, a bad key)."""
+    the LLM provider refuses every request (no credit left, a bad key). With more than
+    CONFIRM_ABOVE jobs to do, a run in a terminal without --job asks first."""
     plan = _plan_jobs(command, only, redo)
     todo = plan.todo
     again = [f"{plan.redrafted} drafted again: their last draft failed the fact check or "
@@ -198,6 +216,10 @@ def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = F
     print(f"{jobs}: "
           f"{plan.total - len(todo)} already have {command.what}, {len(todo)} to do"
           + (f" ({'; '.join(again)})" if again else ""))
+    if not only and len(todo) > CONFIRM_ABOVE and _in_terminal() \
+            and not _confirmed(command, len(todo)):
+        print("Nothing done")
+        return
     from .db import connect, record_workflow_run
 
     if plan.fixed:

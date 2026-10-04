@@ -214,4 +214,5 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
         raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed"
                          + (f", and {len(late)} weren't started, to finish within "
                             f"{INGEST_MINUTES} minutes: search fewer terms or places per site, or "
-                            "lower APIFY_MAX_WAIT_MINUTES" if late else ""))
+                            "lower APIFY_MAX_WAIT_MINUTES (for the daily import, its GitHub variable)"
+                            if late else ""))

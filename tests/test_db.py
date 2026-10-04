@@ -327,7 +327,8 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
     save_run("linkedin:a", "r5", "d5", [ad("5", "Trader", "2026-09-01", "dropped"),
                                          ad("6", "Quant", "2026-09-01", "fresh"),
                                          ad("7", "Engineer", "2026-08-01", "stale"),
-                                         ad("8", "Developer", "2026-08-01", "returned")])
+                                         ad("8", "Developer", "2026-08-01", "returned"),
+                                         ad("4", "Analyst", "2026-08-01", "pursued")])
     with connect() as conn:
         # Each first seen on its posted date, except job 9: posted on 08-20, first seen on
         # 09-20 (in a month-long search), so it still gets its 2 weeks in Filtered.
@@ -337,6 +338,9 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
         for job_id, marked in (("5", "2026-09-10"), ("6", "2026-09-20")):
             conn.execute("UPDATE jobs SET status='not_interested', status_updated_at=%s "
                          "WHERE source_job_id=%s", (marked, job_id))
+        # Job 4, which you're pursuing, has been Interested since 08-01.
+        conn.execute("UPDATE jobs SET status='interested', status_updated_at='2026-08-01' "
+                     "WHERE source_job_id='4'")
         # In the Inbox since 08-01 (job 7), and moved back to it on 09-20 (job 8).
         for job_id, since in (("7", "2026-08-01"), ("8", "2026-09-20")):
             conn.execute("UPDATE jobs SET status_updated_at=%s WHERE source_job_id=%s",
@@ -344,11 +348,13 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
     # 2026-09-28: job 1 is 18 days past posting; job 2 is 10; job 5 was marked 18 days ago,
     # job 6 8 days ago, though both were posted weeks ago. Inbox jobs wait 30 days: job 3
     # was posted 27 days ago, job 7 58 days ago and never triaged; job 8 is as old, but
-    # was moved back to the Inbox 8 days ago.
+    # was moved back to the Inbox 8 days ago. Job 4 is as old, but never archived: a job
+    # you're pursuing would vanish from every tab.
     assert archive_old_jobs(date(2026, 9, 28)) == 3
     with connect() as conn:
         statuses = dict(conn.execute("SELECT source_job_id, status FROM jobs").fetchall())
-    assert statuses == {"1": "archived", "2": "filtered", "3": "new", "5": "archived",
+    assert statuses == {"1": "archived", "2": "filtered", "3": "new", "4": "interested",
+                        "5": "archived",
                         "6": "not_interested", "7": "archived", "8": "new", "9": "filtered"}
     assert sorted(_rows("SELECT from_status, via FROM status_history")) == [
         ("filtered", "archive"), ("new", "archive"), ("not_interested", "archive")]

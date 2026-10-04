@@ -73,3 +73,26 @@ def test_the_daily_import_needs_no_document_libraries():
             "cli.build_parser().parse_args(['ingest'])\n")
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_a_big_batch_in_a_terminal_asks_before_spending(monkeypatch, capsys):
+    # tailor-cv on every Interested job makes several LLM calls and web searches per job.
+    from jobflow import batch
+
+    todo = [(job_id, "Acme", "Analyst") for job_id in range(1, batch.CONFIRM_ABOVE + 2)]
+    monkeypatch.setattr(batch, "_plan_jobs", lambda *args: batch.Plan(len(todo), todo, [], [], 0, 0))
+    monkeypatch.setattr(batch, "_in_terminal", lambda: True)
+    ran: list[int] = []
+    command = batch.JobCommand(command="tailor-cv", status="interested", kind="tailor",
+                               what="a tailored CV", run_one=ran.append,
+                               output_exists=lambda folder: False)
+    monkeypatch.setattr("builtins.input", lambda prompt: "n")
+    batch._run_jobs(command)
+    assert ran == [] and "Nothing done" in capsys.readouterr().out
+    # Jobs you name with --job are your choice already.
+    batch._run_jobs(command, only=[job_id for job_id, _, _ in todo])
+    assert sorted(ran) == [job_id for job_id, _, _ in todo]
+    ran.clear()
+    monkeypatch.setattr("builtins.input", lambda prompt: "y")
+    batch._run_jobs(command)
+    assert sorted(ran) == [job_id for job_id, _, _ in todo]

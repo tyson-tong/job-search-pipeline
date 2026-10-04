@@ -2,6 +2,7 @@
 draft against its source."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -25,6 +26,11 @@ from .review import record_run, revise, write_review
 # A rendered CV longer than this (unless tailor-cv --max-pages says otherwise) is
 # shortened by cutting its least relevant bullets.
 DEFAULT_MAX_PAGES = 1
+# What tailor-cv wrote in a job's folder, by content: the sha256 of the YAML draft it wrote
+# ("draft"), and of the draft each --format file was made from (".docx", ".tex"). An edit of
+# yours is told by a changed draft, not by file times, which copying or syncing the folder,
+# or saving the draft unchanged, also change.
+WRITTEN = ".tailor-cv.json"
 
 
 class Source(NamedTuple):
@@ -114,29 +120,56 @@ def cv_written(directory: Path) -> bool:
     return (directory / "CV_REVIEW.md").exists() and any(directory.glob("CV_*_draft.yaml"))
 
 
+def _digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _written(directory: Path) -> dict:
+    """The folder's WRITTEN record, or {} if there is none (or it can't be read)."""
+    try:
+        record = json.loads((directory / WRITTEN).read_text())
+    except (OSError, ValueError):
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+def _record_written(directory: Path, **digests: str) -> None:
+    (directory / WRITTEN).write_text(json.dumps({**_written(directory), **digests}))
+
+
 def cv_fixed_by_hand(directory: Path) -> bool:
-    """Whether you edited a draft in this job's folder after the run that wrote it (the
-    draft is written before its CV_REVIEW.md), so drafting again would overwrite your fix."""
+    """Whether you changed the draft in this job's folder since the run that wrote it, so
+    drafting again would overwrite your fix. A folder from before WRITTEN existed is judged
+    by file times: the draft is written before its CV_REVIEW.md."""
     review = directory / "CV_REVIEW.md"
     if not review.exists():
         return False
-    written = review.stat().st_mtime_ns
-    return any(draft.stat().st_mtime_ns > written for draft in directory.glob("CV_*_draft.yaml"))
+    drafts = list(directory.glob("CV_*_draft.yaml"))
+    written = _written(directory).get("draft")
+    if written:
+        return any(_digest(draft) != written for draft in drafts)
+    return any(draft.stat().st_mtime_ns > review.stat().st_mtime_ns for draft in drafts)
 
 
 def add_format(directory: Path, fmt: str) -> Path | None:
     """For a job tailor-cv has already done: write its CV as fmt ("docx" or "latex") from
     the YAML draft in its folder, with no LLM call. The draft (which you may have edited)
     is fact-checked against its source CV first, since these files must say only what
-    passed the check. Returns the file written, or None if it exists and is newer than the
-    draft (a draft edited since is written again, so the file has your edits); raises
-    RuntimeError if it can't be written."""
+    passed the check. Returns the file written, or None if it exists and was made from the
+    draft as it is now (a draft edited since is written again, so the file has your edits);
+    raises RuntimeError if it can't be written."""
     drafts = sorted(directory.glob("CV_*_draft.yaml"), key=lambda p: p.stat().st_mtime_ns)
     if not drafts:
         raise RuntimeError(f"no CV_*_draft.yaml in {directory}")
     draft_path = drafts[-1]
     target = draft_path.with_suffix(".docx" if fmt == "docx" else ".tex")
-    stale = target.exists() and target.stat().st_mtime_ns < draft_path.stat().st_mtime_ns
+    draft_digest, made_from = _digest(draft_path), _written(directory).get(target.suffix)
+    if not target.exists():
+        stale = False
+    elif made_from:
+        stale = made_from != draft_digest
+    else:   # written before WRITTEN existed: by file times
+        stale = target.stat().st_mtime_ns < draft_path.stat().st_mtime_ns
     if target.exists() and not stale:
         return None
     variant = draft_path.name.removeprefix("CV_").removesuffix("_draft.yaml")
@@ -161,6 +194,7 @@ def add_format(directory: Path, fmt: str) -> Path | None:
         raise RuntimeError(f"{draft_path.name} fails the fact check, so no {fmt} was "
                            f"written{kept}: " + " ".join(errors))
     (documents.write_docx if fmt == "docx" else documents.write_latex)(draft["cv"], target)
+    _record_written(directory, **{target.suffix: draft_digest})
     return target
 
 
@@ -236,14 +270,14 @@ def _fresh_target(target_dir: Path, variant: str) -> Path:
 
     Files from an earlier run, from this CV or another (--redo --cv), are not this draft:
     if this one fails the check or doesn't render, nothing beside it may look like a
-    checked CV, and its draft must be the only one. The old review goes too: if this run is
-    cut off before writing its own, a draft newer than an old review would look fixed by
-    hand (cv_fixed_by_hand), and the job would never be drafted again."""
+    checked CV, and its draft must be the only one. The old review and WRITTEN record go
+    too: if this run is cut off before writing its own, the new draft, unlike the old one,
+    would look fixed by hand (cv_fixed_by_hand), and the job would never be drafted again."""
     target_dir.mkdir(parents=True, exist_ok=True)
     for old in target_dir.glob("CV_*_draft.*"):
         if old.suffix in (".yaml", ".pdf", ".docx", ".tex"):
             old.unlink()
-    for name in ("CV_REVIEW.md", "CV_REVIEW.docx"):
+    for name in ("CV_REVIEW.md", "CV_REVIEW.docx", WRITTEN):
         (target_dir / name).unlink(missing_ok=True)
     return target_dir / f"CV_{variant}_draft.yaml"
 
@@ -296,6 +330,10 @@ def tailor_cv(job_id: int, variant: str | None = None,
              "The least relevant to this job, cut in this order. Copy one back from your "
              "source CV if you want it.", ""] + [f"- {b['label']}: {b['text']}" for b in cut]
             if cut else [])
+    written = {"draft": _digest(target)}
+    if not errors and fmt != "pdf":   # _write_checked wrote the file from this draft
+        written[".docx" if fmt == "docx" else ".tex"] = written["draft"]
+    _record_written(target.parent, **written)
     write_review(target.parent / "CV_REVIEW.md",
                  f"CV review: {job['company'] or 'Unknown employer'} — {job['title']} (job id {job_id})",
                  [reason, f"Draft: {target.name}. {rendered}", "",

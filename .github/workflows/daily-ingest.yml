@@ -34,3 +34,5 @@ jobs:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           JOBFLOW_SEARCHES: ${{ vars.JOBFLOW_SEARCHES }}
           JOBFLOW_TIMEZONE: ${{ vars.JOBFLOW_TIMEZONE }}
+          # Optional; unset, it is empty and the default (30) applies.
+          APIFY_MAX_WAIT_MINUTES: ${{ vars.APIFY_MAX_WAIT_MINUTES }}

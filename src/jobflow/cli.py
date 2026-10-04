@@ -44,7 +44,7 @@ def check_keys(reviewer: bool = False, web_search: bool = False) -> None:
                            "Tavily company research")
 
 
-DESCRIPTION = ("First time: init. Everyday: web (job tracker, including your searches), "
+DESCRIPTION = ("First time: init. Every day: web (job tracker, including your searches), "
                "tailor-cv, cover-letter (optional), interview-prep, and skill-gaps. After "
                "editing config/searches.toml: update-searches. The daily GitHub Action runs "
                "ingest; status shows what it uses.")
@@ -218,8 +218,10 @@ def manual(commands: dict[str, argparse.ArgumentParser], command: str | None = N
             "is tried again); --job ID limits them to one job (or a few), by its number in "
             "the job panel (for tailor-cv and cover-letter, also one you've applied for, are "
             "interviewing for, or were offered), and --redo with it does those jobs again "
-            "even if they're done. Only one run of each can go at a time. Every command except init, help, status, and "
-            "update-searches --dry-run brings the database tables up to date when it starts.")),
+            "even if they're done. Only one run of each can go at a time, and one with more "
+            "than 5 jobs to do asks before it starts (unless you name them with --job). Every "
+            "command except init, help, status, and update-searches --dry-run brings the "
+            "database tables up to date when it starts.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
                 "docs/structure.html"),
     ])
