@@ -30,7 +30,7 @@ Sign-up screens and prices change, so the steps below describe what to look for 
 
 Keep every key out of Git: `config/.env` is ignored by Git, and should be readable only by you (as `init` creates it). Never paste a key into `config/searches.toml`, `config/profile.toml`, or an issue.
 
-Optional: `APIFY_MAX_WAIT_MINUTES` sets how long to wait for each Apify run (default and at most 30); a run still going then is stopped, so it can't keep charging, and recorded as failed. In `config/.env` it applies to `jobflow ingest` on your machine; for the daily import, set it as a GitHub variable too: `gh variable set APIFY_MAX_WAIT_MINUTES --body 20`. `JOBFLOW_PROFILE` names another profile file, and `CV_DIRECTORY`, `OUTPUT_DIRECTORY`, and `SEARCHES_FILE` override those paths in it. `OPENAI_API_KEY` works in place of `LLM_API_KEY`. `jobflow` reads `config/.env` by itself; variables already set in your shell take precedence. The database tables are created the first time you run any command other than `init`, `help`, `status`, or `update-searches --dry-run`.
+Optional: `APIFY_MAX_WAIT_MINUTES` sets how long to wait for each Apify run (default and at most 30); a run still going then is stopped, so it can't keep charging, and recorded as failed. In `config/.env` it applies to `jobflow ingest` on your machine; for the daily import, set it as a GitHub variable too: `gh variable set APIFY_MAX_WAIT_MINUTES --body 20`. `JOBFLOW_PROFILE` names another profile file, and `CV_DIRECTORY`, `OUTPUT_DIRECTORY`, and `SEARCHES_FILE` override those paths in it; a relative one is relative to the profile's folder (`config/`), like the paths in the profile, not to the folder you run `jobflow` from. `OPENAI_API_KEY` works in place of `LLM_API_KEY`. `jobflow` reads `config/.env` by itself; variables already set in your shell take precedence. The database tables are created the first time you run any command other than `init`, `help`, `status`, or `update-searches --dry-run`.
 
 ## 1. Database (Neon)
 
@@ -135,7 +135,7 @@ Then open **Actions → "Daily job ingestion" → Run workflow** to test it once
 
 ## Backups
 
-Your job history, notes, and scores live only in your database. Check how far back your provider can restore it (Neon's restore window depends on your plan), and for a copy of your own, now and then run `pg_dump "$DATABASE_URL" > jobflow-backup.sql` (it needs PostgreSQL's client tools), or use **Export CSV (All)** in the tracker's My jobs tab.
+Your job history, notes, and scores live only in your database. Check how far back your provider can restore it (Neon's restore window depends on your plan), and for a copy of your own, now and then run `pg_dump "$DATABASE_URL" > jobflow-backup.sql` (it needs PostgreSQL's client tools). That is the backup: restore it with `psql`. **Export CSV (All)** in the tracker is a summary, not a backup: it has only the jobs with the statuses ticked in My jobs (by default, not rejected, declined, or withdrawn ones), one row each, without their ads, score details, or status history, and can't be restored.
 
 ## If a key leaks
 

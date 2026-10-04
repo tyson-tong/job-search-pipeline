@@ -12,6 +12,8 @@ from psycopg_pool import ConnectionPool
 from .settings import LOCAL_HOSTS, timezone, today
 from .text import plural
 
+# Every status a job can have. The jobs_status_check constraint (migrations/002_jobs.sql)
+# lists them too: a new one needs a migration changing it.
 STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "offered",
             "accepted", "declined", "rejected", "withdrawn", "filtered", "archived")
 # Finished with, so no follow-up is due. "filtered" is set on import, or by

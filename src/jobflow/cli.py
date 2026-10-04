@@ -75,9 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
                         metavar="DAYS", help="Override every search's posted window for this "
                         "import only (1, 7, 14, or 30 days; does not change your saved searches)")
     update = command("update-searches", run_update_searches, "After editing config/searches.toml: "
-                     "check it, update the GitHub copy the daily import reads (with your "
-                     "timezone), filter Inbox jobs its searches would now filter, and bring "
-                     "back Filtered jobs they would no longer filter")
+                     "check it, filter Inbox jobs its searches would now filter, bring back "
+                     "Filtered jobs they would no longer filter, and update the GitHub copy "
+                     "the daily import reads (with your timezone); each of the last two goes "
+                     "ahead even if the other fails")
     update.add_argument("--dry-run", action="store_true",
                         help="Check the file and list the jobs that would be filtered or brought "
                         "back; publish, move, and change nothing (it stops if the database "

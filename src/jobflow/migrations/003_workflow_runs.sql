@@ -18,3 +18,8 @@ CREATE INDEX IF NOT EXISTS workflow_runs_job_idx ON workflow_runs (job_id, kind,
 -- Migration ID: 03
 -- Nothing wrote error, and started_at was always the time the row was written.
 ALTER TABLE workflow_runs DROP COLUMN IF EXISTS error, DROP COLUMN IF EXISTS started_at;
+
+-- Migration ID: 04
+-- Like every other table's rows, a job's runs go with it.
+ALTER TABLE workflow_runs DROP CONSTRAINT IF EXISTS workflow_runs_job_id_fkey,
+    ADD CONSTRAINT workflow_runs_job_id_fkey FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE;

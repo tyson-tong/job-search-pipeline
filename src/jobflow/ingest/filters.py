@@ -89,7 +89,7 @@ def filter_reason(posting: Posting, search: Search, site: str,
     """Why a job fails this search's local filters, or None to keep it.
 
     Only known values can exclude a job: no salary, job type, work arrangement, or
-    posted date listed means the job is kept.
+    posted date listed means the job is kept, and so does a salary with no pay period.
     """
     active = local_filters(site, search)
     reason = excluded_reason(posting.title, posting.company, search)
@@ -101,7 +101,10 @@ def filter_reason(posting: Posting, search: Search, site: str,
         if posting.posted_at < oldest:
             return (f"posted {posting.posted_at.isoformat()}, older than "
                     f"{WINDOW_NAMES[search.posted_within_days]}")
-    if "salary" in active and posting.salary_min is not None and posting.salary_max is not None:
+    # A salary whose period was guessed (no "per year" or "per hour" in the ad) may be far
+    # off, so it never filters a job out.
+    if "salary" in active and posting.salary_min is not None and posting.salary_max is not None \
+            and not posting.salary_estimated:
         factor = ANNUAL_FACTOR[search.salary_period]
         low = search.salary_min * factor if search.salary_min is not None else None
         high = search.salary_max * factor if search.salary_max is not None else None

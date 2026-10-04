@@ -71,14 +71,19 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
             raise RuntimeError(f"Apify run {run.id} ended with {run.status}{detail}")
         items = list(client.dataset(run.default_dataset_id).iterate_items(clean=True))
         job_filter = partial(filter_reason, search=planned.search, site=planned.site)
+        capped = planned.hit_cap(items)
         # Sites run at the same time; save_run makes their imports take turns.
         added = save_run(actor_id, run.id, run.default_dataset_id, items,
                          started_at=run.started_at, finished_at=run.finished_at,
                          cost_usd=run.usage_total_usd, search_name=planned.search.name,
                          run_input=planned.run_input, job_filter=job_filter,
-                         country=planned.country)
+                         country=planned.country, hit_cap=capped)
         cost = f", ${run.usage_total_usd:.2f}" if run.usage_total_usd is not None else ""
         print(f"{name}: {len(items)} items, {added} new jobs{cost}")
+        if capped:
+            print(f"{name}: warning: it returned as many results as max_results allows, so "
+                  "more jobs were probably posted: raise max_results, or narrow the search",
+                  file=sys.stderr)
     except Exception as exc:
         # A run that succeeded on Apify failed here, importing its results; they stay in
         # its dataset on Apify.

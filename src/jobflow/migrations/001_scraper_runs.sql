@@ -15,3 +15,8 @@ CREATE TABLE IF NOT EXISTS scraper_runs (
     input JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migration ID: 02
+-- A run that returned as many results as it was allowed probably left jobs behind; the
+-- tracker's header and jobflow status flag it.
+ALTER TABLE scraper_runs ADD COLUMN IF NOT EXISTS hit_cap BOOLEAN NOT NULL DEFAULT false;

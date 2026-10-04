@@ -7,6 +7,7 @@ import hashlib
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from ..text import words
 from .options import LINKEDIN_COUNTRIES
 from .sources import Posting
 
@@ -73,6 +74,13 @@ def simplify(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
 
 
+def title_key(title: object) -> str:
+    """A title as the rules compare it: ignoring case and punctuation, but not + and #, so
+    "C++ Developer" and "C# Developer" stay two titles (simplify would make both "c
+    developer", and merge one ad reused for the two roles)."""
+    return words(title)
+
+
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -83,7 +91,7 @@ def company_key(company: str | None) -> str:
 
 def match_key(posting: Posting) -> str | None:
     """Employer + title, spelled the same way whichever site it came from."""
-    company, title = company_key(posting.company), simplify(posting.title)
+    company, title = company_key(posting.company), title_key(posting.title)
     if not company or not title or title == "untitled":
         return None
     return f"{company}|{title}"
@@ -91,7 +99,7 @@ def match_key(posting: Posting) -> str | None:
 
 def fingerprint(posting: Posting) -> str | None:
     """Exact content fingerprint; None when company, title, or description is missing."""
-    company, title = simplify(posting.company), simplify(posting.title)
+    company, title = simplify(posting.company), title_key(posting.title)
     description = simplify(posting.description)[:1500]
     if not (company and title and description):
         return None
@@ -129,8 +137,8 @@ def is_copy_of_ad(a: str | None, b: str | None) -> bool:
 def title_words(title: str | None) -> list[str]:
     """The words that find titles like this one: those over 3 letters, or every word of a
     title with none."""
-    words = simplify(title).split()
-    return [w for w in words if len(w) > 3] or words
+    found = title_key(title).split()
+    return [w for w in found if len(w) > 3] or found
 
 
 def title_patterns(title: str | None) -> list[str]:
@@ -152,7 +160,7 @@ def is_same_ad(title_a: str | None, description_a: str | None,
     country, or a location naming no city, doesn't block a match."""
     if not same_country(country_a, country_b) or not same_place(location_a, location_b):
         return False
-    if not simplify(title_a) or simplify(title_a) != simplify(title_b):
+    if not title_key(title_a) or title_key(title_a) != title_key(title_b):
         return False
     if min(len(description_words(description_a)),
            len(description_words(description_b))) < SAME_AD_MIN_WORDS:
@@ -185,5 +193,6 @@ def identity(posting: Posting) -> tuple[str, str | None]:
         return f"{posting.source}:{posting.source_id}", url
     if url:
         return f"url:{_digest(url)}", url
-    parts = "|".join(simplify(v) for v in (posting.company, posting.title, posting.location))
+    parts = "|".join((simplify(posting.company), title_key(posting.title),
+                      simplify(posting.location)))
     return f"fingerprint:{_digest(parts + '|' + simplify(posting.description)[:1500])}", None

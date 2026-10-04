@@ -8,7 +8,7 @@ from jobflow.ingest import apify
 from jobflow.ingest.filters import filter_reason
 from jobflow.ingest.runs import country_from_location, plan, search_url_country
 from jobflow.ingest.searches import SearchConfigError, parse_config
-from jobflow.ingest.sources import normalise, parse_salary
+from jobflow.ingest.sources import normalise, parse_pay
 
 CONFIG = """
 [defaults]
@@ -37,6 +37,12 @@ posted_within_days = 30
 
 def searches():
     return parse_config(CONFIG)
+
+
+def parse_salary(value, country=None):
+    """parse_pay's annual (min, max), without whether the period was guessed."""
+    pay = parse_pay(value, country)
+    return pay[:2] if pay else None
 
 
 def test_defaults_are_inherited_and_overridden():
@@ -155,6 +161,12 @@ def test_local_salary_filter():
     hourly = normalise({"viewJobLink": "/viewjob?jk=1", "title": "Data Analyst",
                         "salary": {"min": 60, "max": 70, "type": "HOUR"}})
     assert filter_reason(hourly, analyst, "indeed") is None  # ~118k-138k a year
+    # With no pay period, the yearly figure is a guess from the amount's size ($18,000
+    # reads as a month's pay), so it never filters a job out, however low it looks.
+    for salary in ("$60,000", "$18,000", {"min": 60000, "max": 70000}):
+        unstated = normalise({"jobLink": "https://www.seek.com.au/job/3", "title": "Data Analyst",
+                              "salary": salary})
+        assert unstated.salary_estimated and filter_reason(unstated, analyst, "seek") is None
 
 
 def test_widened_window_drops_older_jobs_after_import():
@@ -270,6 +282,19 @@ def test_run_passes_cost_cap_and_applies_the_search_filter(monkeypatch):
     assert call["run_timeout"] == call["wait_duration"] == timedelta(minutes=5)
     part_time = normalise({"viewJobLink": "/viewjob?jk=2", "title": "x", "jobTypes": ["Part-time"]})
     assert "part-time" in saved[0]["job_filter"](part_time)
+    assert saved[0]["hit_cap"] is False   # 1 result of the 40 it may return
+
+
+def test_a_run_that_returns_all_it_may_is_flagged():
+    # With max_results = 50 and a busy search, the jobs past the cap were lost unseen.
+    indeed = plan(searches(), "analyst", "indeed")[0]
+    assert indeed.hit_cap([{}] * 40) and not indeed.hit_cap([{}] * 39)
+    # LinkedIn caps each search URL: one URL at its cap is enough, though the run's total
+    # (40 per URL, 10 URLs) is far from 400.
+    linkedin = plan(searches(), "analyst", "linkedin")[0]
+    first, second = linkedin.run_input["urls"][:2]
+    assert linkedin.hit_cap([{"inputUrl": first}] * 40)
+    assert not linkedin.hit_cap([{"inputUrl": first}] * 39 + [{"inputUrl": second}] * 39)
 
 
 @pytest.mark.parametrize("result, message", [

@@ -30,7 +30,8 @@ def export_csv(filters: dict, ids: set[int] | None = None) -> str:
                                   ([j["id"] for j in jobs],)).fetchall())
     out = io.StringIO()
     columns = ["id", "status", "title", "company", "location", "country", "score",
-               "cv_variant", "posted_at", "first_seen_at", "salary_min", "salary_max", "currency",
+               "cv_variant", "posted_at", "first_seen_at", "salary_min", "salary_max",
+               "salary_estimated", "currency",
                "sites", "url", "applied_at", "follow_up_on", "notes"]
     writer = csv.writer(out)
     writer.writerow(columns)

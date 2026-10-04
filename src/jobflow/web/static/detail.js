@@ -57,7 +57,7 @@ function detailHeader(job, target) {
   const inProgress = job.duplicates.filter((d) => state.summary.in_progress.includes(d.status));
   return [
     el("h2", {}, job.title),
-    el("div", { className: "meta" }, [`Job #${job.id}`, job.company, job.location, fmtSalary(job.salary_min, job.salary_max, job.currency)]
+    el("div", { className: "meta" }, [`Job #${job.id}`, job.company, job.location, fmtSalary(job.salary_min, job.salary_max, job.currency, job.salary_estimated)]
       .filter(Boolean).join(" · ")),
     el("div", { className: "meta" }, `Posted ${fmtDate(job.posted_at) || "unknown"} · added ${fmtDate(job.first_seen_at)}`
       + (job.applied_at ? ` · applied ${fmtDate(job.applied_at)}` : "")),

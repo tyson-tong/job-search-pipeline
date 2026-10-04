@@ -143,7 +143,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="step"><b>See your skill gaps</b><span class="mod">candidate/skill_gaps.py · jobflow skill-gaps</span>
       <div class="what">From the stored scores of the jobs you're pursuing (Interested onwards, until closed), with one LLM call: the skills they ask for that your best-matching CVs don't show, ranked, with how to close each gap. Written to <code>output/skill-gaps-&lt;date&gt;.html</code>.</div></div>
     <div class="step"><b>Tailor a CV</b><span class="mod">candidate/tailoring.py · jobflow tailor-cv</span>
-      <div class="what">For each Interested job without one: a draft from the best-matching CV, revised by a hiring-manager reviewer, fact-checked against the original before rendering. Optionally, <code>jobflow cover-letter</code> (candidate/cover_letter.py) writes a cover letter the same way.</div></div>
+      <div class="what">For each Interested job without one: a draft from the best-matching YAML CV, revised by a hiring-manager reviewer, fact-checked against the original before rendering. Optionally, <code>jobflow cover-letter</code> (candidate/cover_letter.py) writes a cover letter the same way.</div></div>
     <div class="step"><b>Prepare for the interview</b><span class="mod">candidate/interview.py · jobflow interview-prep</span>
       <div class="what">For each Interviewing job without one: web research plus four specialist agents, merged into one HTML briefing.</div></div>
   </div>
@@ -230,10 +230,10 @@ applications      42   notes "2026-09-25: Applied via referral"</div>
 <div class="db-grid">
   <div class="tbl"><h3>scraper_runs</h3><p>One per Apify run.</p><ul>
     <li><span class="k">id</span>, apify_run_id, dataset_id</li><li>actor_id <span class="muted">site:actor</span></li>
-    <li>search_name, input <span class="muted">exact actor input</span></li><li>status, error, items_seen, cost_usd</li><li>started_at, finished_at</li></ul></div>
+    <li>search_name, input <span class="muted">exact actor input</span></li><li>status, error, items_seen, cost_usd</li><li>hit_cap <span class="muted">returned all max_results allows</span></li><li>started_at, finished_at</li></ul></div>
   <div class="tbl"><h3>jobs</h3><p>One per real job, whatever the site.</p><ul>
     <li><span class="k">id</span>, canonical_key <span class="muted">first copy</span></li><li>title, company, location, posted_at</li>
-    <li>description, raw_json, source</li><li>fingerprint, match_key</li><li>salary_min, salary_max <span class="muted">annual</span></li>
+    <li>description, raw_json, source</li><li>fingerprint, match_key</li><li>salary_min, salary_max <span class="muted">annual</span></li><li>salary_estimated <span class="muted">period guessed; never filters</span></li>
     <li>country <span class="muted">ISO code</span></li><li>status, filter_reason, status_updated_at</li><li>first_seen_at</li></ul></div>
   <div class="tbl"><h3>job_sources</h3><p>Every site's copy of a job.</p><ul>
     <li><span class="k">source_key</span> <span class="muted">e.g. seek:8123…</span></li><li>job_id → jobs</li>
@@ -262,7 +262,7 @@ applications      42   notes "2026-09-25: Applied via referral"</div>
     <li>Jobs you're pursuing, and Inbox jobs you pick with Score selected, against the 1 or 2 CVs <code>cvs</code> names (a YAML CV's <code>cv</code> section only); each is scored once against each CV; a score made against an earlier version of a CV is marked, and Rescore edited CVs redoes it; a CV added or renamed later is scored the next time.</li></ul></div>
   <div class="card"><h3>Tailoring</h3>
     <ul><li>Runs for every Interested job without a draft; jobs already done are skipped, unless their YAML draft or CV_REVIEW.md was deleted. <code>--job</code> also takes a job you've applied for, are interviewing for, or were offered. A draft that failed the fact check, or that RenderCV couldn't render, is drafted again, unless you've edited it. <code>--format docx</code> or <code>latex</code> for a job already done writes that file from its re-checked draft, with no LLM call.</li>
-    <li>Uses each job's best-matching CV unless <code>--cv</code> is given (an unscored job is scored first).</li>
+    <li>Uses each job's best-matching RenderCV YAML CV unless <code>--cv</code> is given (an unscored job is scored first).</li>
     <li>A hiring-manager reviewer revises the draft; the revision is kept only if it has fewer fact-check errors than the first draft, or as many and no more warnings.</li>
     <li>Only the <code>cv</code> section goes to the LLM; design and settings are kept.</li>
     <li>The fact check, in code, compares the draft with the original: changed facts, made-up numbers, and new markup are errors (no PDF is rendered), new terms are warnings. Each check is listed in <a href="rules.md#tailored-cvs">rules.md</a>. A draft with errors leaves no older PDF, .docx, or .tex beside it.</li>
@@ -303,7 +303,7 @@ applications      42   notes "2026-09-25: Applied via referral"</div>
 <div class="table-wrap"><table>
   <tr><th>Command</th><th>Does</th><th>Module</th></tr>
   <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import (<code>--posted-within-days</code> overrides every search's window for one import, to catch up)</td><td>ingest/apify.py → store.py, upkeep.py</td></tr>
-  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables, filter Inbox jobs the searches would now filter, bring back Filtered jobs they would now keep</td><td>github.py → ingest/refilter.py</td></tr>
+  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, filter Inbox jobs the searches would now filter, bring back Filtered jobs they would now keep, and update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables (updating your jobs and GitHub are separate: one failing doesn't stop the other)</td><td>github.py → ingest/refilter.py</td></tr>
   <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
   <tr><td><code>jobflow tailor-cv</code></td><td>Reviewed, fact-checked CVs for Interested jobs (or only those <code>--job ID</code> names; <code>--redo</code> does them again)</td><td>candidate/tailoring.py</td></tr>
   <tr><td><code>jobflow cover-letter</code></td><td>Optional reviewed, fact-checked cover letters for Interested jobs (or only those <code>--job ID</code> names; <code>--redo</code> does them again)</td><td>candidate/cover_letter.py</td></tr>

@@ -11,7 +11,7 @@ from ..candidate.matching import ASSESSMENT_FORMAT, PURSUING, score_sql, score_w
 from ..db import CLOSED_STATUSES, STATUSES
 from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
 from ..ingest.similar import IN_PROGRESS, similar_jobs
-from ..ingest.store import RECENT_RUNS, recent_failed_runs
+from ..ingest.store import RECENT_RUNS, recent_capped_runs, recent_failed_runs
 from ..settings import DEFAULT_WEIGHTS, today
 from .grouping import group_duplicates
 
@@ -134,7 +134,8 @@ def job_rows(conn, filters: dict, digests: dict[str, str] | None = None) -> list
         digests = _digests_now()
     rows = conn.execute(
         f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
-                   j.status, j.salary_min, j.salary_max, best.score, best.cv_variant,
+                   j.status, j.salary_min, j.salary_max, j.salary_estimated, best.score,
+                   best.cv_variant,
                    coalesce((SELECT array_agg(DISTINCT s.source ORDER BY s.source)
                              FROM job_sources s WHERE s.job_id = j.id), '{{}}') AS sites,
                    (SELECT s.url FROM job_sources s WHERE s.job_id = j.id
@@ -165,8 +166,10 @@ def job_rows(conn, filters: dict, digests: dict[str, str] | None = None) -> list
               AND (cardinality(%(sites)s::text[]) = 0
                    OR EXISTS (SELECT 1 FROM job_sources s
                               WHERE s.job_id = j.id AND s.source = ANY(%(sites)s::text[])))
-              -- Jobs without a salary, or without a known currency, are always kept.
+              -- Jobs without a salary, without a known currency, or whose salary's pay
+              -- period was guessed, are always kept.
               AND (%(salary_min_usd)s::numeric IS NULL OR usd.salary_max IS NULL
+                   OR j.salary_estimated
                    OR usd.salary_max >= %(salary_min_usd)s::numeric)
               AND (%(score_min)s::numeric IS NULL OR best.score >= %(score_min)s::numeric)
               -- The Posted column shows the posted date, else the date first seen.
@@ -186,7 +189,7 @@ def job_rows(conn, filters: dict, digests: dict[str, str] | None = None) -> list
          "older_than_days": POSTED_OLDER_THAN if filters["posted"] == "older" else None}
     ).fetchall()
     keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
-            "salary_min", "salary_max", "score", "cv_variant", "sites", "url",
+            "salary_min", "salary_max", "salary_estimated", "score", "cv_variant", "sites", "url",
             "follow_up_on", "applied_at", "has_notes", "filter_reason", "country", "version")
     jobs = [dict(zip(keys, row, strict=True)) for row in rows]
     for job in jobs:
@@ -250,6 +253,8 @@ def summary() -> dict:
         # A site failing every day (a rented actor expired, say) while others succeed
         # would otherwise only show in GitHub's email.
         failed_runs = recent_failed_runs(conn)
+        # Runs that returned all max_results allows, and so probably left jobs behind.
+        capped_runs = recent_capped_runs(conn)
     # Scoring reads your CV files; a missing CV folder shouldn't break the rest of the page.
     # Only that is reported as a scoring problem: a database error fails the request, and
     # the page shows it as one.
@@ -270,7 +275,7 @@ def summary() -> dict:
         pairs = outdated_scores(digests)
         outdated = {"jobs": len({job_id for job_id, _ in pairs}), "calls": len(pairs)}
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,
-            "last_import": last_import, "failed_runs": failed_runs,
+            "last_import": last_import, "failed_runs": failed_runs, "capped_runs": capped_runs,
             "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,
             "default_statuses": DEFAULT_STATUSES, "in_progress": list(IN_PROGRESS),
             "pursuing": list(PURSUING),
@@ -288,14 +293,16 @@ def job_detail(job_id: int) -> dict | None:
     with db.connect() as conn:
         row = conn.execute(
             f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
-                      j.status, j.salary_min, j.salary_max, j.description, j.filter_reason,
+                      j.status, j.salary_min, j.salary_max, j.salary_estimated, j.description,
+                      j.filter_reason,
                       a.notes, a.applied_at, a.follow_up_on, j.country, {VERSION_SQL} AS version
                FROM jobs j LEFT JOIN applications a ON a.job_id = j.id WHERE j.id=%s""",
             (job_id,)).fetchone()
         if not row:
             return None
         keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
-                "salary_min", "salary_max", "description", "filter_reason", "notes",
+                "salary_min", "salary_max", "salary_estimated", "description",
+                "filter_reason", "notes",
                 "applied_at", "follow_up_on", "country", "version")
         job = dict(zip(keys, row, strict=True))
         job["currency"] = CURRENCIES.get(job["country"])

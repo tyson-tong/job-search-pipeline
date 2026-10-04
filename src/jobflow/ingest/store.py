@@ -23,7 +23,7 @@ from .dedupe import (
     match_key,
     same_country,
     same_place,
-    simplify,
+    title_key,
     title_patterns,
 )
 from .runs import country_from_location, search_url_country
@@ -89,7 +89,7 @@ def _same_ad(conn, title: str | None, description: str | None, location: str | N
         """SELECT id, title FROM jobs
            WHERE first_seen_at > now() - make_interval(days => %s) AND title ILIKE ANY(%s)
            ORDER BY first_seen_at DESC""", (FUZZY_WINDOW_DAYS, patterns)).fetchall()
-    close = [pk for pk, other in rows if simplify(other) == simplify(title)]
+    close = [pk for pk, other in rows if title_key(other) == title_key(title)]
     if not close:
         return None
     candidates = conn.execute(
@@ -158,12 +158,12 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
         job_pk = conn.execute(
             """INSERT INTO jobs(canonical_key, source_job_id, canonical_url, title, company,
                    location, posted_at, description, raw_json, fingerprint, source, match_key,
-                   salary_min, salary_max, status, filter_reason, country)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                   salary_min, salary_max, salary_estimated, status, filter_reason, country)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (key, posting.source_id, url, posting.title, posting.company, posting.location,
              posting.posted_at, description, raw, fp, posting.source, mkey,
-             posting.salary_min, posting.salary_max, "filtered" if reason else "new",
-             reason, country)).fetchone()[0]
+             posting.salary_min, posting.salary_max, posting.salary_estimated,
+             "filtered" if reason else "new", reason, country)).fetchone()[0]
     else:
         job_pk, is_first_copy = found
         # Another site's copy keeps the first site's record; its own copy is kept in
@@ -177,12 +177,16 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
                    fingerprint=coalesce(fingerprint, %s),
                    source=coalesce(source, %s),
                    match_key=coalesce(match_key, %s),
+                   -- Every SET reads the row as it was: the guess goes with the salary taken.
+                   salary_estimated=CASE WHEN salary_min IS NULL THEN %s
+                                         ELSE salary_estimated END,
                    salary_min=coalesce(salary_min, %s),
                    salary_max=coalesce(salary_max, %s),
                    country=coalesce(country, %s)
                WHERE id=%s""",
             (is_first_copy, raw, description, description, url, posting.posted_at, fp,
-             posting.source, mkey, posting.salary_min, posting.salary_max, country, job_pk))
+             posting.source, mkey, posting.salary_estimated, posting.salary_min,
+             posting.salary_max, country, job_pk))
     record_source(conn, job_pk, key, posting, url)
     conn.execute(
         """INSERT INTO job_observations(job_id, scraper_run_id, observed_json)
@@ -202,7 +206,7 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
              started_at: datetime | None = None, finished_at: datetime | None = None,
              cost_usd: float | None = None, search_name: str | None = None,
              run_input: dict | None = None, job_filter: JobFilter | None = None,
-             country: str | None = None) -> int:
+             country: str | None = None, hit_cap: bool = False) -> int:
     with db.connect() as conn:
         # Imports take turns, in this process (sites run in parallel) and across processes
         # (a manual jobflow ingest during the daily one): two copies of one job saved at
@@ -210,16 +214,16 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
         conn.execute("SELECT pg_advisory_xact_lock(hashtext('jobflow save_run'))")
         run_pk = conn.execute(
             """INSERT INTO scraper_runs(actor_id, apify_run_id, dataset_id, status,
-                   started_at, finished_at, items_seen, cost_usd, search_name, input)
+                   started_at, finished_at, items_seen, cost_usd, search_name, input, hit_cap)
                VALUES (%s, %s, %s, 'SUCCEEDED', coalesce(%s, now()), coalesce(%s, now()),
-                       %s, %s, %s, %s)
+                       %s, %s, %s, %s, %s)
                ON CONFLICT (apify_run_id) DO UPDATE SET dataset_id=EXCLUDED.dataset_id,
                    status='SUCCEEDED', started_at=EXCLUDED.started_at,
                    finished_at=EXCLUDED.finished_at, items_seen=EXCLUDED.items_seen,
-                   cost_usd=EXCLUDED.cost_usd, error=NULL
+                   cost_usd=EXCLUDED.cost_usd, error=NULL, hit_cap=EXCLUDED.hit_cap
                RETURNING id""",
             (actor_id, run_id, dataset_id, started_at, finished_at, len(jobs), cost_usd,
-             search_name, psycopg.types.json.Jsonb(run_input) if run_input else None)
+             search_name, psycopg.types.json.Jsonb(run_input) if run_input else None, hit_cap)
         ).fetchone()[0]
         added, skipped = 0, 0
         for job in jobs:
@@ -258,6 +262,19 @@ def recent_failed_runs(conn) -> list[dict]:
                        FILTER (WHERE status <> 'SUCCEEDED'))[1]
            FROM scraper_runs WHERE created_at > now() - %s
            GROUP BY 1 HAVING count(*) FILTER (WHERE status <> 'SUCCEEDED') > 0
+           ORDER BY 1""", (RECENT_RUNS,)).fetchall()]
+
+
+def recent_capped_runs(conn) -> list[dict]:
+    """Each site with runs in RECENT_RUNS that returned as many results as max_results
+    allows, so probably left jobs behind: {site, capped, total, searches}, the searches
+    being those of the capped runs."""
+    return [dict(zip(("site", "capped", "total", "searches"), row, strict=True)) for row in conn.execute(
+        """SELECT split_part(actor_id, ':', 1), count(*) FILTER (WHERE hit_cap), count(*),
+                  coalesce(array_agg(DISTINCT search_name)
+                               FILTER (WHERE hit_cap AND search_name IS NOT NULL), '{}')
+           FROM scraper_runs WHERE created_at > now() - %s AND status = 'SUCCEEDED'
+           GROUP BY 1 HAVING bool_or(hit_cap)
            ORDER BY 1""", (RECENT_RUNS,)).fetchall()]
 
 

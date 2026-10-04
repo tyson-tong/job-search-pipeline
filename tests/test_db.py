@@ -49,6 +49,30 @@ def database(monkeypatch):
             conn.execute(f"DROP SCHEMA {schema} CASCADE")
 
 
+@pytest.fixture
+def scoring(monkeypatch):
+    """Scoring with a fake LLM. scoring.cvs: the CVs named, by short name (change it to
+    rename or edit one); scoring.requirements(prompt): the requirements the LLM lists for a
+    prompt (by default SQL, matched); scoring.weights; scoring.asked: the CV each LLM call
+    was for."""
+    from types import SimpleNamespace
+
+    from jobflow.candidate import matching
+
+    fake = SimpleNamespace(cvs={"dev": "I write SQL."}, weights=(0.75, 0.25), asked=[],
+                           requirements=lambda prompt: [{"requirement": "SQL", "status": "matched",
+                                                         "evidence": ["SQL"]}])
+
+    def complete(system, user, **kwargs):
+        prompt = json.loads(user)
+        fake.asked.append(prompt["cv_variant"])
+        return json.dumps({"requirements": fake.requirements(prompt)}), "m"
+    monkeypatch.setattr(matching, "complete", complete)
+    monkeypatch.setattr(matching, "matching_weights", lambda: fake.weights)
+    monkeypatch.setattr(matching, "chosen_sources", lambda: dict(fake.cvs))
+    return fake
+
+
 def _one(sql, *params):
     with connect() as conn:
         return conn.execute(sql, params).fetchone()
@@ -104,6 +128,21 @@ def test_two_different_jobs_are_never_merged(database):
     assert _one("SELECT count(*) FROM jobs")[0] == 6
 
 
+def test_a_cpp_and_a_csharp_job_with_one_ad_stay_two_jobs(database):
+    # Titles were compared without + and #, so both were "c developer": an employer's one
+    # ad for its C++ and C# roles merged, and one of the two jobs never reached the Inbox.
+    ad = " ".join(f"duty{i}" for i in range(40))
+
+    def posting(job_id, title):
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
+                "title": title, "companyName": "Acme", "location": "Sydney",
+                "descriptionText": ad}
+    assert save_run("linkedin:a", "r1", "d1", [posting("1", "C++ Developer")], country="AU") == 1
+    assert save_run("linkedin:a", "r2", "d2", [posting("2", "C# Developer")], country="AU") == 1
+    # The same ad under the same title is still one job.
+    assert save_run("linkedin:a", "r3", "d3", [posting("3", "c++ developer")], country="AU") == 0
+
+
 def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
     # They were worked out by two versions of the rules, which could disagree.
     from jobflow.web.queries import job_detail
@@ -130,7 +169,7 @@ def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
     assert panel["duplicates"][0]["company"] == "Hays" and panel["duplicates"][0]["level"] == "similar"
 
 
-def test_a_cv_named_later_is_scored_without_rescoring_the_others(database, monkeypatch):
+def test_a_cv_named_later_is_scored_without_rescoring_the_others(database, scoring):
     # Scores were never refreshed, so renaming or adding a CV left every scored job with
     # no score against it: tailor-cv then refused them all.
     from jobflow.candidate import matching
@@ -139,27 +178,18 @@ def test_a_cv_named_later_is_scored_without_rescoring_the_others(database, monke
     job_id = _one("SELECT id FROM jobs")[0]
     with connect() as conn:
         set_job_state(conn, job_id, status="interested", via="test")
-    asked = []
-
-    def complete(system, user, **kwargs):
-        asked.append(json.loads(user)["cv_variant"])
-        return json.dumps({"requirements": [{"requirement": "SQL", "status": "matched",
-                                             "evidence": ["write SQL"]}]}), "m"
-    monkeypatch.setattr(matching, "complete", complete)
-    monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
-    cvs = {"dev": "I write SQL daily."}
-    monkeypatch.setattr(matching, "chosen_sources", lambda: dict(cvs))
+    cvs = scoring.cvs
     assert [r["variant"] for r in matching.match_job(job_id)] == ["dev"]
     cvs["strat"] = "I write SQL for strategy work."   # a second CV, named later
     assert matching.jobs_needing_match(list(cvs)) == [job_id]
     assert sorted(r["variant"] for r in matching.match_job(job_id)) == ["dev", "strat"]
-    assert asked == ["dev", "strat"]                  # dev was not scored again
+    assert scoring.asked == ["dev", "strat"]          # dev was not scored again
     assert matching.jobs_needing_match(list(cvs)) == [] and matching.count_needing_match(list(cvs)) == 0
     matching.match_job(job_id)
-    assert asked == ["dev", "strat"]
+    assert scoring.asked == ["dev", "strat"]
 
 
-def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, monkeypatch):
+def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, scoring):
     # Scores were never redone, so a skill you added to your CV stayed a gap in skill-gaps.
     # Each rescore is an LLM call per job per CV, so an unedited CV must not be sent again.
     # A job you've applied for is rescored too: skill-gaps reads its score, which was once
@@ -170,25 +200,17 @@ def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, monke
     job_id = _one("SELECT id FROM jobs")[0]
     with connect() as conn:
         set_job_state(conn, job_id, status="applied", via="test")
-    asked = []
-
-    def complete(system, user, **kwargs):
-        prompt = json.loads(user)
-        asked.append(prompt["cv_variant"])
-        status = "matched" if "SQL" in prompt["cv_source"] else "not_evidenced"
-        return json.dumps({"requirements": [{"requirement": "SQL", "status": status,
-                                             "evidence": ["write SQL"]}]}), "m"
-    monkeypatch.setattr(matching, "complete", complete)
-    monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
-    cvs = {"dev": "I build dashboards.", "strat": "I plan strategy."}
-    monkeypatch.setattr(matching, "chosen_sources", lambda: dict(cvs))
+    scoring.requirements = lambda prompt: [{
+        "requirement": "SQL", "evidence": ["write SQL"],
+        "status": "matched" if "SQL" in prompt["cv_source"] else "not_evidenced"}]
+    scoring.cvs = {"dev": "I build dashboards.", "strat": "I plan strategy."}
     matching.match_job(job_id)
-    cvs["dev"] = "I build dashboards and write SQL."   # the gap, now shown in the CV
+    scoring.cvs["dev"] = "I build dashboards and write SQL."   # the gap, now shown in the CV
     assert matching.outdated_scores(matching.current_digests()) == [(job_id, "dev")]
     matching.match_job(job_id)                        # not asked to rescore: nothing sent
-    assert asked == ["dev", "strat"]
+    assert scoring.asked == ["dev", "strat"]
     scores = {r["variant"]: r["score"] for r in matching.match_job(job_id, rescore=True)}
-    assert asked == ["dev", "strat", "dev"] and scores == {"dev": 100, "strat": 0}
+    assert scoring.asked == ["dev", "strat", "dev"] and scores == {"dev": 100, "strat": 0}
     assert matching.outdated_scores(matching.current_digests()) == []
 
 
@@ -198,30 +220,30 @@ def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, monke
     # Saving the one CV that worked would leave the job scored without the other.
     (["dev", "strat"], "timed out"),
 ])
-def test_a_failed_assessment_saves_no_score(database, monkeypatch, cvs, failure):
+def test_a_failed_assessment_saves_no_score(database, scoring, cvs, failure):
     from jobflow.candidate import matching
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     job_id = _one("SELECT id FROM jobs")[0]
     with connect() as conn:
         set_job_state(conn, job_id, status="interested", via="test")
+    matched = scoring.requirements
 
-    def complete(system, user, **kwargs):
+    def requirements(prompt):
         if failure == "no requirements":
-            return '{"requirements": []}', "m"
-        if json.loads(user)["cv_variant"] == "strat":
+            return []
+        if prompt["cv_variant"] == "strat":
             raise RuntimeError("Read timed out")
-        return json.dumps({"requirements": [{"requirement": "SQL", "status": "matched",
-                                             "evidence": ["SQL"]}]}), "m"
-    monkeypatch.setattr(matching, "complete", complete)
-    monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
-    monkeypatch.setattr(matching, "chosen_sources", lambda: {cv: "I write SQL." for cv in cvs})
+        return matched(prompt)
+    scoring.requirements = requirements
+    scoring.cvs = {cv: "I write SQL." for cv in cvs}
     with pytest.raises(RuntimeError, match=failure):
         matching.match_job(job_id)
     assert _one("SELECT count(*) FROM match_assessments")[0] == 0
 
 
-def test_the_tracker_and_tailor_cv_rank_cvs_alike_after_the_weights_change(database, monkeypatch):
+def test_the_tracker_and_tailor_cv_rank_cvs_alike_after_the_weights_change(database, monkeypatch,
+                                                                           scoring):
     # The tracker showed the score stored at scoring time while tailor-cv recomputed it with
     # the weights now, so after a weights change they could pick different CVs.
     from jobflow.candidate import matching
@@ -235,22 +257,19 @@ def test_the_tracker_and_tailor_cv_rank_cvs_alike_after_the_weights_change(datab
         conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score, evidence)
                         VALUES (%s, 'dev', 'old', 90, '{"format": 1}')""", (job_id,))
 
-    def complete(system, user, **kwargs):
-        dev = json.loads(user)["cv_variant"] == "dev"
+    def requirements(prompt):
+        dev = prompt["cv_variant"] == "dev"
         # dev shows the required skill but not the preferred one; strat the other way round.
-        return json.dumps({"requirements": [
-            {"requirement": "SQL", "importance": "required",
-             "status": "matched" if dev else "not_evidenced", "evidence": ["SQL"]},
-            {"requirement": "Tableau", "importance": "preferred",
-             "status": "not_evidenced" if dev else "matched", "evidence": ["Tableau"]}]}), "m"
-    monkeypatch.setattr(matching, "complete", complete)
-    monkeypatch.setattr(matching, "chosen_sources", lambda: {"dev": "SQL", "strat": "Tableau"})
-    weights = [(0.75, 0.25)]
-    monkeypatch.setattr(matching, "matching_weights", lambda: weights[0])
+        return [{"requirement": "SQL", "importance": "required",
+                 "status": "matched" if dev else "not_evidenced", "evidence": ["SQL"]},
+                {"requirement": "Tableau", "importance": "preferred",
+                 "status": "not_evidenced" if dev else "matched", "evidence": ["Tableau"]}]
+    scoring.requirements = requirements
+    scoring.cvs = {"dev": "SQL", "strat": "Tableau"}
     # An old-format score once made the job unscorable, so tailor-cv refused it for good.
     assert sorted(job_id for job_id in matching.jobs_needing_match(["dev", "strat"])) == [job_id]
     assert matching.best_variant(matching.match_job(job_id))["variant"] == "dev"
-    weights[0] = (0.2, 0.8)   # now the preferred skill matters most
+    scoring.weights = (0.2, 0.8)   # now the preferred skill matters most
     # A perfect score against a CV no longer named in cvs isn't the best, either.
     with connect() as conn:
         conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score, evidence)
@@ -588,7 +607,7 @@ def test_dates_are_in_your_timezone_in_python_and_the_database(database, monkeyp
     assert _one("SELECT current_setting('TimeZone'), now()::date") == ("Pacific/Kiritimati", today())
 
 
-def test_score_all_scores_the_jobs_you_are_pursuing_and_picked_inbox_jobs(database, monkeypatch):
+def test_score_all_scores_the_jobs_you_are_pursuing_and_picked_inbox_jobs(database, scoring):
     # Each job is an LLM call per CV: Score all jobs must never score the whole Inbox, but
     # Inbox jobs you tick are scored to help you triage them. A job you've applied for is
     # scored too: one against a CV added later was never scored, so skill-gaps kept judging
@@ -604,10 +623,6 @@ def test_score_all_scores_the_jobs_you_are_pursuing_and_picked_inbox_jobs(databa
         set_job_state(conn, ids["1"], status="interested", via="test")
         set_job_state(conn, ids["3"], status="not_interested", via="test")
         set_job_state(conn, ids["4"], status="applied", via="test")
-    monkeypatch.setattr(matching, "complete", lambda system, user, **kw: (json.dumps(
-        {"requirements": [{"requirement": "SQL", "status": "matched", "evidence": ["SQL"]}]}), "m"))
-    monkeypatch.setattr(matching, "matching_weights", lambda: (0.75, 0.25))
-    monkeypatch.setattr(matching, "chosen_sources", lambda: {"dev": "I write SQL."})
     pursued = sorted([ids["1"], ids["4"]])
     assert sorted(matching.jobs_needing_match(["dev"])) == pursued
     assert matching.count_needing_match(["dev"]) == 2
@@ -797,3 +812,40 @@ def test_clean_up_keeps_the_folder_of_every_job_you_applied_for(database, tmp_pa
     cleanup.clean_up()
     assert {key: folder.exists() for key, folder in folders.items()} == {
         "1": True, "2": True, "3": False, "4": True}
+
+
+def test_export_all_has_every_job_with_the_chosen_statuses(database):
+    # The docs suggest Export CSV (All) for a copy of your jobs: it must not stop at the
+    # 2,000 rows the job list shows.
+    import csv
+    import io
+
+    from jobflow.web.export import export_csv
+    from jobflow.web.queries import MAX_ROWS
+
+    with connect() as conn:
+        conn.execute("""INSERT INTO jobs(canonical_key, title, status)
+                        SELECT 'k' || n, 'Job ' || n, CASE WHEN n = 1 THEN 'rejected'
+                                                          ELSE 'interested' END
+                        FROM generate_series(1, %s) AS n""", (MAX_ROWS + 5,))
+    rows = list(csv.reader(io.StringIO(export_csv(parse_filters(
+        {"status": ["interested", "rejected"]})))))
+    assert len(rows) - 1 == MAX_ROWS + 5
+
+
+def test_update_searches_updates_your_jobs_even_when_github_cant_be(database, tmp_path,
+                                                                    monkeypatch):
+    # Filtering the Inbox ran only after the GitHub variables were set, so without the
+    # GitHub CLI (or with it logged out) your jobs were never brought in line.
+    from jobflow import github, settings
+
+    searches = tmp_path / "searches.toml"
+    searches.write_text('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
+                        'max_cost_usd = 1\nexclude_title_terms = ["Intern"]\n')
+    monkeypatch.setattr(settings, "searches_file", lambda: searches)
+    save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "title": "Intern Analyst"}],
+             search_name="s", country="AU")
+    # conftest's no_github makes every gh command fail.
+    with pytest.raises(RuntimeError, match="GitHub variables weren't updated"):
+        github.update_searches()
+    assert _one("SELECT status FROM jobs")[0] == "filtered"

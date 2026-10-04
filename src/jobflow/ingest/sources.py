@@ -64,6 +64,9 @@ class Posting:
     # Annualised salary range, when the posting states one.
     salary_min: float | None = None
     salary_max: float | None = None
+    # The posting gave no pay period, so it was guessed from the amount's size: "$18,000"
+    # could be a month's pay or a year's. Such a salary never filters a job out.
+    salary_estimated: bool = False
     # Common vocabulary (options.JOB_TYPES / WORK_ARRANGEMENTS); empty = unknown.
     job_types: frozenset[str] = frozenset()
     work_arrangements: frozenset[str] = frozenset()
@@ -138,10 +141,11 @@ def _period_from_amount(low: float, high: float, country: str | None = None) -> 
 
 
 def _period(text: str, span: tuple[int, int], low: float, high: float,
-            ignore: list[tuple[int, int]], country: str | None) -> str:
+            ignore: list[tuple[int, int]], country: str | None) -> tuple[str, bool]:
     """The period the salary text states for the amounts at text[span[0]:span[1]]: the
     period word nearest after them (then nearest before), skipping words inside `ignore`
-    and any whose period is implausible for the amount. Else from the amounts."""
+    and any whose period is implausible for the amount. Else from the amounts. With
+    whether the text stated it (False: guessed from the amounts)."""
     start, end = span
     found = []
     for period, pattern in PERIOD_WORDS:
@@ -152,8 +156,8 @@ def _period(text: str, span: tuple[int, int], low: float, high: float,
     for *_, period in sorted(found):
         least, most = PLAUSIBLE[period]
         if least <= high < most:
-            return period
-    return _period_from_amount(low, high, country)
+            return period, True
+    return _period_from_amount(low, high, country), False
 
 
 def _next_word_end(text: str, start: int) -> int:
@@ -162,9 +166,13 @@ def _next_word_end(text: str, start: int) -> int:
     return start + (following.end() if following else 0)
 
 
-def _annual(low: float, high: float, period: str) -> tuple[float, float] | None:
+# An annualised salary: (min, max, whether its period was guessed from the amounts).
+Pay = tuple[float, float, bool]
+
+
+def _annual(low: float, high: float, period: str, stated: bool = True) -> Pay | None:
     factor = ANNUAL_FACTOR[period]
-    return None if high * factor > MAX_ANNUAL else (low * factor, high * factor)
+    return None if high * factor > MAX_ANNUAL else (low * factor, high * factor, not stated)
 
 
 # One amount in a salary text: an optional currency, the number, and an optional k ("$80k");
@@ -216,7 +224,7 @@ def _expressions(text: str) -> list[_Pay]:
     return expressions
 
 
-def _parse_text(text: str, country: str | None) -> tuple[float, float] | None:
+def _parse_text(text: str, country: str | None) -> Pay | None:
     """Annualised (min, max) from one salary text: its largest amount or range, so a sign-on
     bonus beside the salary isn't taken for its bottom end."""
     text = text.replace("\u2013", "-").replace("\u2014", "-")
@@ -234,14 +242,16 @@ def _parse_text(text: str, country: str | None) -> tuple[float, float] | None:
     # "11.5% super" don't read as a period.
     ignore = [(e.start, _next_word_end(text, e.end)) for e in expressions if e not in pay]
     ignore += [(m.start(), _next_word_end(text, m.end())) for m in AMOUNT.finditer(text) if m["pct"]]
-    period = _period(text, (chosen.start, chosen.end), chosen.low, chosen.high, ignore, country)
-    return _annual(chosen.low, chosen.high, period)
+    period, stated = _period(text, (chosen.start, chosen.end), chosen.low, chosen.high, ignore,
+                             country)
+    return _annual(chosen.low, chosen.high, period, stated)
 
 
-def parse_salary(value: object, country: str | None = None) -> tuple[float, float] | None:
-    """Annualised (min, max) from Indeed's salary object, free-text salary strings, or a
-    list of them (each read on its own, then combined), in the job's country when known (it
-    decides whether an amount with no period is monthly).
+def parse_pay(value: object, country: str | None = None) -> Pay | None:
+    """Annualised (min, max, estimated) from Indeed's salary object, free-text salary
+    strings, or a list of them (each read on its own, then combined), in the job's country
+    when known (it decides whether an amount with no period is monthly). estimated: no
+    period was stated, so it was guessed from the amounts' size.
 
     Returns None when no amount can be found (for example "Competitive"), or when the
     amount is too large to be a real salary.
@@ -251,16 +261,18 @@ def parse_salary(value: object, country: str | None = None) -> tuple[float, floa
         amounts = [float(a) for a in (low, high) if isinstance(a, (int, float)) and a > 0]
         if not amounts:
             return None
-        period = INDEED_PERIODS.get(str(value.get("type") or "").upper()) or \
-            _period_from_amount(min(amounts), max(amounts), country)
-        return _annual(min(amounts), max(amounts), period)
+        stated = INDEED_PERIODS.get(str(value.get("type") or "").upper())
+        period = stated or _period_from_amount(min(amounts), max(amounts), country)
+        return _annual(min(amounts), max(amounts), period, bool(stated))
     if isinstance(value, list):
-        parts = [parse_salary(v, country) for v in value if isinstance(v, str)]
+        parts = [parse_pay(v, country) for v in value if isinstance(v, str)]
         found = [part for part in parts if part]
-        return (min(lo for lo, _ in found), max(hi for _, hi in found)) if found else None
+        return (min(p[0] for p in found), max(p[1] for p in found),
+                any(p[2] for p in found)) if found else None
     if not isinstance(value, str) or not value.strip():
         return None
     return _parse_text(value, country)
+
 
 
 def _as_list(value: object) -> list:
@@ -290,8 +302,9 @@ def detect_source(item: dict) -> str:
 
 
 def _salary(value: object, country: str | None) -> dict:
-    parsed = parse_salary(value, country)
-    return {"salary_min": parsed[0], "salary_max": parsed[1]} if parsed else {}
+    parsed = parse_pay(value, country)
+    return ({"salary_min": parsed[0], "salary_max": parsed[1], "salary_estimated": parsed[2]}
+            if parsed else {})
 
 
 def _linkedin(item: dict, source: str, country: str | None) -> Posting:

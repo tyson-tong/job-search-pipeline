@@ -35,19 +35,20 @@ def _gh(args: list[str], doing: str, input: str | None = None, hint: str = "") -
 
 
 def update_searches(dry_run: bool = False) -> None:
-    """Check config/searches.toml, publish it as the JOBFLOW_SEARCHES GitHub variable that
-    the daily import reads, then filter Inbox jobs its filters would now filter (imports
-    only apply them to the jobs they bring in), and bring back Filtered jobs its filters
-    would now keep. An invalid file stops before anything is published, so a typo never
-    reaches the daily import; so does a database that can't be reached at the start. The
-    Inbox is updated after publishing, so if the database fails in between, the import
-    uses the new searches while the Inbox is still judged by the old ones: run
-    update-searches again."""
-    from .db import migrate, pending_migrations
+    """Check config/searches.toml, then do two separate things with it: bring the jobs you
+    already have in line (filter Inbox jobs its filters would now filter, as imports apply
+    them only to the jobs they bring in, and bring back Filtered jobs they would now keep),
+    and publish it, with your timezone, as the GitHub variables the daily import reads.
+
+    An invalid file stops before either, so a typo never reaches the daily import or your
+    jobs. Otherwise each goes ahead even if the other fails (no GitHub CLI, say, or a
+    database that can't be reached), and the command then stops with an error naming what
+    failed: run it again once that's fixed."""
+    import psycopg
+
     from .ingest.filters import search_warnings
-    from .ingest.refilter import filter_inbox_jobs, restore_filtered_jobs
-    from .ingest.searches import defaults_search, parse_config
-    from .settings import searches_file, timezone
+    from .ingest.searches import parse_config
+    from .settings import searches_file
 
     path = searches_file()
     if not path.exists():
@@ -59,6 +60,26 @@ def update_searches(dry_run: bool = False) -> None:
     sys.stdout.flush()
     for warning in dict.fromkeys(w for s in searches for w in search_warnings(s)):
         print(f"warning: {warning}", file=sys.stderr)
+    failed = []
+    try:
+        _refilter_jobs(text, searches, dry_run)
+    except (RuntimeError, psycopg.Error) as exc:
+        failed.append(f"your jobs weren't updated ({str(exc).strip()})")
+    try:
+        _publish_searches(text, dry_run)
+    except RuntimeError as exc:
+        failed.append(f"the GitHub variables weren't updated ({exc})")
+    if failed:
+        raise RuntimeError("; ".join(failed) + ". Fix that, then run update-searches again")
+
+
+def _refilter_jobs(text: str, searches: list, dry_run: bool) -> None:
+    """Filter the Inbox jobs the searches would now filter, and bring back the Filtered jobs
+    they would now keep; with dry_run, only list them."""
+    from .db import migrate, pending_migrations
+    from .ingest.refilter import filter_inbox_jobs, restore_filtered_jobs
+    from .ingest.searches import defaults_search
+
     if not dry_run:
         migrate()
     elif pending := pending_migrations():
@@ -67,21 +88,6 @@ def update_searches(dry_run: bool = False) -> None:
                            f"({', '.join(pending)}), and a dry run changes nothing. Any other "
                            "jobflow command (such as jobflow web) applies them; then run the "
                            "dry run again")
-    # The daily import has no config/profile.toml, so it gets your timezone this way too.
-    zone = timezone().key
-    if dry_run:
-        print(f"Would update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE ({zone}) GitHub variables "
-              "(dry run: not updated)")
-    else:
-        _gh(["variable", "set", "JOBFLOW_SEARCHES"], "Updating the JOBFLOW_SEARCHES GitHub "
-            "variable (nothing else was changed)", input=text,
-            hint=", or set the variable by hand: gh variable set JOBFLOW_SEARCHES < "
-            "config/searches.toml")
-        _gh(["variable", "set", "JOBFLOW_TIMEZONE", "--body", zone], "Updating the "
-            "JOBFLOW_TIMEZONE GitHub variable (JOBFLOW_SEARCHES was updated)",
-            hint=f", or set the variable by hand: gh variable set JOBFLOW_TIMEZONE --body {zone}")
-        print(f"Updated the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE ({zone}) GitHub variables: the "
-              "daily import uses them now")
     # A job found by a search since renamed or removed is judged by [defaults].
     fallback = defaults_search(text)
     matched, checked = filter_inbox_jobs(searches, dry_run=dry_run, fallback=fallback)
@@ -96,6 +102,27 @@ def update_searches(dry_run: bool = False) -> None:
               f"was filtered: {job['reason']}")
     print(f"{'Would bring' if dry_run else 'Brought'} {len(restored)} of {checked} Filtered jobs "
           f"back to the Inbox{' (dry run: none moved)' if dry_run else ''}")
+
+
+def _publish_searches(text: str, dry_run: bool) -> None:
+    """Set the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables the daily import reads:
+    it has no config/profile.toml, so it gets your timezone this way too."""
+    from .settings import timezone
+
+    zone = timezone().key
+    if dry_run:
+        print(f"Would update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE ({zone}) GitHub variables "
+              "(dry run: not updated)")
+        return
+    _gh(["variable", "set", "JOBFLOW_SEARCHES"], "Updating the JOBFLOW_SEARCHES GitHub "
+        "variable", input=text,
+        hint=", or set the variable by hand: gh variable set JOBFLOW_SEARCHES < "
+        "config/searches.toml")
+    _gh(["variable", "set", "JOBFLOW_TIMEZONE", "--body", zone], "Updating the "
+        "JOBFLOW_TIMEZONE GitHub variable (JOBFLOW_SEARCHES was updated)",
+        hint=f", or set the variable by hand: gh variable set JOBFLOW_TIMEZONE --body {zone}")
+    print(f"Updated the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE ({zone}) GitHub variables: the "
+          "daily import uses them now")
 
 
 def _print_published_searches(text: str | None) -> dict[str, list[str]]:
@@ -131,13 +158,14 @@ def _print_published_searches(text: str | None) -> dict[str, list[str]]:
 
 
 def _print_recent_runs() -> None:
-    """What your database says about the latest imports: when one last succeeded, and each
-    site whose Apify runs failed lately, with the error (GitHub only says the job failed).
-    Reads only; a database that can't be read is a note, not a failed status."""
+    """What your database says about the latest imports: when one last succeeded, each site
+    whose Apify runs failed lately, with the error (GitHub only says the job failed), and
+    each site whose runs hit max_results. Reads only; a database that can't be read is a
+    note, not a failed status."""
     import psycopg
 
     from .db import connect
-    from .ingest.store import RECENT_RUNS, recent_failed_runs
+    from .ingest.store import RECENT_RUNS, recent_capped_runs, recent_failed_runs
     from .settings import timezone
 
     try:
@@ -145,6 +173,11 @@ def _print_recent_runs() -> None:
             last = conn.execute("SELECT max(finished_at) FROM scraper_runs "
                                 "WHERE status = 'SUCCEEDED'").fetchone()[0]
             failed = recent_failed_runs(conn)
+            try:
+                with conn.transaction():
+                    capped = recent_capped_runs(conn)
+            except psycopg.errors.UndefinedColumn:   # status doesn't migrate: none recorded yet
+                capped = []
     except (RuntimeError, psycopg.Error) as exc:
         print(f"Runs:     can't read them from your database ({str(exc).strip()})")
         return
@@ -155,6 +188,10 @@ def _print_recent_runs() -> None:
     for f in failed:
         print(f"  {f['site']:<9} {f['failed']} of {plural(f['total'], 'run')} failed in the last "
               f"{hours} hours: {f['error'] or 'no error recorded'}")
+    for c in capped:
+        print(f"  {c['site']:<9} {c['capped']} of {plural(c['total'], 'run')} hit max_results in "
+              f"the last {hours} hours, so probably left jobs behind: raise max_results, or "
+              f"narrow {', '.join(c['searches']) or 'the search'}")
 
 
 def status() -> None:

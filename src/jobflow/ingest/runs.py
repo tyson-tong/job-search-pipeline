@@ -2,6 +2,7 @@
 a run (or a LinkedIn job's own search URL) covers."""
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from itertools import product
@@ -32,6 +33,18 @@ class PlannedRun:
         if "urls" in self.run_input:
             return self.run_input["limitPerSource"] * len(self.run_input["urls"])
         return self.run_input.get("maxResults") or self.run_input["count"]
+
+    def hit_cap(self, items: list) -> bool:
+        """Whether the run returned as many results as it was allowed, so it probably left
+        jobs behind. A LinkedIn run caps each search URL, so one URL at its cap counts
+        (each result names its URL as inputUrl; without that, the run's total does)."""
+        if "urls" in self.run_input:
+            per_url = Counter(item.get("inputUrl") if isinstance(item, dict) else None
+                              for item in items)
+            if None not in per_url:
+                return any(count >= self.run_input["limitPerSource"]
+                           for count in per_url.values())
+        return len(items) >= self.max_results
 
 
 # Each site's {days: input value} for the windows it has, and its value for any time.

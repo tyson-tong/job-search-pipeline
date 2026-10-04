@@ -243,14 +243,28 @@ def test_letter_check_flags_numbers_and_terms_from_nowhere():
             in check_letter("Dear [Name], I built dashboards.", SOURCE_CV, JOB, [])[1])
 
 
-def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypatch, no_database):
-    letter = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
+@pytest.fixture
+def letter_llm(monkeypatch, no_database):
+    """write_letter for JOB from SOURCE_CV, with no company research. Call it with the
+    letter the LLM drafts and the reviewer's answer: a dict, or an exception it raises."""
     monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
         JOB, "main", "CV variant main.", SOURCE_CV, ""))
     monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
-    monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
-        json.dumps({"critique": [], "cover_letter": letter}) if kw.get("reviewer")
-        else letter, "m"))
+
+    def answers(draft: str, review: dict | Exception) -> None:
+        def complete(system, user, **kw):
+            if not kw.get("reviewer"):
+                return draft, "m"
+            if isinstance(review, Exception):
+                raise review
+            return json.dumps(review), "m"
+        monkeypatch.setattr(cover_letter, "complete", complete)
+    return answers
+
+
+def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, letter_llm):
+    letter = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
+    letter_llm(letter, {"critique": [], "cover_letter": letter})
     # A cover-letter.docx from an earlier run would look like this letter, checked.
     (tmp_path / "cover-letter.docx").write_bytes(b"old")
     target, errors, _ = cover_letter.write_letter(1, output_dir=tmp_path)
@@ -259,15 +273,10 @@ def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, monkeypat
     assert letter in target.read_text()
 
 
-def test_a_revision_with_more_fact_check_errors_is_discarded(tmp_path, monkeypatch, no_database):
+def test_a_revision_with_more_fact_check_errors_is_discarded(tmp_path, letter_llm):
     draft = "Dear Hiring Manager,\n\nAt Example Corp I built Python ETL pipelines.\n\nAlex Example"
     revised = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
-    monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
-        JOB, "main", "CV variant main.", SOURCE_CV, ""))
-    monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
-    monkeypatch.setattr(cover_letter, "complete", lambda system, user, **kw: (
-        json.dumps({"critique": ["Add a metric"], "cover_letter": revised}) if kw.get("reviewer")
-        else draft, "m"))
+    letter_llm(draft, {"critique": ["Add a metric"], "cover_letter": revised})
     target, errors, _ = cover_letter.write_letter(1, output_dir=tmp_path)
     assert not errors and target.name == "cover-letter.docx"
     report = (tmp_path / "COVER_LETTER_REVIEW.md").read_text()
@@ -292,20 +301,13 @@ def test_a_revision_adding_unsupported_terms_is_discarded():
     assert run(["New term: Python."])[0] == "revision"
 
 
-def test_a_reviewer_every_job_would_fail_on_stops_the_batch(tmp_path, monkeypatch):
+def test_a_reviewer_every_job_would_fail_on_stops_the_batch(tmp_path, letter_llm):
     # A misspelt LLM_REVIEW_MODEL (404) was caught like a network blip: every job got an
     # unreviewed draft, and the batch went on paying for drafts.
     from jobflow.llm import LLMError
 
-    def complete(system, user, **kw):
-        if kw.get("reviewer"):
-            raise LLMError("The model `gpt-typo` does not exist (LLM provider, HTTP 404)",
-                           fatal=True)
-        return "Dear Hiring Manager,\n\nI built Python ETL pipelines.\n\nAlex Example", "m"
-    monkeypatch.setattr(cover_letter, "load_cv", lambda job_id, variant: (
-        JOB, "main", "CV variant main.", SOURCE_CV, ""))
-    monkeypatch.setattr(cover_letter, "research", lambda job: ([], []))
-    monkeypatch.setattr(cover_letter, "complete", complete)
+    letter_llm("Dear Hiring Manager,\n\nI built Python ETL pipelines.\n\nAlex Example",
+               LLMError("The model `gpt-typo` does not exist (LLM provider, HTTP 404)", fatal=True))
     with pytest.raises(LLMError) as caught:
         cover_letter.write_letter(1, output_dir=tmp_path)
     assert caught.value.fatal and not list(tmp_path.iterdir())
@@ -405,23 +407,34 @@ def test_format_for_a_job_already_tailored_comes_from_its_checked_draft(tmp_path
         tailoring.add_format(folder, "latex")
 
 
-def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, monkeypatch,
-                                                               no_database):
-    # A PDF, .docx, or .tex from an earlier run would look like this draft, checked.
+@pytest.fixture
+def tailor_llm(monkeypatch, no_database):
+    """tailor_cv for JOB from SOURCE_CV (the dev CV), with no company research. Call it
+    with the cv mapping the LLM drafts, which the reviewer hands back unchanged."""
     import yaml
 
     from jobflow.candidate import tailoring
 
-    invented = copy.deepcopy(SOURCE_CV)
-    invented["sections"]["experiences"][0]["position"] = "Head of Data"
-    draft = yaml.safe_dump({"cv": invented})
     monkeypatch.setattr(tailoring, "load_source", lambda job_id, variant: (
         JOB, "dev", "CV variant dev.", {"cv": SOURCE_CV}, yaml.safe_dump({"cv": SOURCE_CV})))
-    researched = Future()
+    researched: Future = Future()
     researched.set_result(([], []))
     monkeypatch.setattr(tailoring, "research_soon", lambda job: researched)
-    monkeypatch.setattr(tailoring, "complete", lambda system, user, **kw: (
-        json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))
+
+    def drafts(cv: dict) -> None:
+        draft = yaml.safe_dump({"cv": cv})
+        monkeypatch.setattr(tailoring, "complete", lambda system, user, **kw: (
+            json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))
+    return drafts
+
+
+def test_a_draft_failing_the_check_leaves_no_older_cv_beside_it(tmp_path, tailor_llm):
+    # A PDF, .docx, or .tex from an earlier run would look like this draft, checked.
+    from jobflow.candidate import tailoring
+
+    invented = copy.deepcopy(SOURCE_CV)
+    invented["sections"]["experiences"][0]["position"] = "Head of Data"
+    tailor_llm(invented)
     for suffix in (".pdf", ".docx", ".tex"):
         (tmp_path / f"CV_dev_draft{suffix}").write_bytes(b"from an earlier run")
     # And from an earlier run with another CV (--redo --cv), which passed the check.
@@ -489,25 +502,16 @@ def test_only_the_one_or_two_cv_files_named_in_the_profile_are_used(tmp_path, mo
 
 
 def test_a_redraft_cut_off_part_way_is_drafted_again_not_kept_as_yours(tmp_path, monkeypatch,
-                                                                      no_database):
+                                                                      tailor_llm):
     # The new draft was written beside the last run's review; cut off before its own review
     # (the balance ran out while shortening it), it looked edited by hand and was never
     # drafted again.
-    import yaml
-
     from jobflow.candidate import tailoring
     from jobflow.llm import LLMError
 
     (tmp_path / "CV_dev_draft.yaml").write_text("cv: {}")
     (tmp_path / "CV_REVIEW.md").write_text("the last run's review")
-    draft = yaml.safe_dump({"cv": SOURCE_CV})
-    monkeypatch.setattr(tailoring, "load_source", lambda job_id, variant: (
-        JOB, "dev", "CV variant dev.", {"cv": SOURCE_CV}, draft))
-    researched = Future()
-    researched.set_result(([], []))
-    monkeypatch.setattr(tailoring, "research_soon", lambda job: researched)
-    monkeypatch.setattr(tailoring, "complete", lambda system, user, **kw: (
-        json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))
+    tailor_llm(SOURCE_CV)
 
     def out_of_credit(*args, **kwargs):
         raise LLMError("no credit", fatal=True)
@@ -517,22 +521,13 @@ def test_a_redraft_cut_off_part_way_is_drafted_again_not_kept_as_yours(tmp_path,
     assert not tailoring.cv_fixed_by_hand(tmp_path) and not tailoring.cv_written(tmp_path)
 
 
-def test_a_draft_rendercv_cant_render_is_drafted_again(tmp_path, monkeypatch, no_database):
+def test_a_draft_rendercv_cant_render_is_drafted_again(tmp_path, monkeypatch, tailor_llm):
     # Recorded as done, it had no PDF, was never fitted to its page limit, and was skipped
     # by every later run.
-    import yaml
-
     from jobflow.candidate import tailoring
     from jobflow.candidate.render import RenderFailed
 
-    draft = yaml.safe_dump({"cv": SOURCE_CV})
-    monkeypatch.setattr(tailoring, "load_source", lambda job_id, variant: (
-        JOB, "dev", "CV variant dev.", {"cv": SOURCE_CV}, draft))
-    researched = Future()
-    researched.set_result(([], []))
-    monkeypatch.setattr(tailoring, "research_soon", lambda job: researched)
-    monkeypatch.setattr(tailoring, "complete", lambda system, user, **kw: (
-        json.dumps({"critique": [], "cv_yaml": draft}) if kw.get("reviewer") else draft, "m"))
+    tailor_llm(SOURCE_CV)
 
     def unrenderable(*args, **kwargs):
         raise RenderFailed("invalid date")

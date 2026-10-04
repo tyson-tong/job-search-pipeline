@@ -98,12 +98,13 @@ function renderAll() {
   renderPipeline(); renderTabs(); renderSaveBar(); renderScoring();
   if (searching) renderSearches(); else { renderStatusMenu(); renderRows(); }
 }
-// Only alerts: follow-ups overdue, an import that hasn't run lately, and sites whose runs
-// failed lately; the status counts are in My jobs' menu.
+// Only alerts: follow-ups overdue, an import that hasn't run lately, sites whose runs
+// failed lately, and sites whose runs hit max_results; the status counts are in My jobs' menu.
 function renderPipeline() {
   const box = document.getElementById("pipeline");
   // The daily import searches the past 24 hours, so a day it missed is jobs never seen.
-  const { overdue, last_import: lastImport, failed_runs: failedRuns, late_after_hours: lateAfter } = state.summary;
+  const { overdue, last_import: lastImport, failed_runs: failedRuns, capped_runs: cappedRuns,
+    late_after_hours: lateAfter } = state.summary;
   const hours = lastImport ? (Date.now() - new Date(lastImport)) / 3.6e6 : Infinity;
   fill(box, [
     overdue ? el("button", { className: "chip alert", title: "Jobs with a follow-up date in the past",
@@ -119,7 +120,13 @@ function renderPipeline() {
     failedRuns.map((f) => el("span", { className: "chip alert",
       title: `Latest error: ${f.error || "unknown"}. Run \`uv run jobflow status\`, or see the `
         + "scraper_runs table, for details." },
-      `${SITE_NAMES[f.site] || f.site}: ${f.failed} of ${f.total} run${f.total === 1 ? "" : "s"} failed`))]);
+      `${SITE_NAMES[f.site] || f.site}: ${f.failed} of ${f.total} run${f.total === 1 ? "" : "s"} failed`)),
+    // A run that returned all the results max_results allows probably left jobs behind.
+    cappedRuns.map((c) => el("span", { className: "chip alert",
+      title: `These runs returned as many results as max_results allows, so more jobs were probably `
+        + `posted than were imported. Raise max_results in config/searches.toml, or narrow the search`
+        + (c.searches.length ? `: ${c.searches.join(", ")}` : "") + ". Then run `uv run jobflow update-searches`." },
+      `${SITE_NAMES[c.site] || c.site}: ${c.capped} of ${c.total} run${c.total === 1 ? "" : "s"} hit max_results`))]);
 }
 function renderTabs() {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("on", tab.dataset.view === state.view));
@@ -301,7 +308,9 @@ function jobRow(job, index, selectable) {
     el("td", { className: "hide-sm meta", title: state.countryCounts.names[job.country] || null }, job.country || "–"),
     el("td", { className: "hide-sm" }, job.sites.map((s) => el("span", { className: "site" }, SITE_NAMES[s] || s))),
     el("td", { className: "hide-sm meta" }, fmtDate(job.posted_at) || fmtDate(job.first_seen_at)),
-    el("td", { className: "hide-sm meta" }, fmtSalary(job.salary_min, job.salary_max, job.currency)),
+    el("td", { className: "hide-sm meta", title: job.salary_estimated
+      ? "The ad gives no pay period, so this yearly figure is a guess from the amount; it never filters the job out" : null },
+      fmtSalary(job.salary_min, job.salary_max, job.currency, job.salary_estimated)),
     el("td", {}, statusCell(job)),
     selectable ? null : el("td", { className: "hide-sm" }, el("input", { type: "date", "aria-label": "Follow-up date",
       value: current(job, "follow_up_on") ? fmtDate(current(job, "follow_up_on")) : "",

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from .dedupe import identity
+from .dedupe import fingerprint, identity, match_key
 from .runs import country_from_location, run_country, search_url_country
-from .sources import normalise
+from .sources import Posting, normalise
 
 
 def backfill_sources(conn) -> int:
@@ -49,5 +49,37 @@ def backfill_countries(conn) -> int:
     return filled
 
 
+def backfill_title_keys(conn) -> int:
+    """Work out match_key and fingerprint again for jobs whose title has a + or #, which
+    titles once lost ("C++ Developer" and "C# Developer" were one title): run once, when
+    titles began keeping them (dedupe.title_key). Only these jobs' keys change. The
+    fingerprint is made, as when the job was saved, from its first copy's record; a job
+    whose record was already cleared keeps the one it has."""
+    rows = conn.execute("""SELECT id, title, company, location, raw_json, country FROM jobs
+                           WHERE title ~ '[+#]'""").fetchall()
+    for job_pk, title, company, location, raw, country in rows:
+        key = match_key(Posting(source="", source_id=None, url=None, title=title,
+                                company=company, location=location, posted_at=None,
+                                description=""))
+        content_fp = fingerprint(normalise(raw, country)) if isinstance(raw, dict) and raw else None
+        conn.execute("UPDATE jobs SET match_key=%s, fingerprint=coalesce(%s, fingerprint) "
+                     "WHERE id=%s", (key, content_fp, job_pk))
+    return len(rows)
+
+
+def backfill_salary_estimates(conn) -> int:
+    """Mark the salaries whose pay period was guessed from the amount (run once, when the
+    column is added), read again from each job's first copy's record. A job whose record
+    was already cleared stays unmarked."""
+    rows = conn.execute("""SELECT id, raw_json, country FROM jobs
+                           WHERE salary_min IS NOT NULL AND raw_json IS NOT NULL""").fetchall()
+    marked = [job_pk for job_pk, raw, country in rows
+              if isinstance(raw, dict) and normalise(raw, country).salary_estimated]
+    if marked:
+        conn.execute("UPDATE jobs SET salary_estimated = true WHERE id = ANY(%s)", (marked,))
+    return len(marked)
+
+
 # The follow-ups by the name a migration gives them.
-FOLLOW_UPS: dict[str, Callable] = {f.__name__: f for f in (backfill_sources, backfill_countries)}
+FOLLOW_UPS: dict[str, Callable] = {f.__name__: f for f in (
+    backfill_sources, backfill_countries, backfill_salary_estimates, backfill_title_keys)}

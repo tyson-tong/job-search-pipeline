@@ -13,7 +13,7 @@ from .dedupe import (
     jaccard,
     same_country,
     similarity_level,
-    simplify,
+    title_key,
     title_words,
 )
 
@@ -62,7 +62,7 @@ def similar_jobs(conn, job_ids: list[int]) -> dict[int, list[dict]]:
            WHERE first_seen_at > now() - make_interval(days => %s) OR id = ANY(%s)""",
         (POSSIBLE_WINDOW_DAYS, job_ids)).fetchall()
     titles = {pk: title for pk, title in rows}
-    words = {pk: set(simplify(title).split()) for pk, title in titles.items()}
+    words = {pk: set(title_key(title).split()) for pk, title in titles.items()}
     by_word: dict[str, set[int]] = {}
     for pk, title_set in words.items():
         for word in title_set:

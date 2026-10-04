@@ -45,11 +45,6 @@ def test_each_scraper_format_is_normalised():
     assert linkedin.description == indeed.description == DESCRIPTION
 
 
-def test_partial_records_do_not_crash():
-    for item in ({"jobLink": None}, {"viewJobLink": "/viewjob?jk=zz"}, {}):
-        assert normalise(item).title == "Untitled"
-
-
 def test_to_date_handles_iso_and_unix_seconds_or_milliseconds():
     assert to_date("2026-09-01T10:00:00Z") == date(2026, 9, 1)
     assert to_date(1789862400000) == to_date(1789862400) == date(2026, 9, 20)

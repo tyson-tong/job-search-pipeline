@@ -46,3 +46,25 @@ DROP INDEX IF EXISTS jobs_description_fts_idx;
 -- Migration ID: 05
 -- Never read: with a 24-hour search window a job is rarely seen twice.
 ALTER TABLE jobs DROP COLUMN IF EXISTS last_seen_at;
+
+-- Migration ID: 06
+-- The statuses jobflow knows (db.STATUSES): a typo in code fails at once instead of hiding a job.
+ALTER TABLE jobs ADD CONSTRAINT jobs_status_check CHECK (status IN (
+    'new', 'interested', 'not_interested', 'applied', 'interviewing', 'offered', 'accepted',
+    'declined', 'rejected', 'withdrawn', 'filtered', 'archived'));
+
+-- Migration ID: 07
+-- Similar jobs (every tracker refresh) and the merge rules look at jobs first seen recently.
+CREATE INDEX IF NOT EXISTS jobs_first_seen_at_idx ON jobs (first_seen_at DESC);
+
+-- Migration ID: 08
+-- A salary whose pay period the ad didn't state, so it was guessed from the amount; it never
+-- filters a job out.
+-- Then: backfill_salary_estimates
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary_estimated BOOLEAN NOT NULL DEFAULT false;
+
+-- Migration ID: 09
+-- Titles keep + and # now (dedupe.title_key), so "C++ Developer" and "C# Developer" are two
+-- titles: the keys of jobs whose title has one are worked out again, in the follow-up.
+-- Then: backfill_title_keys
+SELECT 1;
