@@ -19,6 +19,8 @@ MAX_WAIT = 60
 READ_TIMEOUT = 300
 # Settings sent when the provider accepts them, and dropped when it rejects them.
 OPTIONAL = ("response_format", "temperature")
+# Low, for answers that should come out the same each time: scores, CV edits, rankings.
+TEMPERATURE = 0.1
 
 
 class LLMError(RuntimeError):
@@ -61,12 +63,12 @@ def credentials(reviewer: bool = False) -> tuple[str, str]:
     return key, model
 
 
-def complete(system: str, user: str, *, json_mode: bool = False,
-             reviewer: bool = False) -> tuple[str, str]:
+def complete(system: str, user: str, *, json_mode: bool = False, reviewer: bool = False,
+             temperature: float = TEMPERATURE) -> tuple[str, str]:
     """Call an OpenAI-compatible chat-completions endpoint, as the reviewer if asked."""
     key, model = credentials(reviewer)
     body = {"model": model, "messages": [{"role": "system", "content": system},
-             {"role": "user", "content": user}], "temperature": 0.1}
+             {"role": "user", "content": user}], "temperature": temperature}
     if json_mode:
         body["response_format"] = {"type": "json_object"}
     attempt, timeouts = 0, 0

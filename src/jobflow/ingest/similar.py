@@ -48,33 +48,84 @@ def _ad_words(conn, job_ids: list[int]) -> dict[int, tuple[set[str], str, str | 
                 for pk, status, country, _ in rows}
 
 
+class _TitleIndex:
+    """Recent jobs' title words, and the title-alike jobs found for each job asked about,
+    kept between the tracker's refreshes: rebuilding them each time read every recent title
+    and compared each listed job with all of them. A title never changes once saved, so only
+    new jobs are read and compared; jobs that leave the window are dropped."""
+
+    def __init__(self) -> None:
+        self.words: dict[int, set[str]] = {}
+        self.by_word: dict[str, set[int]] = {}
+        # {job id: {other job id: how alike the titles are}}, at least POSSIBLE_TITLE alike,
+        # against every job in `words`: worked out when a job is first asked about, then
+        # kept up to date as jobs are added.
+        self.alike: dict[int, dict[int, float]] = {}
+        self.lock = threading.Lock()
+
+    def _candidates(self, pk: int) -> set[int]:
+        """Jobs sharing one of the title's longer words (or any word of a short title)."""
+        return set().union(*(self.by_word.get(w, set())
+                             for w in title_words(" ".join(self.words[pk])))) - {pk}
+
+    def _alike(self, pk: int, others) -> dict[int, float]:
+        found = {}
+        for other in others:
+            alike = jaccard(self.words[pk], self.words[other])
+            if alike >= POSSIBLE_TITLE:
+                found[other] = alike
+        return found
+
+    def update(self, conn, job_ids: list[int]) -> set[int]:
+        """Bring the index in line with the jobs first seen in POSSIBLE_WINDOW_DAYS, and
+        job_ids; returns their ids. Call with the lock held."""
+        current = {pk for (pk,) in conn.execute(
+            """SELECT id FROM jobs
+               WHERE first_seen_at > now() - make_interval(days => %s) OR id = ANY(%s)""",
+            (POSSIBLE_WINDOW_DAYS, job_ids)).fetchall()}
+        for pk in self.words.keys() - current:   # out of the window
+            for word in self.words.pop(pk):
+                self.by_word[word].discard(pk)
+            self.alike.pop(pk, None)
+        added = sorted(current - self.words.keys())
+        for pk, title in conn.execute("SELECT id, title FROM jobs WHERE id = ANY(%s)",
+                                      (added,)).fetchall():
+            self.words[pk] = set(title_key(title).split())
+            for word in self.words[pk]:
+                self.by_word.setdefault(word, set()).add(pk)
+        # Each new job joins the alike jobs of the jobs already worked out.
+        for pk in added:
+            for other, alike in self._alike(pk, self._candidates(pk) & self.alike.keys()).items():
+                self.alike[other][pk] = alike
+        return current
+
+    def similar(self, pk: int, current: set[int]) -> dict[int, float]:
+        """{job id: how alike its title is} for this job's title-alike jobs in `current`.
+        Call with the lock held, after update."""
+        if pk not in self.alike:
+            self.alike[pk] = self._alike(pk, self._candidates(pk))
+        return {other: alike for other, alike in self.alike[pk].items() if other in current}
+
+
+_TITLES = _TitleIndex()
+
+
 def similar_jobs(conn, job_ids: list[int]) -> dict[int, list[dict]]:
     """Similar ads for each of these jobs, most alike first: {job id: [{id, status,
-    country, same_country, level, title_similarity, similarity}]}. Titles first, then
-    ads only for jobs with a close title (only those not read before: _ad_words). Only
-    same_country matches are similar jobs; a job in another country is listed only when its
-    ad is at least HIGHLY_SIMILAR, since the tracker calls it the same ad there (one role
-    advertised in several countries)."""
+    country, same_country, level, title_similarity, similarity}]}. Titles first (from
+    _TITLES), then ads only for jobs with a close title (only those not read before:
+    _ad_words). Only same_country matches are similar jobs; a job in another country is
+    listed only when its ad is at least HIGHLY_SIMILAR, since the tracker calls it the same
+    ad there (one role advertised in several countries)."""
     if not job_ids:
         return {}
-    rows = conn.execute(
-        """SELECT id, title FROM jobs
-           WHERE first_seen_at > now() - make_interval(days => %s) OR id = ANY(%s)""",
-        (POSSIBLE_WINDOW_DAYS, job_ids)).fetchall()
-    titles = {pk: title for pk, title in rows}
-    words = {pk: set(title_key(title).split()) for pk, title in titles.items()}
-    by_word: dict[str, set[int]] = {}
-    for pk, title_set in words.items():
-        for word in title_set:
-            by_word.setdefault(word, set()).add(pk)
     pairs: dict[tuple[int, int], float] = {}
-    for pk in job_ids:
-        # Candidates share one of the title's longer words (or any word of a short title).
-        candidates = set().union(*(by_word.get(w, set()) for w in title_words(titles.get(pk))))
-        for other in candidates - {pk}:
-            alike = jaccard(words[pk], words[other])
-            if alike >= POSSIBLE_TITLE:
-                pairs[(pk, other)] = alike
+    with _TITLES.lock:
+        current = _TITLES.update(conn, job_ids)
+        for pk in job_ids:
+            if pk in current:
+                pairs.update(((pk, other), alike)
+                             for other, alike in _TITLES.similar(pk, current).items())
     if not pairs:
         return {}
     needed = sorted({pk for pair in pairs for pk in pair})

@@ -46,10 +46,9 @@ def check_keys(reviewer: bool = False, web_search: bool = False) -> None:
                            "Tavily company research")
 
 
-DESCRIPTION = ("First time: init. Every day: web (job tracker, including your searches), "
-               "tailor-cv, cover-letter (optional), interview-prep, and skill-gaps. After "
-               "editing config/searches.toml: update-searches. The daily GitHub Action runs "
-               "ingest; status shows what it uses.")
+DESCRIPTION = ("First time: init. Every day: web, tailor-cv, cover-letter (optional), "
+               "interview-prep, and skill-gaps. After editing config/searches.toml: "
+               "update-searches. The rules each command follows are in docs/rules.md.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -65,66 +64,47 @@ def build_parser() -> argparse.ArgumentParser:
         parser.set_defaults(func=func)
         return parser
 
-    command("init", run_init, "Create config/.env, config/profile.toml, and config/searches.toml "
-            "from the templates (never overwrites existing files)")
-    ingest = command("ingest", run_ingest, "Run the searches in config/searches.toml on Apify now "
-                     "and import the results (the daily Action runs this; costs Apify credits)")
+    command("init", run_init, "Create your settings files from the templates (first time only)")
+    ingest = command("ingest", run_ingest, "Run your searches on Apify now and import the "
+                     "results (the daily import does this; costs Apify credits)")
     ingest.add_argument("--search", help="Only this search name")
     ingest.add_argument("--site", choices=SITES, help="Only this job site")
     ingest.add_argument("--posted-within-days", type=int, choices=POSTED_WITHIN_DAYS,
-                        metavar="DAYS", help="Override every search's posted window for this "
-                        "import only (1, 7, 14, or 30 days; does not change your saved searches)")
-    update = command("update-searches", run_update_searches, "After editing config/searches.toml: "
-                     "check it, filter Inbox jobs its searches would now filter, bring back "
-                     "Filtered jobs they would no longer filter, and update the GitHub copy "
-                     "the daily import reads (with your timezone); each of the last two goes "
-                     "ahead even if the other fails")
+                        metavar="DAYS", help="Every search's posted window (1, 7, 14, or 30 "
+                        "days), for this import only")
+    update = command("update-searches", run_update_searches, "After editing "
+                     "config/searches.toml: check it, update your jobs, and publish it to the "
+                     "daily import")
     update.add_argument("--dry-run", action="store_true",
-                        help="Check the file and list the jobs that would be filtered or brought "
-                        "back; publish, move, and change nothing (it stops if the database "
-                        "tables are out of date)")
-    web = command("web", run_web, "Run the local job tracker web server")
-    web.add_argument("--port", type=int, default=8765,
-                     help="Port to serve the tracker on (default: 8765)")
-    tailor = command("tailor-cv", run_tailor_cv, "Draft a tailored CV, reviewed and "
-                     "fact-checked, for every Interested job that doesn't have one yet")
-    tailor.add_argument("--cv", help="RenderCV YAML CV to use for every job, one of those cvs "
-                        "in config/profile.toml names, by file name or short name (CV_dev.yaml "
-                        "or dev); defaults to each job's best-matching YAML CV (an unscored "
-                        "job is scored first)")
+                        help="Check and list what would change; change nothing")
+    web = command("web", run_web, "Run the job tracker on this machine")
+    web.add_argument("--port", type=int, default=8765, help="Default: 8765")
+    tailor = command("tailor-cv", run_tailor_cv, "A tailored, fact-checked CV for each "
+                     "Interested job without one")
+    tailor.add_argument("--cv", help="The YAML CV to use for every job, by file or short name "
+                        "(CV_dev.yaml or dev); default: each job's best-matching one")
     tailor.add_argument("--max-pages", type=positive_int, default=1, metavar="N",
-                        help="Longest the CV may be as RenderCV lays it out; longer ones have "
-                        "their least relevant bullets cut until they fit (default: 1)")
+                        help="Pages the CV may take; longer ones are cut to fit (default: 1)")
     tailor.add_argument("--format", choices=("pdf", "docx", "latex"), default="pdf",
-                        help="The YAML draft and its PDF, rendered by RenderCV, are always "
-                        "written; docx also writes a .docx, and latex a .tex to compile. "
-                        "Default: pdf")
-    letter = command("cover-letter", run_cover_letter, "Optional: draft a cover letter, "
-                     "reviewed and fact-checked, for every Interested job that doesn't have "
-                     "one yet")
-    letter.add_argument("--cv", help="CV to write from, in any format, for every job, one of "
-                        "those cvs in config/profile.toml names, by file name or short name; "
-                        "defaults to each job's best-matching CV (an unscored job is scored "
-                        "first)")
-    prep = command("interview-prep", run_interview_prep, "Generate an interview briefing HTML "
-                   "for every Interviewing job that doesn't have one yet")
-    for each_job, also in ((tailor, " (or applied, interviewing, or offered)"),
-                           (letter, " (or applied, interviewing, or offered)"), (prep, "")):
+                        help="Also write the CV as a .docx or .tex (default: pdf, the YAML and "
+                        "its PDF only)")
+    letter = command("cover-letter", run_cover_letter, "Optional: a fact-checked cover letter "
+                     "for each Interested job without one")
+    letter.add_argument("--cv", help="The CV to write from for every job, by file or short "
+                        "name; default: each job's best-matching one")
+    prep = command("interview-prep", run_interview_prep, "An interview briefing for each "
+                   "Interviewing job without one")
+    for each_job in (tailor, letter, prep):
         each_job.add_argument("--job", type=positive_int, action="append", metavar="ID",
-                              help="Only this job, by the number the tracker's job panel shows "
-                              f"(#42); repeat for several. It must have the command's status{also}")
+                              help="Only this job (its number in the job panel); repeat for "
+                              "several")
         each_job.add_argument("--redo", action="store_true",
-                              help="With --job: do those jobs again even if they're done, "
-                              "replacing their files (and any fix you made by hand)")
-    command("skill-gaps", run_skill_gaps, "Report the skills your CVs don't show that the "
-            "scored jobs you're pursuing (interested, applied, interviewing, offered) ask for "
-            "most, with how to close each gap")
-    command("clean-up", run_clean_up, "Delete the output folders of Not interested, Withdrawn, "
-            "and Archived jobs you never applied for, after asking you to confirm (the jobs "
-            "stay in the database; a job you applied for keeps the CV and letter you sent)")
-    command("status", run_status, "Show the daily GitHub import, read from GitHub: "
-            "whether it's on, its last run, its secrets, whether its searches and timezone match "
-            "yours, and which job sites it calls; and, from your database, why recent Apify "
+                              help="With --job: do those jobs again, replacing their files")
+    command("skill-gaps", run_skill_gaps, "The skills the jobs you're pursuing ask for that "
+            "your CVs don't show")
+    command("clean-up", run_clean_up, "Delete the output folders of jobs you're done with, "
+            "after you confirm")
+    command("status", run_status, "What the daily GitHub import uses, and why recent Apify "
             "runs failed")
     commands = dict(sub.choices)   # every command but help itself
 
@@ -211,16 +191,8 @@ def manual(commands: dict[str, argparse.ArgumentParser], command: str | None = N
         section("DESCRIPTION", para(DESCRIPTION)),
         section("COMMANDS", entries),
         section("NOTES", para(
-            "tailor-cv, cover-letter, and interview-prep work on two jobs at a time and skip "
-            "jobs they've already done (a job that failed, whose draft failed the fact "
-            "check or couldn't be rendered, or whose draft, letter, or briefing was deleted "
-            "is tried again); --job ID limits them to one job (or a few), by its number in "
-            "the job panel (for tailor-cv and cover-letter, also one you've applied for, are "
-            "interviewing for, or were offered), and --redo with it does those jobs again "
-            "even if they're done. Only one run of each can go at a time, and one with more "
-            "than 5 jobs to do asks before it starts (unless you name them with --job). Every "
-            "command except init, help, status, and update-searches --dry-run brings the "
-            "database tables up to date when it starts.")),
+            "Which jobs tailor-cv, cover-letter, and interview-prep do (and do again), which "
+            "statuses --job accepts, and every other rule: docs/rules.md.")),
         section("SEE ALSO", "README.md, docs/setup.md, docs/searches.md, docs/rules.md, "
                 "docs/structure.html"),
     ])

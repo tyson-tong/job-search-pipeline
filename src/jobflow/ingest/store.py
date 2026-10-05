@@ -84,10 +84,11 @@ def _same_ad(conn, title: str | None, description: str | None, location: str | N
     patterns = title_patterns(title)
     if not (description and patterns and title != "Untitled"):
         return None
-    # Titles first; descriptions are only loaded for the same title.
+    # Titles first, narrowed in SQL to those with every one of this title's words (as the
+    # same title has); descriptions are only loaded for the same title.
     rows = conn.execute(
         """SELECT id, title FROM jobs
-           WHERE first_seen_at > now() - make_interval(days => %s) AND title ILIKE ANY(%s)
+           WHERE first_seen_at > now() - make_interval(days => %s) AND title ILIKE ALL(%s)
            ORDER BY first_seen_at DESC""", (FUZZY_WINDOW_DAYS, patterns)).fetchall()
     close = [pk for pk, other in rows if title_key(other) == title_key(title)]
     if not close:

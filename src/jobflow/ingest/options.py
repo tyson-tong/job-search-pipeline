@@ -69,7 +69,8 @@ COUNTRY_ALIASES = {"UK": "GB"}
 
 # Each country's currency, and roughly how many US dollars one unit is worth. Salaries are
 # stored in the posting's currency; the tracker converts them with these fixed rates to
-# compare and sort in one currency. Approximate: update them if rates move a lot.
+# compare and sort in one currency. Approximate, as set in September 2026: update them if
+# rates move a lot.
 CURRENCIES = {"AU": "AUD", "NZ": "NZD", "SG": "SGD", "HK": "HKD", "GB": "GBP", "US": "USD"}
 USD_PER_UNIT = {"AUD": 0.66, "NZD": 0.60, "SGD": 0.77, "HKD": 0.128, "GBP": 1.30, "USD": 1.0}
 

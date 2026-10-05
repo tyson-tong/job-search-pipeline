@@ -102,7 +102,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
 <main>
 
 <h1>Job Search Workflow Structure</h1>
-<p class="lede">How the parts fit together, from a daily scrape of LinkedIn, Indeed, and Seek to a scored job, a tailored CV, an optional cover letter, an interview briefing, and a skill-gap report. File paths are relative to <code>src/jobflow/</code>.</p>
+<p class="lede">How the parts fit together, from a daily scrape of LinkedIn, Indeed, and Seek to a scored job, a tailored CV, an optional cover letter, an interview briefing, and a skill-gap report. File paths are relative to <code>src/jobflow/</code>. This page shows the parts; the rules they follow (thresholds, windows, which jobs each command does) are in <a href="rules.md">rules.md</a>, and the search settings in <a href="searches.md">searches.md</a>.</p>
 <nav>
   <a href="#flow">Flow</a><a href="#modules">Modules</a><a href="#searches">Searches</a>
   <a href="#dedupe">Duplicates</a><a href="#database">Database</a><a href="#cv">CV work</a>
@@ -137,9 +137,9 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="lane-title">On your machine, when you choose</div>
     <div class="lane-sub">CVs never leave it, except the text sent to your LLM</div>
     <div class="step"><b>Pick and track</b><span class="mod">web/ · jobflow web</span>
-      <div class="what">Browser tracker on 127.0.0.1: Inbox of new jobs (Interested or Not interested, with Score selected to help decide), My jobs, Filtered and Not interested tabs to change your mind about jobs until they're <a href="rules.md#archiving">archived</a>, filters, statuses, notes, follow-ups, similar-job warnings. Edits are saved only when you click Save, in one transaction, with a check for changes made elsewhere since loading; the view auto-refreshes when there are no drafts.</div></div>
+      <div class="what">Browser tracker on 127.0.0.1: Inbox of new jobs (Interested or Not interested, with Score selected to help decide), My jobs, Filtered and Not interested tabs to change your mind about jobs until they're <a href="rules.md#archiving">archived</a>, filters, statuses, notes, follow-ups, similar-job warnings, saved when you click Save (<a href="rules.md#the-tracker">rules</a>).</div></div>
     <div class="step"><b>Score jobs against each CV</b><span class="mod">candidate/matching.py · Score all jobs in jobflow web</span>
-      <div class="what">Jobs you're pursuing (Interested onwards), and Inbox jobs you pick with Score selected; each scored once against each CV, and a job you're pursuing again against a CV you've edited when you click Rescore edited CVs. Runs in the background from the tracker. Requirements with verified CV quotes; score computed from required and preferred coverage.</div></div>
+      <div class="what">Jobs you're pursuing, and Inbox jobs you pick, in the background from the tracker: requirements with verified CV quotes, and a score computed from them (<a href="rules.md#match-scores">rules</a>).</div></div>
     <div class="step"><b>See your skill gaps</b><span class="mod">candidate/skill_gaps.py · jobflow skill-gaps</span>
       <div class="what">From the stored scores of the jobs you're pursuing (Interested onwards, until closed), with one LLM call: the skills they ask for that your best-matching CVs don't show, ranked, with how to close each gap. Written to <code>output/skill-gaps-&lt;date&gt;.html</code>.</div></div>
     <div class="step"><b>Tailor a CV</b><span class="mod">candidate/tailoring.py · jobflow tailor-cv</span>
@@ -195,28 +195,16 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
 </table></div>
 
 <h2 id="searches">From searches to site inputs</h2>
-<p>Each site filters differently, so a search is translated to what each site can do. Filters applied <em>on the site</em> cost nothing for excluded jobs; filters applied <em>after import</em> only exclude a job whose value is known, and store it with status <code>filtered</code> and a reason.</p>
-<div class="table-wrap"><table>
-  <tr><th>Setting</th><th>LinkedIn</th><th>Indeed</th><th>Seek</th></tr>
-  <tr><td>Terms, country, city, radius</td><td class="yes">on site</td><td class="yes">on site</td><td class="yes">on site (AU, NZ, SG, HK)</td></tr>
-  <tr><td>Salary</td><td>after import</td><td>after import</td><td>after import</td></tr>
-  <tr><td>Job type, work arrangement</td><td>after import</td><td>after import</td><td class="yes">on site</td></tr>
-  <tr><td>Seek classifications</td><td class="no">not available</td><td class="no">not available</td><td class="yes">on site</td></tr>
-  <tr><td>Excluded title terms, excluded employers</td><td>after import</td><td>after import</td><td>after import</td></tr>
-  <tr><td>Posted: 24 hours, 1 week</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-  <tr><td>Posted: 2 weeks</td><td class="no">uses 1 month, then filters</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-  <tr><td>Posted: 1 month</td><td class="yes">✓</td><td class="no">uses any time, then filters</td><td class="yes">✓</td></tr>
-</table></div>
-<p class="small muted" style="margin-top:8px">LinkedIn's AI search dropped its salary, job-type, workplace, and sort filters; the Indeed actor never had them. The tracker's Searches tab previews every run and notes each widened window or skipped option.</p>
+<p>Each search in <code>config/searches.toml</code> is validated (<code>ingest/searches.py</code>) and translated into each site's actor input (<code>ingest/runs.py</code>, with the values in <code>ingest/options.py</code>). Filters a site can't apply are applied after import (<code>ingest/filters.py</code>). Which site applies which filter, and how each date window is handled: <a href="searches.md#which-site-applies-which-filter">searches.md</a>. The tracker's Searches tab previews every run.</p>
 
 <h2 id="dedupe">How duplicates are found</h2>
-<p>Every scraped record is normalised, then checked in order. The first match wins; no match creates a new job. The exact rules, thresholds, and time windows are in <a href="rules.md#duplicates">rules.md</a>.</p>
+<p>Every scraped record is normalised (<code>ingest/sources.py</code>), then checked against the jobs already saved (<code>ingest/store.py</code>, with the comparisons in <code>ingest/dedupe.py</code>). The first match wins; no match creates a new job. The rules, thresholds, and time windows are in <a href="rules.md#duplicates">rules.md</a>.</p>
 <div class="steps">
-  <div class="card"><h3>Same site copy</h3>This site's ID (e.g. <code>seek:81234567</code>) is already in <code>job_sources</code>, or, for a posting without an ID, the same URL without tracking parameters.</div>
-  <div class="card"><h3>Exact content</h3>Same company, title, location, and ad, in the same country. Catches exact reposts.</div>
-  <div class="card"><h3>Same job on another site</h3>Same employer (ignoring "Pty Ltd" etc.) and title in the same city and country, seen recently, where one ad is a cut-down or padded copy of the other: the same job on LinkedIn, Indeed, and Seek.</div>
-  <div class="card"><h3>Same ad, same title</h3>The same title and a near-identical ad in the same city and country, seen recently, under any spelling of the employer.</div>
-  <div class="card safety"><h3>Safety net: similar jobs (never merged)</h3>The merge is strict, so a recruiter re-post with an edited ad, a reworded title, or a suburb can stay separate. <code>jobflow web</code> lists jobs with alike titles and ads as similar or highly similar, ignoring employer and city, and warns if one is already applied for. The same ad in another country is shown alongside, not as similar. See <a href="rules.md#similar-jobs">rules.md</a>.</div>
+  <div class="card"><h3>Same site copy</h3>This site's ID, or link, on a copy already saved.</div>
+  <div class="card"><h3>Exact content</h3>The same ad, word for word.</div>
+  <div class="card"><h3>Same job on another site</h3>The same employer and title, one ad a cut-down or padded copy of the other.</div>
+  <div class="card"><h3>Same ad, same title</h3>A near-identical ad under any spelling of the employer.</div>
+  <div class="card safety"><h3>Safety net: similar jobs (never merged)</h3>The tracker lists jobs the merge kept apart that may be one role (<code>ingest/similar.py</code>, <a href="rules.md#similar-jobs">rules</a>).</div>
 </div>
 <p style="margin-top:14px">A merged job keeps the first site's details (and the longest description). Because status, notes, and scores belong to the job, marking it <code>applied</code> covers every site it was listed on:</p>
 <div class="example">jobs              id 42   source linkedin   "Data Analyst"   Acme Pty Ltd
@@ -226,7 +214,7 @@ job_observations  42 × run 118 (LinkedIn), 42 × run 119 (Seek)   original reco
 applications      42   notes "2026-09-25: Applied via referral"</div>
 
 <h2 id="database">Database</h2>
-<p>Defined by the SQL files in <code>migrations/</code>; each file can hold ordered, file-scoped migration IDs (starting at <code>01</code>). Every command except <code>init</code>, <code>help</code>, <code>status</code>, and <code>update-searches --dry-run</code> applies each file/ID once on start (one command at a time, under a lock), in filename and ID order, tracking it in <code>schema_migrations</code>.</p>
+<p>Defined by the SQL files in <code>migrations/</code>; each file holds ordered, file-scoped migration IDs (starting at <code>01</code>), each applied once, in filename and ID order, and recorded in <code>schema_migrations</code> (<code>db.migrate</code>; <a href="rules.md#database-tables">when</a>).</p>
 <div class="db-grid">
   <div class="tbl"><h3>scraper_runs</h3><p>One per Apify run.</p><ul>
     <li><span class="k">id</span>, apify_run_id, dataset_id</li><li>actor_id <span class="muted">site:actor</span></li>
@@ -248,34 +236,27 @@ applications      42   notes "2026-09-25: Applied via referral"</div>
     <li><span class="k">job_id</span> → jobs</li><li>notes <span class="muted">dated</span></li><li>applied_at, follow_up_on, updated_at</li></ul></div>
   <div class="tbl"><h3>status_history</h3><p>Every status change.</p><ul>
     <li>job_id → jobs</li><li>from_status, to_status</li><li>via, changed_at</li></ul></div>
-  <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, cover-letter, interview-prep; the last three skip jobs already logged, except a draft that failed the fact check or that RenderCV couldn't render (NEEDS-FIX), which is drafted again unless you fixed it by hand (FIXED-BY-HAND). A logged job whose output was deleted (its YAML draft or CV_REVIEW.md, cover-letter.docx, or interview-prep.html) is done again.</p><ul>
+  <div class="tbl"><h3>workflow_runs</h3><p>Log of match, tailor, cover-letter, and interview-prep runs: SUCCEEDED, NEEDS-FIX, or FIXED-BY-HAND. The latest of each kind tells <code>batch.py</code> which jobs are done (<a href="rules.md#which-jobs-the-commands-do">rules</a>).</p><ul>
     <li>job_id → jobs, kind, status</li><li>model_name, finished_at</li></ul></div>
 </div>
-<p class="small muted" style="margin-top:10px">Statuses: new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered, archived. My jobs shows interested, applied, interviewing, offered, and accepted by default; not interested, filtered, and archived jobs never appear there. Only jobs you're pursuing (interested, applied, interviewing, offered) and Inbox jobs you pick are scored; Score all jobs and Rescore edited CVs cover every job you're pursuing. Filtered is set by imports and <code>jobflow update-searches</code>; the tracker's Filtered tab marks a job Interested or Not interested, or moves several back to the Inbox; <code>update-searches</code> never filters a job you moved out of Filtered again. The Not interested tab marks a job Interested, or moves several back to the Inbox. Archived is set by <code>jobflow ingest</code> and <code>jobflow web</code> on filtered, not interested, and untriaged Inbox jobs once they're old enough (<a href="rules.md#archiving">rules.md</a>); archived jobs stay in the database and still match as duplicates, but are in no tab, and their ad is cleared later to save space.</p>
+<p class="small muted" style="margin-top:10px">Statuses (<code>db.STATUSES</code>, and the <code>jobs_status_check</code> constraint): new (the Inbox), interested, not interested, applied, interviewing, offered, accepted, declined, rejected, withdrawn, filtered, archived. You set the first ten in the tracker; imports and <code>update-searches</code> set filtered, and upkeep sets archived. What each tab shows, and when a job is filtered or archived: <a href="rules.md">rules.md</a>.</p>
 
 <h2 id="cv">CV work</h2>
 <div class="grid">
-  <div class="card"><h3>Matching</h3>
-    <ul><li>LLM lists requirements: required or preferred; matched, partial, or not evidenced; with CV quotes.</li>
-    <li>Each quote is checked against the CV file; unverifiable ones downgrade the item.</li>
-    <li>Score = matched 1, partial 0.5, averaged per group, weighted by <code>required_weight</code> / <code>preferred_weight</code>.</li>
-    <li>Jobs you're pursuing, and Inbox jobs you pick with Score selected, against the 1 or 2 CVs <code>cvs</code> names (a YAML CV's <code>cv</code> section only); each is scored once against each CV; a score made against an earlier version of a CV is marked, and Rescore edited CVs redoes it; a CV added or renamed later is scored the next time.</li></ul></div>
-  <div class="card"><h3>Tailoring</h3>
-    <ul><li>Runs for every Interested job without a draft; jobs already done are skipped, unless their YAML draft or CV_REVIEW.md was deleted. <code>--job</code> also takes a job you've applied for, are interviewing for, or were offered. A draft that failed the fact check, or that RenderCV couldn't render, is drafted again, unless you've edited it. <code>--format docx</code> or <code>latex</code> for a job already done writes that file from its re-checked draft, with no LLM call.</li>
-    <li>Uses each job's best-matching RenderCV YAML CV unless <code>--cv</code> is given (an unscored job is scored first).</li>
-    <li>A hiring-manager reviewer revises the draft; the revision is kept only if it has fewer fact-check errors than the first draft, or as many and no more warnings.</li>
-    <li>Only the <code>cv</code> section goes to the LLM; design and settings are kept.</li>
-    <li>The fact check, in code, compares the draft with the original: changed facts, made-up numbers, and new markup are errors (no PDF is rendered), new terms are warnings. Each check is listed in <a href="rules.md#tailored-cvs">rules.md</a>. A draft with errors leaves no older PDF, .docx, or .tex beside it.</li>
-    <li>Always the YAML draft and RenderCV's PDF of it (no PDF if the fact check found errors); <code>--format docx</code> or <code>latex</code> adds a .docx or a .tex.</li>
-    <li>A PDF over 1 page (or <code>--max-pages N</code>): the fewest of the least relevant bullets that make it fit are cut, found by re-rendering in a binary search (never an entry's last bullet).</li>
-    <li>Errors, warnings, the reviewer's critique, and any bullets cut are written to <code>CV_REVIEW.md</code>.</li>
-    <li>Optional cover letter (<code>jobflow cover-letter</code>): reviewed and checked the same way (<a href="rules.md#cover-letters-and-the-review">rules.md</a>).</li></ul></div>
-  <div class="card"><h3>Interview prep</h3>
+  <div class="card"><h3>Matching</h3><code>candidate/matching.py</code>
+    <ul><li>The LLM lists the job's requirements and the CV quotes that show each.</li>
+    <li>Code checks every quote against the CV and computes the score.</li></ul></div>
+  <div class="card"><h3>Tailoring</h3><code>candidate/tailoring.py</code>
+    <ul><li>The LLM drafts from the CV's <code>cv</code> section; a reviewer model revises (<code>review.py</code>).</li>
+    <li>Code fact-checks the draft against the original (<code>factcheck.py</code>).</li>
+    <li>RenderCV renders it, and code cuts bullets to fit the page limit (<code>render.py</code>); <code>documents.py</code> lays out .docx and .tex.</li>
+    <li>The cover letter (<code>cover_letter.py</code>) goes through the same review and check.</li></ul></div>
+  <div class="card"><h3>Interview prep</h3><code>candidate/interview.py</code>
     <ul><li>Tavily web search for company facts and news.</li>
     <li>Four agents in parallel: company, role, CV evidence, likely questions.</li>
-    <li>An editor agent merges them into one briefing with sources.</li>
-    <li>Runs for every Interviewing job without a briefing; jobs already done are skipped.</li></ul></div>
+    <li>An editor agent merges them into one briefing with sources.</li></ul></div>
 </div>
+<p class="small muted" style="margin-top:8px">What each check catches, which drafts are kept, and which jobs each command does: <a href="rules.md#tailored-cvs">rules.md</a>.</p>
 
 <h2 id="config">Config and secrets</h2>
 <div class="table-wrap"><table>
@@ -291,28 +272,23 @@ applications      42   notes "2026-09-25: Applied via referral"</div>
 <p class="small muted" style="margin-top:8px"><code>jobflow init</code> creates <code>config/.env</code>, <code>config/profile.toml</code>, and <code>config/searches.toml</code> from the templates, never overwriting existing files.</p>
 <p class="small muted" style="margin-top:8px"><code>config/.env</code>, <code>config/profile.toml</code>, <code>config/searches.toml</code>, <code>output/</code>, and <code>cv/</code> are ignored by Git; the <code>.example</code> files show what goes in them.</p>
 
-<h2 id="cost">Keeping Apify cost down</h2>
-<div class="grid">
-  <div class="card"><h3>Ask for less</h3><ul><li><code>posted_within_days = 1</code> for daily runs.</li><li><code>max_results</code> per run.</li><li><code>max_cost_usd</code> hard cap per run.</li><li>Only the <code>sites</code> you list are called.</li></ul></div>
-  <div class="card"><h3>Filter on the site</h3><ul><li>Seek applies job type, arrangement, and Seek classifications before charging. Salary bounds are applied after import so salaryless postings are retained.</li><li>LinkedIn skips company-page scraping.</li></ul></div>
-  <div class="card"><h3>Still paid for</h3><ul><li>Jobs you already have (actors can't skip them).</li><li>The same job on several sites, or matched by two terms.</li><li>Extra results from a widened date window.</li></ul></div>
-</div>
-<p class="small muted" style="margin-top:8px">Each run's actual cost is stored in <code>scraper_runs.cost_usd</code>.</p>
+<h2 id="cost">Apify cost</h2>
+<p>Each run's actual cost is stored in <code>scraper_runs.cost_usd</code>. How runs are counted, and the settings that keep cost down: <a href="searches.md#cost">searches.md</a>.</p>
 
 <h2 id="commands">Commands</h2>
+<p><code>uv run jobflow help</code> lists every command and option; the README has the daily routine.</p>
 <div class="table-wrap"><table>
-  <tr><th>Command</th><th>Does</th><th>Module</th></tr>
-  <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>Run searches on Apify and import (<code>--posted-within-days</code> overrides every search's window for one import, to catch up)</td><td>ingest/apify.py → store.py, upkeep.py</td></tr>
-  <tr><td><code>jobflow update-searches</code></td><td>Check config/searches.toml, filter Inbox jobs the searches would now filter, bring back Filtered jobs they would now keep, and update the JOBFLOW_SEARCHES and JOBFLOW_TIMEZONE GitHub variables (updating your jobs and GitHub are separate: one failing doesn't stop the other)</td><td>github.py → ingest/refilter.py</td></tr>
-  <tr><td><code>jobflow web</code></td><td>Job tracker: score, browse, filter, track, check searches</td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
-  <tr><td><code>jobflow tailor-cv</code></td><td>Reviewed, fact-checked CVs for Interested jobs (or only those <code>--job ID</code> names; <code>--redo</code> does them again)</td><td>candidate/tailoring.py</td></tr>
-  <tr><td><code>jobflow cover-letter</code></td><td>Optional reviewed, fact-checked cover letters for Interested jobs (or only those <code>--job ID</code> names; <code>--redo</code> does them again)</td><td>candidate/cover_letter.py</td></tr>
-  <tr><td><code>jobflow interview-prep</code></td><td>Interview briefing HTML for Interviewing jobs (or only those <code>--job ID</code> names; <code>--redo</code> does them again)</td><td>candidate/interview.py</td></tr>
-  <tr><td><code>jobflow clean-up</code></td><td>Delete output folders of Not interested, Withdrawn, and Archived jobs you never applied for, after you confirm</td><td>cleanup.py</td></tr>
-  <tr><td><code>jobflow help [COMMAND]</code></td><td>Every command with its options, like a manual page (or one command's)</td><td>cli.py</td></tr>
-  <tr><td><code>jobflow status</code></td><td>Show the daily import, read from GitHub: on or off, last run, secrets, whether its searches and timezone match yours, and the sites it calls; and, from the database, why recent Apify runs failed</td><td>github.py (gh), ingest/store.py</td></tr>
-  <tr><td><code>jobflow init</code></td><td>Create config/.env, config/profile.toml, and config/searches.toml from the templates (first time only)</td><td>cli.py → settings.py</td></tr>
-  <tr><td><code>jobflow skill-gaps</code></td><td>Skill-gap report HTML from the scored jobs you're pursuing</td><td>candidate/skill_gaps.py</td></tr>
+  <tr><th>Command</th><th>Module</th></tr>
+  <tr><td><code>jobflow ingest</code> <span class="muted">(daily Action)</span></td><td>ingest/apify.py → store.py, upkeep.py</td></tr>
+  <tr><td><code>jobflow update-searches</code></td><td>github.py → ingest/refilter.py</td></tr>
+  <tr><td><code>jobflow status</code></td><td>github.py (gh), ingest/store.py</td></tr>
+  <tr><td><code>jobflow web</code></td><td>web/, candidate/matching.py, ingest/report.py</td></tr>
+  <tr><td><code>jobflow tailor-cv</code></td><td>batch.py → candidate/tailoring.py</td></tr>
+  <tr><td><code>jobflow cover-letter</code></td><td>batch.py → candidate/cover_letter.py</td></tr>
+  <tr><td><code>jobflow interview-prep</code></td><td>batch.py → candidate/interview.py</td></tr>
+  <tr><td><code>jobflow skill-gaps</code></td><td>candidate/skill_gaps.py</td></tr>
+  <tr><td><code>jobflow clean-up</code></td><td>cleanup.py</td></tr>
+  <tr><td><code>jobflow init</code>, <code>jobflow help</code></td><td>cli.py → settings.py</td></tr>
 </table></div>
 
 <footer>See README.md for the daily routine, docs/setup.md for setup, docs/searches.md for search settings, and docs/rules.md for the rules.</footer>

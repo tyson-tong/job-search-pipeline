@@ -212,12 +212,12 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
         print(f"Not started, to finish within {INGEST_MINUTES} minutes: {', '.join(late)}",
               file=sys.stderr)
     if skipped:
-        raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed, and the other "
-                         f"{len(skipped)} weren't started: the error is your Apify account's "
-                         "(its token, or its monthly usage limit), so they would fail too")
+        raise RuntimeError(f"{len(failed)} of {len(runs)} Apify runs failed, and the other "
+                           f"{len(skipped)} weren't started: the error is your Apify account's "
+                           "(its token, or its monthly usage limit), so they would fail too")
     if failed or late:
-        raise SystemExit(f"{len(failed)} of {len(runs)} Apify runs failed"
-                         + (f", and {len(late)} weren't started, to finish within "
-                            f"{INGEST_MINUTES} minutes: search fewer terms or places per site, or "
-                            "lower APIFY_MAX_WAIT_MINUTES (for the daily import, its GitHub variable)"
-                            if late else ""))
+        raise RuntimeError(f"{len(failed)} of {len(runs)} Apify runs failed"
+                           + (f", and {len(late)} weren't started, to finish within "
+                              f"{INGEST_MINUTES} minutes: search fewer terms or places per site, or "
+                              "lower APIFY_MAX_WAIT_MINUTES (for the daily import, its GitHub variable)"
+                              if late else ""))

@@ -16,6 +16,10 @@ from .research import research
 from .review import record_run, revise, write_review
 from .tailoring import load_source
 
+# Higher than the other LLM calls': at the default, letters read flat and alike. The fact
+# check (check_letter) guards the facts however the letter is worded.
+LETTER_TEMPERATURE = 0.5
+
 
 class LetterSource(NamedTuple):
     """The job, the CV variant to write from, why it was chosen, the CV to check the letter
@@ -69,7 +73,8 @@ def _draft(job: dict, cv: str, sources: list[dict]) -> tuple[str, str]:
         "or research."}
     content, model = complete("You write specific, confident, truthful cover letters. Never add "
                               "facts that are not in the supplied material.",
-                              json.dumps(prompt, ensure_ascii=False))
+                              json.dumps(prompt, ensure_ascii=False),
+                              temperature=LETTER_TEMPERATURE)
     return content.strip(), model
 
 
@@ -87,7 +92,7 @@ def _review(job: dict, cv: str, letter: str, sources: list[dict]) -> tuple[dict,
     content, model = complete("You are a demanding but fair hiring manager reviewing a cover "
                               "letter. Return valid JSON only.",
                               json.dumps(prompt, ensure_ascii=False), json_mode=True,
-                              reviewer=True)
+                              reviewer=True, temperature=LETTER_TEMPERATURE)   # it rewrites the letter
     return parse_json(content), model
 
 

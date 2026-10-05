@@ -103,9 +103,9 @@ def for_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = Fa
         lock.autocommit = True
         if not lock.execute("SELECT pg_try_advisory_lock(hashtext(%s))",
                             (f"jobflow {command.kind}",)).fetchone()[0]:
-            raise SystemExit(f"{command.command} is already running (in another "
-                             "terminal or window). Let it finish, then run it again for any "
-                             "jobs it didn't do.")
+            raise RuntimeError(f"{command.command} is already running (in another "
+                               "terminal or window). Let it finish, then run it again for any "
+                               "jobs it didn't do.")
         _run_jobs(command, only, redo)
 
 
@@ -293,7 +293,7 @@ def _run_todo(command: JobCommand, todo: list[tuple[int, str | None, str]]) -> N
     with _held_output() as (out, err):
         failed, skipped = run_each(todo, lambda row: one(row, out, err))
     if skipped:
-        raise SystemExit(f"Stopped: the LLM provider will refuse the other {len(skipped)} "
-                         "job(s) too. Fix that, then run the command again")
+        raise RuntimeError(f"Stopped: the LLM provider will refuse the other {len(skipped)} "
+                           "job(s) too. Fix that, then run the command again")
     if failed:
-        raise SystemExit(f"{len(failed)} of {len(todo)} failed; run the command again to retry them")
+        raise RuntimeError(f"{len(failed)} of {len(todo)} failed; run the command again to retry them")

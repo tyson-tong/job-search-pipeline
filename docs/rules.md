@@ -1,6 +1,6 @@
 # How jobflow's rules work
 
-The rules behind merging duplicates, flagging similar jobs, scoring, checking tailored CVs and cover letters, ranking skill gaps, and which jobs each command does. For a diagram of every component and table, open [structure.html](structure.html) in a browser.
+Every rule jobflow follows, in one place: merging duplicates, flagging similar jobs, archiving, scoring, checking tailored CVs and cover letters, ranking skill gaps, which jobs each command does, what a change to your searches does to your jobs, and what the tracker flags. The README and [structure.html](structure.html) link here rather than repeat these; the settings themselves are in [searches.md](searches.md).
 
 A job you're **pursuing** is one at Interested, Applied, Interviewing, or Offered.
 
@@ -17,6 +17,15 @@ The job keeps the first site's details (and the longest description). Each site'
 ## Similar jobs
 
 Merging is kept strict so two different jobs aren't combined, which means some copies stay separate: a repost with an edited ad, a recruiter's re-post, a reworded title, or a suburb instead of the city. As a safety net, the tracker compares each job with every job first seen in the last 180 days in the same country, ignoring employer and city: titles sharing at least 60% of their words and ads sharing at least 40% are listed as similar jobs, and as highly similar when the ads share at least 80%. They are never merged automatically. The same ad in another country (one role advertised for offices in Sydney and Hong Kong, say: titles sharing at least 60% of their words and ads at least 80%) is not listed as similar: it is placed next to the job in the list with a blue bar (similar jobs get an orange one), tagged "Same ad in" that country, and listed separately in the job panel.
+
+## Changing your searches
+
+`jobflow update-searches` first checks `config/searches.toml`: an invalid file stops it before anything else, so a typo never reaches the daily import or your jobs. Then it does two separate things, each going ahead even if the other fails (no GitHub CLI, say), after which the command ends with an error naming what to fix before running it again:
+
+- **Your jobs.** Every filter in [searches.md](searches.md#which-site-applies-which-filter) is applied to the jobs already in your Inbox, judging each by the search that found it first, as on the day it was imported (so a posted-date window never filters a job just for having aged since). If that search has since been renamed or removed, the job is judged by the exclusions under `[defaults]`. A job you moved out of the Filtered tab stays out: it's never filtered again, even if it later returns to the Inbox. The other way round, a Filtered job not yet archived comes back to the Inbox when the search that found it would no longer filter it, judged again by every filter, from the job as first scraped; if that search has been renamed or removed, only a job filtered by an excluded title term or employer can come back, judged by `[defaults]`.
+- **The daily import.** It publishes the file, and the timezone in `config/profile.toml`, as the `JOBFLOW_SEARCHES` and `JOBFLOW_TIMEZONE` GitHub variables the daily import reads.
+
+Imports apply the filters only to the jobs they bring in; a job found by several searches is judged by the one that found it first, and later sightings aren't filtered again. `--dry-run` lists the jobs it would filter or bring back and changes nothing, on GitHub or in your database; if the database tables are out of date (after you update jobflow), it says so and stops, as only a real run brings them up to date.
 
 ## Archiving
 
@@ -69,6 +78,22 @@ A job is done once its run finished and its output is still in its folder: its `
 - a CV or letter that failed the fact check, or a CV RenderCV couldn't render, unless you've fixed it yourself: edited the `CV_<variant>_draft.yaml`, or saved the letter as `cover-letter.docx` in its folder. Then your version is kept.
 
 `--job ID --redo` does a job again anyway, replacing its files, a fix of yours included. A draft that fails the check never leaves an older PDF, `.docx`, or `cover-letter.docx` beside it.
+
+## The tracker
+
+- **Minimum salary filter:** each job's salary is converted to US dollars at the fixed rates in `src/jobflow/ingest/options.py` (`USD_PER_UNIT`) and compared by the top of its range. A job without a salary, in a country whose currency isn't known, or whose ad gives no pay period (its salary guessed from the amount, shown with `~`; see [searches.md](searches.md#salary-in-different-currencies)) is always kept.
+- **Rows shown:** up to 2,000 jobs per query; narrow the filters to find jobs beyond that. Export CSV (All) has every job in the tab, however many.
+- **Flags on a row:** a follow-up date in the past, on a job not yet closed; an application still at Applied three weeks after you applied; a similar job you've already applied for ([similar jobs](#similar-jobs)).
+- **Flags in the header:** no import has succeeded for 36 hours; a site's runs failed in the last 36 hours, even if other sites' succeeded; a site's runs returned all the results `max_results` allows in that time, so probably left jobs behind (raise `max_results`, or narrow the search). The searches look back 24 hours, so a day the import missed is jobs never seen.
+- **Saving:** changes are drafts until you save, and a save is all or nothing. If a job was changed elsewhere since the page loaded it, nothing is saved and the page shows what changed; saving again goes over it. The page refreshes itself every 3 minutes and when you come back to it, but never while you have unsaved drafts.
+
+## Clean-up
+
+`jobflow clean-up` deletes, after you confirm, the output folders of Not interested, Withdrawn, and Archived jobs you never applied for. A job you applied for keeps its folder, with the CV and letter you sent, whatever its status; Rejected and Declined jobs always count as applied for. The jobs, notes, and history stay in the database. A job whose status changes while you decide keeps its folder.
+
+## Database tables
+
+Every command except `init`, `help`, `status`, and `update-searches --dry-run` brings the database tables up to date when it starts, one command at a time.
 
 ## Failures
 

@@ -39,8 +39,9 @@ def database(monkeypatch):
     with psycopg.connect(url, autocommit=True) as conn:
         conn.execute(f"CREATE SCHEMA {schema}")
     monkeypatch.setenv("DATABASE_URL", make_conninfo(url, options=f"-c search_path={schema}"))
-    # Ads read in another test's schema, whose job ids this one's reuse.
+    # Ads and titles read in another test's schema, whose job ids this one's reuse.
     monkeypatch.setattr(similar, "_AD_WORDS", {})
+    monkeypatch.setattr(similar, "_TITLES", similar._TitleIndex())
     try:
         migrate()
         yield
@@ -133,14 +134,36 @@ def test_a_cpp_and_a_csharp_job_with_one_ad_stay_two_jobs(database):
     # ad for its C++ and C# roles merged, and one of the two jobs never reached the Inbox.
     ad = " ".join(f"duty{i}" for i in range(40))
 
-    def posting(job_id, title):
+    def posting(job_id, title, company="Acme"):
         return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
-                "title": title, "companyName": "Acme", "location": "Sydney",
+                "title": title, "companyName": company, "location": "Sydney",
                 "descriptionText": ad}
     assert save_run("linkedin:a", "r1", "d1", [posting("1", "C++ Developer")], country="AU") == 1
     assert save_run("linkedin:a", "r2", "d2", [posting("2", "C# Developer")], country="AU") == 1
     # The same ad under the same title is still one job.
     assert save_run("linkedin:a", "r3", "d3", [posting("3", "c++ developer")], country="AU") == 0
+    # Under an employer spelt another way (rule 4), each joins the job with its own title.
+    assert save_run("linkedin:a", "r4", "d4", [posting("4", "C++ Developer", "Acme Recruitment"),
+                                                posting("5", "C# Developer", "Acme Recruitment")],
+                    country="AU") == 0
+    job_of = dict(_rows("SELECT source_key, job_id FROM job_sources"))
+    assert job_of["linkedin:4"] == job_of["linkedin:1"] != job_of["linkedin:5"] == job_of["linkedin:2"]
+
+
+def test_a_merged_copy_fills_in_only_what_the_job_lacks(database):
+    # Every SET in the merge reads the row as it was: a salary's guessed-period flag must go
+    # with the salary kept, and the longest ad must win, or salaries are silently mislabelled
+    # (a guessed one would then filter jobs out) and ads lost.
+    longer = AD + " Hybrid role."   # still most of the same words: the same short ad
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")   # no salary
+    # $8,000 with no period: guessed as a month's pay, 96,000 a year.
+    save_run("seek:a", "r2", "d2", [{**SEEK, "salary": "$8,000",
+                                     "content": {"unEditedContent": longer}}], country="AU")
+    assert _one("SELECT salary_min, salary_estimated, description FROM jobs") == (96000, True, longer)
+    # A later copy with a stated salary and a shorter ad changes neither.
+    save_run("indeed:a", "r3", "d3", [{**INDEED, "salary": "$150,000 per year"}], country="AU")
+    assert _one("SELECT count(*), min(salary_min), bool_and(salary_estimated), min(description) "
+                "FROM jobs") == (1, 96000, True, longer)
 
 
 def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
@@ -167,6 +190,37 @@ def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
     assert [d["id"] for d in listed[ids["1"]]["elsewhere"]] == [d["id"] for d in panel["elsewhere"]] \
         == [ids["3"]]
     assert panel["duplicates"][0]["company"] == "Hays" and panel["duplicates"][0]["level"] == "similar"
+
+
+def test_similar_jobs_stay_current_between_refreshes(database):
+    # The tracker keeps titles and ads between refreshes (similar._TITLES, _AD_WORDS): a job
+    # whose ad grew, or a job added since, must still be compared as it is now.
+    first, more = [f"duty{i}" for i in range(30)], [f"extra{i}" for i in range(50)]
+
+    def ad(job_id, title, company, words):
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
+                "title": title, "companyName": company, "location": "Sydney",
+                "descriptionText": " ".join(words)}
+    save_run("linkedin:a", "r1", "d1", [ad("1", "Data Analyst", "Acme", first)], country="AU")
+    save_run("linkedin:a", "r2", "d2", [ad("2", "Data Analyst", "Hays", first + more)], country="AU")
+    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+
+    def similar_to_first():
+        listed = {job["id"]: job for job in list_jobs(parse_filters({"status": ["new"]}))}
+        return sorted(d["id"] for d in listed[ids["1"]]["duplicates"])
+    assert similar_to_first() == []   # 30 of 80 words alike: under 40%
+    # Seek's longer copy of the first ad merges into it, which now has the second's ad.
+    seek = {"id": "3", "jobLink": "https://www.seek.com.au/job/3", "title": "Data Analyst",
+            "advertiser": {"name": "Acme"}, "joblocationInfo": {"displayLocation": "Sydney NSW"},
+            "content": {"unEditedContent": " ".join(first + more)}}
+    assert save_run("seek:a", "r3", "d3", [seek], country="AU") == 0
+    assert similar_to_first() == [ids["2"]]
+    # A job first seen after the last refresh.
+    save_run("linkedin:a", "r4", "d4", [ad("4", "Senior Data Analyst", "Robert Walters",
+                                         first + more[:40] + [f"own{i}" for i in range(10)])],
+             country="AU")
+    new = _one("SELECT id FROM jobs WHERE source_job_id='4'")[0]
+    assert similar_to_first() == sorted([ids["2"], new])
 
 
 def test_a_cv_named_later_is_scored_without_rescoring_the_others(database, scoring):
@@ -693,7 +747,7 @@ def test_a_second_run_of_a_command_stops_while_the_first_is_going(database, tmp_
     ran = []
 
     def run_one(job_id):
-        with pytest.raises(SystemExit, match="tailor-cv is already running"):
+        with pytest.raises(RuntimeError, match="tailor-cv is already running"):
             batch.for_jobs(command)   # started while this run is going
         ran.append(job_id)
     command = _tailor(run_one, lambda folder: False)

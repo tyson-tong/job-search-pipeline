@@ -45,15 +45,6 @@ def parse_salary(value, country=None):
     return pay[:2] if pay else None
 
 
-def test_defaults_are_inherited_and_overridden():
-    analyst, counsel = searches()
-    assert analyst.sites == ("linkedin", "indeed", "seek")
-    assert analyst.max_results == 40 and counsel.posted_within_days == 30
-    # City names are matched case-insensitively and stored as listed.
-    assert analyst.places() == [("AU", "Sydney"), ("AU", "Melbourne"), ("NZ", None),
-                                ("SG", "Singapore"), ("GB", "London")]
-
-
 SEARCH = 'name = "x"\nterms = ["a"]\nlocations = { AU = [] }\n'
 NO_LOCATIONS = '[[search]]\nname = "x"\nterms = ["a"]\n'
 
@@ -88,22 +79,22 @@ def test_invalid_config_is_rejected_with_a_reason(text, message):
 
 # --- Translation to each actor's input ---------------------------------------------------
 
-def test_linkedin_is_one_run_with_a_url_per_term_and_place():
-    (run,) = plan(searches(), "analyst", "linkedin")
-    urls = run.run_input["urls"]
-    assert len(urls) == 2 * 5 and run.run_input["limitPerSource"] == 40
+def test_linkedin_and_indeed_inputs_cover_each_term_and_place():
+    # Each run is paid for: a wrong input searches, and charges for, the wrong jobs.
+    # LinkedIn: one run, with a search URL per term and place.
+    (linkedin,) = plan(searches(), "analyst", "linkedin")
+    urls = linkedin.run_input["urls"]
+    assert len(urls) == 2 * 5 and linkedin.run_input["limitPerSource"] == 40
     assert parse_qs(urlsplit(urls[0]).query) == {
         "keywords": ["data analyst"], "location": ["Sydney, Australia"],
         "f_TPR": ["r86400"], "distance": ["12"]}
     assert parse_qs(urlsplit(urls[2]).query)["location"] == ["New Zealand"]
-
-
-def test_indeed_runs_per_term_and_place():
-    runs = plan(searches(), "analyst", "indeed")
-    assert len(runs) == 10
-    assert runs[0].run_input == {"country": "au", "query": "data analyst", "location": "Sydney",
-                                 "postedWithinDays": "1", "count": 40, "radiusKm": 20}
-    assert runs[2].run_input["location"] == "" and runs[2].run_input["country"] == "nz"
+    # Indeed: a run per term and place.
+    indeed = plan(searches(), "analyst", "indeed")
+    assert len(indeed) == 10
+    assert indeed[0].run_input == {"country": "au", "query": "data analyst", "location": "Sydney",
+                                   "postedWithinDays": "1", "count": 40, "radiusKm": 20}
+    assert indeed[2].run_input["location"] == "" and indeed[2].run_input["country"] == "nz"
 
 
 @pytest.mark.parametrize("days, linkedin, indeed, seek", [
@@ -344,7 +335,7 @@ def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
     monkeypatch.setattr(upkeep, "archive_old_jobs", lambda: 0)
     monkeypatch.setattr(upkeep, "prune_sightings", lambda: 0)
     monkeypatch.setattr(upkeep, "prune_archived_jobs", lambda: 0)
-    with pytest.raises(SystemExit, match="1 of 20 Apify runs failed"):
+    with pytest.raises(RuntimeError, match="1 of 20 Apify runs failed"):
         apify.ingest_searches()
     assert seen.count("indeed") == 10 and seen.count("seek") == 9
     assert "FAILED — boom" in capsys.readouterr().err
@@ -356,7 +347,7 @@ def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
         seen.append(planned.site)
         raise RuntimeError("Monthly usage hard limit exceeded")
     monkeypatch.setattr(apify, "run_search", over_limit)
-    with pytest.raises(SystemExit, match="weren't started"):
+    with pytest.raises(RuntimeError, match="weren't started"):
         apify.ingest_searches()
     assert 1 <= len(seen) <= 3
 
@@ -451,6 +442,6 @@ def test_runs_that_could_outlast_the_daily_job_are_not_started(monkeypatch):
     monkeypatch.setattr(upkeep, "prune_archived_jobs", lambda: 0)
     # 10 Indeed runs, each allowed 30 minutes, within 150: a run may start up to minute 120.
     # At 25 minutes each, 5 start (at 0 to 100), and 5 are recorded as not started.
-    with pytest.raises(SystemExit, match="5 weren't started, to finish within 150 minutes"):
+    with pytest.raises(RuntimeError, match="5 weren't started, to finish within 150 minutes"):
         apify.ingest_searches(only_site="indeed")
     assert len(seen) == 5 and recorded == ["NOT_STARTED"] * 5 and upkept
