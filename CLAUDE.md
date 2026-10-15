@@ -49,7 +49,8 @@ Ask first.
   `report`).
 - `candidate/`: CV files (`cvs`), scoring (`matching`), tailoring (`tailoring`,
   `render`, `documents`, `factcheck`, `review`, `research`), `cover_letter`, `interview`,
-  `skill_gaps`.
+  `skill_gaps`, and what several share: `paths` (a job's output folder) and `pages` (the
+  HTML page skeleton of the briefing and the skill-gaps report).
 - `web/`: the tracker. `server.py` (stdlib HTTP server on 127.0.0.1), `queries.py`,
   `saving.py`, `scoring.py`, `grouping.py`, `export.py`, and `static/` (index.html and ES
   modules; `app.js` is the entry point).

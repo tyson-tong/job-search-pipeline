@@ -171,7 +171,8 @@ Next:
   3. config/searches.toml  your job searches (it starts with an example search: replace it)
   4. uv run jobflow web, then the Searches tab to check your searches
   5. GitHub secrets        DATABASE_URL and APIFY_TOKEN (gh secret set NAME), then
-                           uv run jobflow update-searches to schedule the daily import
+                           uv run jobflow update-searches to publish your searches to
+                           the daily import (it is already scheduled)
 See docs/setup.md for each step.""")
 
 

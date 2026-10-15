@@ -5,13 +5,13 @@ A personal job-search pipeline. Every day it collects job postings from LinkedIn
 It is a template: each person makes their own private copy with their own database, credentials, and CVs. **First time? Follow [docs/setup.md](docs/setup.md).**
 
 ```
-Daily, in GitHub Actions                     On your machine, when you choose
-─────────────────────────                    ────────────────────────────────
-config/searches.toml ─► Apify ─► filter + dedupe ─► PostgreSQL ─► jobflow web                 triage, score, and track jobs
-                                                           jobflow tailor-cv           CVs for Interested jobs
-                                                           jobflow cover-letter        optional letters for Interested jobs
-                                                           jobflow interview-prep      briefings for Interviewing jobs
-                                                           jobflow skill-gaps          skills your CVs don't show
+Daily, in GitHub Actions                                          On your machine, when you choose
+────────────────────────                                          ────────────────────────────────
+config/searches.toml ─► Apify ─► filter + dedupe ─► PostgreSQL ─► jobflow web             triage, score, and track jobs
+                                                                  jobflow tailor-cv       CVs for Interested jobs
+                                                                  jobflow cover-letter    optional letters for Interested jobs
+                                                                  jobflow interview-prep  briefings for Interviewing jobs
+                                                                  jobflow skill-gaps      skills your CVs don't show
 ```
 
 More: [your searches](docs/searches.md) · [rules](docs/rules.md) (every rule jobflow follows: duplicates, similar jobs, archiving, scores, CV and cover letter checks, which jobs each command does) · [structure](docs/structure.html) (the parts and tables; open in a browser).
@@ -52,7 +52,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
 ### In the tracker
 
-- **Tabs:** **Inbox** (new jobs), **My jobs** (jobs you're pursuing and those you've finished with; the status menu picks which, **Default** restores them), **Filtered** (jobs your search filters kept out, with the reason), **Not interested**, and **Searches** (checks your searches file). From Filtered and Not interested you can mark a job Interested, or tick several to move them back to the Inbox. Old jobs leave these tabs: [archiving](docs/rules.md#archiving).
+- **Tabs:** **Inbox** (new jobs), **My jobs** (jobs you're pursuing and those you've finished with; the status menu picks which, **Default** restores them), **Filtered** (jobs your search filters kept out, with the reason), **Not interested**, and **Searches** (checks your searches file). From Filtered you can mark a job Interested or Not interested, and from Not interested mark it Interested; in both, tick several to move them back to the Inbox. Old jobs leave these tabs: [archiving](docs/rules.md#archiving).
 - **Filters** under the column headings: minimum match score, a title/company/location search, country and site, when the job was posted, and a minimum salary in US dollars ([which jobs it keeps](docs/rules.md#the-tracker); a salary marked `~` is a guess). Click **Posted** or **Salary** to sort, again to reverse. **Export CSV (All)** exports every job in the tab, ignoring the other filters; **Export CSV (this page)** just the rows shown.
 - **Job panel** (click a title): the ad, links to each site it's listed on, why it scored as it did, similar jobs, notes, status history, and the commands for this job (`tailor-cv --job 42` and so on) ready to copy. The number (`Job #42`) is at the top of the panel, and at the end of the job's output folder name.
 - **Similar jobs** sit together with an orange bar, and a row warns if it may be a role you've already applied for; the same ad in another country sits alongside with a blue bar. See [rules](docs/rules.md#similar-jobs).
