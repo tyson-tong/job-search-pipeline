@@ -85,12 +85,15 @@ def _rows(sql, *params):
 
 
 def test_migrations_apply_once_on_an_empty_database(database, capsys):
+    # A migration applied twice can fail or change existing rows on every command's start.
     migrate()   # already applied by the fixture: nothing runs again
     assert "Applied migration" not in capsys.readouterr().out
     assert _one("SELECT count(*) FROM schema_migrations")[0] == len(migration_files())
 
 
 def test_one_job_on_three_sites_is_one_row_with_three_copies(database):
+    # The same job on LinkedIn, Indeed, and Seek must be one job in the Inbox, with each site's copy
+    # kept; a NUL in scraped HTML must not fail the save.
     assert save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU") == 1
     assert save_run("indeed:a", "r2", "d2", [INDEED], country="AU") == 0
     assert save_run("seek:a", "r3", "d3", [SEEK], country="AU") == 0   # the NUL didn't fail it
@@ -115,7 +118,8 @@ def test_two_different_jobs_are_never_merged(database):
     assert save_run("linkedin:a", "r2", "d2", [ad("2", "Sydney NSW", lending)], country="AU") == 1
     # The same ad word for word in another city is another office's job; in another country
     # too, even when its location names no city to tell the two apart.
-    assert save_run("linkedin:a", "r3", "d3", [ad("3", "Melbourne, VIC", payments)], country="AU") == 1
+    assert save_run("linkedin:a", "r3", "d3", [ad("3", "Melbourne, VIC", payments)],
+                    country="AU") == 1
     assert save_run("linkedin:a", "r4", "d4", [ad("4", "Hong Kong", payments)], country="HK") == 1
     # Word for word with no location at all, in two countries: the exact-copy rule too.
     markets = standard + [f"markets{i}" for i in range(20)]
@@ -123,7 +127,8 @@ def test_two_different_jobs_are_never_merged(database):
     assert save_run("linkedin:a", "r7", "d7", [ad("7", None, markets)], country="SG") == 1
     # The check: another site's cut-down copy of the first ad, in the same city, is that job.
     seek = {"id": "5", "jobLink": "https://www.seek.com.au/job/5", "title": "Software Engineer",
-            "advertiser": {"name": "Big Bank Limited"}, "joblocationInfo": {"displayLocation": "Sydney NSW"},
+            "advertiser": {"name": "Big Bank Limited"},
+            "joblocationInfo": {"displayLocation": "Sydney NSW"},
             "content": {"unEditedContent": " ".join(payments[:80] + payments[90:])}}
     assert save_run("seek:a", "r5", "d5", [seek], country="AU") == 0
     assert _one("SELECT count(*) FROM jobs")[0] == 6
@@ -147,7 +152,8 @@ def test_a_cpp_and_a_csharp_job_with_one_ad_stay_two_jobs(database):
                                                 posting("5", "C# Developer", "Acme Recruitment")],
                     country="AU") == 0
     job_of = dict(_rows("SELECT source_key, job_id FROM job_sources"))
-    assert job_of["linkedin:4"] == job_of["linkedin:1"] != job_of["linkedin:5"] == job_of["linkedin:2"]
+    assert job_of["linkedin:4"] == job_of["linkedin:1"]
+    assert job_of["linkedin:1"] != job_of["linkedin:5"] == job_of["linkedin:2"]
 
 
 def test_a_merged_copy_fills_in_only_what_the_job_lacks(database):
@@ -159,7 +165,8 @@ def test_a_merged_copy_fills_in_only_what_the_job_lacks(database):
     # $8,000 with no period: guessed as a month's pay, 96,000 a year.
     save_run("seek:a", "r2", "d2", [{**SEEK, "salary": "$8,000",
                                      "content": {"unEditedContent": longer}}], country="AU")
-    assert _one("SELECT salary_min, salary_estimated, description FROM jobs") == (96000, True, longer)
+    assert _one("SELECT salary_min, salary_estimated, description FROM jobs") == (
+        96000, True, longer)
     # A later copy with a stated salary and a shorter ad changes neither.
     save_run("indeed:a", "r3", "d3", [{**INDEED, "salary": "$150,000 per year"}], country="AU")
     assert _one("SELECT count(*), min(salary_min), bool_and(salary_estimated), min(description) "
@@ -176,20 +183,24 @@ def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
                 "descriptionText": " ".join(words)}
     duties = [f"duty{i}" for i in range(60)]
     reposted = duties[:45] + [f"other{i}" for i in range(15)]   # about 60% the same words
-    save_run("linkedin:a", "r1", "d1", [ad("1", "Data Analyst", "Acme", "Sydney", duties)], country="AU")
+    save_run("linkedin:a", "r1", "d1", [ad("1", "Data Analyst", "Acme", "Sydney", duties)],
+             country="AU")
     save_run("linkedin:a", "r2", "d2", [ad("2", "Senior Data Analyst", "Hays", "Sydney", reposted)],
              country="AU")
-    save_run("linkedin:a", "r3", "d3", [ad("3", "Data Analyst", "Acme", "Hong Kong SAR", duties)], country="HK")
+    save_run("linkedin:a", "r3", "d3", [ad("3", "Data Analyst", "Acme", "Hong Kong SAR", duties)],
+             country="HK")
     # Only about 60% the same words, abroad: a similar role there, not the same ad.
-    save_run("linkedin:a", "r4", "d4", [ad("4", "Data Analyst", "Acme", "Singapore", reposted)], country="SG")
+    save_run("linkedin:a", "r4", "d4", [ad("4", "Data Analyst", "Acme", "Singapore", reposted)],
+             country="SG")
     ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
     listed = {job["id"]: job for job in list_jobs(parse_filters({"status": ["new"]}))}
     panel = job_detail(ids["1"])
-    assert [d["id"] for d in listed[ids["1"]]["duplicates"]] == [d["id"] for d in panel["duplicates"]] \
-        == [ids["2"]]
-    assert [d["id"] for d in listed[ids["1"]]["elsewhere"]] == [d["id"] for d in panel["elsewhere"]] \
-        == [ids["3"]]
-    assert panel["duplicates"][0]["company"] == "Hays" and panel["duplicates"][0]["level"] == "similar"
+    def found(job, kind):
+        return [d["id"] for d in job[kind]]
+    assert found(listed[ids["1"]], "duplicates") == found(panel, "duplicates") == [ids["2"]]
+    assert found(listed[ids["1"]], "elsewhere") == found(panel, "elsewhere") == [ids["3"]]
+    assert (panel["duplicates"][0]["company"], panel["duplicates"][0]["level"]) == (
+        "Hays", "similar")
 
 
 def test_similar_jobs_stay_current_between_refreshes(database):
@@ -202,7 +213,8 @@ def test_similar_jobs_stay_current_between_refreshes(database):
                 "title": title, "companyName": company, "location": "Sydney",
                 "descriptionText": " ".join(words)}
     save_run("linkedin:a", "r1", "d1", [ad("1", "Data Analyst", "Acme", first)], country="AU")
-    save_run("linkedin:a", "r2", "d2", [ad("2", "Data Analyst", "Hays", first + more)], country="AU")
+    save_run("linkedin:a", "r2", "d2", [ad("2", "Data Analyst", "Hays", first + more)],
+             country="AU")
     ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
 
     def similar_to_first():
@@ -238,7 +250,8 @@ def test_a_cv_named_later_is_scored_without_rescoring_the_others(database, scori
     assert matching.jobs_needing_match(list(cvs)) == [job_id]
     assert sorted(r["variant"] for r in matching.match_job(job_id)) == ["dev", "strat"]
     assert scoring.asked == ["dev", "strat"]          # dev was not scored again
-    assert matching.jobs_needing_match(list(cvs)) == [] and matching.count_needing_match(list(cvs)) == 0
+    assert matching.jobs_needing_match(list(cvs)) == []
+    assert matching.count_needing_match(list(cvs)) == 0
     matching.match_job(job_id)
     assert scoring.asked == ["dev", "strat"]
 
@@ -275,6 +288,7 @@ def test_rescoring_redoes_only_the_edited_cv_and_only_when_asked(database, scori
     (["dev", "strat"], "timed out"),
 ])
 def test_a_failed_assessment_saves_no_score(database, scoring, cvs, failure):
+    # A score saved from a failed or partial assessment ranks the job wrongly and isn't redone.
     from jobflow.candidate import matching
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
@@ -308,7 +322,8 @@ def test_the_tracker_and_tailor_cv_rank_cvs_alike_after_the_weights_change(datab
     with connect() as conn:
         set_job_state(conn, job_id, status="interested", via="test")
         # Scored by an earlier version, in a format that can't be recomputed.
-        conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score, evidence)
+        conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score,
+                                                          evidence)
                         VALUES (%s, 'dev', 'old', 90, '{"format": 1}')""", (job_id,))
 
     def requirements(prompt):
@@ -326,18 +341,23 @@ def test_the_tracker_and_tailor_cv_rank_cvs_alike_after_the_weights_change(datab
     scoring.weights = (0.2, 0.8)   # now the preferred skill matters most
     # A perfect score against a CV no longer named in cvs isn't the best, either.
     with connect() as conn:
-        conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score, evidence)
+        conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score,
+                                                          evidence)
                         VALUES (%s, 'retired', 'x', 100, %s)""", (job_id, json.dumps(
             {"format": 2, "breakdown": {"required": {"count": 1, "weight": 1, "credit": 1.0}}})))
     monkeypatch.setattr(matching, "current_digests", lambda: {"dev": "d", "strat": "s"})
-    best = matching.best_variant([r for r in matching.match_job(job_id) if r["variant"] != "retired"])
+    best = matching.best_variant([r for r in matching.match_job(job_id)
+                                  if r["variant"] != "retired"])
     listed = list_jobs(parse_filters({"status": ["interested"]}))[0]
-    assert (best["variant"], best["score"]) == (listed["cv_variant"], listed["score"]) == ("strat", 80)
+    assert (best["variant"], best["score"]) == (listed["cv_variant"], listed["score"]) == (
+        "strat", 80)
     assert [(m["variant"], m["score"]) for m in job_detail(job_id)["matches"]] == [
         ("strat", 80), ("dev", 20)]
 
 
 def test_a_status_change_keeps_the_first_applied_date_and_every_note(database):
+    # The first applied date and your notes are your application history: a later status change must
+    # not overwrite them.
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     job_id = _one("SELECT id FROM jobs")[0]
     with connect() as conn:
@@ -353,6 +373,7 @@ def test_a_status_change_keeps_the_first_applied_date_and_every_note(database):
 
 
 def test_a_save_changes_only_what_it_names(database):
+    # A save that wrote every field would clear a follow-up date or a note you didn't touch.
     from datetime import date
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
@@ -370,6 +391,7 @@ def test_a_save_changes_only_what_it_names(database):
 
 
 def test_a_save_over_a_change_made_elsewhere_writes_nothing(database):
+    # Saving a stale page over a change made in another tab would silently undo it.
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     job = list_jobs(parse_filters({"status": ["new"]}))[0]
     with connect() as conn:   # changed in another tab after this page loaded it
@@ -386,6 +408,8 @@ def test_a_save_over_a_change_made_elsewhere_writes_nothing(database):
 
 
 def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(database):
+    # Archiving too early hides jobs you haven't decided on; too late, or never, leaves the tabs
+    # full of jobs you're done with.
     from datetime import date
 
     def ad(job_id, title, posted, words):
@@ -393,9 +417,10 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
                 "title": title, "companyName": f"Employer {job_id}", "postedAt": posted,
                 "descriptionText": " ".join(f"{words}{i}" for i in range(40))}
     filtered = lambda posting: "title contains 'Intern'"
-    save_run("linkedin:a", "r1", "d1", [ad("1", "Intern", "2026-09-10", "old")], job_filter=filtered)
-    save_run("linkedin:a", "r2", "d2", [ad("2", "Intern", "2026-09-18", "recent")], job_filter=filtered)
-    save_run("linkedin:a", "r9", "d9", [ad("9", "Intern", "2026-08-20", "late")], job_filter=filtered)
+    for key, posted, words in (("1", "2026-09-10", "old"), ("2", "2026-09-18", "recent"),
+                               ("9", "2026-08-20", "late")):
+        save_run("linkedin:a", f"r{key}", f"d{key}", [ad(key, "Intern", posted, words)],
+                 job_filter=filtered)
     save_run("linkedin:a", "r3", "d3", [ad("3", "Analyst", "2026-09-01", "inbox")])
     save_run("linkedin:a", "r5", "d5", [ad("5", "Trader", "2026-09-01", "dropped"),
                                          ad("6", "Quant", "2026-09-01", "fresh"),
@@ -518,6 +543,8 @@ def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database
 
 
 def test_update_searches_filters_the_inbox_but_not_a_job_moved_back_from_filtered(database):
+    # A job you moved back from Filtered is one you chose to keep: filtering it again would hide it
+    # from you.
     from jobflow.ingest.refilter import filter_inbox_jobs
     from jobflow.ingest.searches import parse_config
 
@@ -528,7 +555,8 @@ def test_update_searches_filters_the_inbox_but_not_a_job_moved_back_from_filtere
                           'posted_within_days = 14\n')[0]
 
     def ad(job_id, title, **more):
-        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}", "title": title,
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
+                "title": title,
                 "companyName": f"Employer {job_id}", "descriptionText": f"ad {job_id}", **more}
     save_run("linkedin:a", "r1", "d1", [ad("1", "Intern Analyst"), ad("2", "Intern Trader"),
                                          ad("3", "Analyst", postedAt="2026-01-01"),
@@ -540,7 +568,8 @@ def test_update_searches_filters_the_inbox_but_not_a_job_moved_back_from_filtere
     with connect() as conn:   # filtered earlier, then moved back to the Inbox by hand
         conn.execute("UPDATE jobs SET status='filtered' WHERE id=%s", (ids["2"],))
         set_job_state(conn, ids["2"], status="new", via="web")
-    assert [job["id"] for job in filter_inbox_jobs([search], dry_run=True)[0]] == [ids["1"], ids["4"]]
+    assert [job["id"] for job in filter_inbox_jobs([search], dry_run=True)[0]] == [
+        ids["1"], ids["4"]]
     assert _one("SELECT count(*) FROM jobs WHERE status='filtered'")[0] == 0   # dry run
     filter_inbox_jobs([search])
     assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {
@@ -560,12 +589,16 @@ def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
     strict = parse_config(base + 'exclude_title_terms = ["Intern"]\n')[0]
 
     def ad(job_id, title, salary=None):
-        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}", "title": title,
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
+                "title": title,
                 "companyName": f"Employer {job_id}", "descriptionText": f"ad {job_id}",
                 **({"salaryInfo": salary} if salary else {})}
-    save_run("linkedin:a", "r1", "d1", [ad("1", "Intern Analyst"), ad("2", "Analyst", ["$60,000/yr"])],
-             search_name="s", country="AU", job_filter=partial(filter_reason, search=strict, site="linkedin"))
-    assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {"1": "filtered", "2": "filtered"}
+    save_run("linkedin:a", "r1", "d1",
+             [ad("1", "Intern Analyst"), ad("2", "Analyst", ["$60,000/yr"])],
+             search_name="s", country="AU",
+             job_filter=partial(filter_reason, search=strict, site="linkedin"))
+    assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {"1": "filtered",
+                                                                     "2": "filtered"}
     relaxed = parse_config(base)
     restored, checked = restore_filtered_jobs(relaxed, dry_run=True)
     assert [job["reason"] for job in restored] == ["title contains 'Intern'"] and checked == 2
@@ -578,6 +611,8 @@ def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
 
 
 def test_a_job_whose_search_was_renamed_is_judged_by_the_defaults(database):
+    # A job whose search was renamed or removed is judged by [defaults]; skipped, a job a [defaults]
+    # exclusion covers would stay in the Inbox.
     from jobflow.ingest.refilter import filter_inbox_jobs
     from jobflow.ingest.searches import defaults_search, parse_config
 
@@ -608,6 +643,51 @@ def test_a_renamed_search_brings_back_only_jobs_its_defaults_can_judge(database)
     assert [job["title"] for job in restored] == ["Data Analyst"] and checked == 2
 
 
+def test_a_job_filtered_for_its_posted_date_stays_filtered(database):
+    # ingest --posted-within-days 14 makes LinkedIn search a month and filter older jobs
+    # itself; the next update-searches judged them by the search's own 1-day window, which
+    # LinkedIn applies natively (so no posted-date filter), and brought them back to the Inbox.
+    from dataclasses import replace
+    from datetime import date
+    from functools import partial
+
+    from jobflow.ingest.filters import filter_reason
+    from jobflow.ingest.refilter import restore_filtered_jobs
+    from jobflow.ingest.searches import parse_config
+
+    search = parse_config('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
+                          'sites = ["linkedin"]\n')[0]
+    one_off = replace(search, posted_within_days=14)
+    save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "postedAt": "2026-09-01"}],
+             search_name="s", country="AU",
+             job_filter=partial(filter_reason, search=one_off, site="linkedin",
+                                today=date(2026, 9, 26)))
+    with connect() as conn:
+        conn.execute("UPDATE jobs SET first_seen_at = '2026-09-26'")
+    assert _one("SELECT status FROM jobs")[0] == "filtered"
+    assert restore_filtered_jobs([search]) == ([], 1)
+    assert _one("SELECT status FROM jobs")[0] == "filtered"
+
+
+def test_every_status_can_be_saved_and_has_a_label(database):
+    # A status added to db.STATUSES without a migration replacing jobs_status_check fails
+    # every save of it; without a label in format.js the tracker shows its raw name.
+    import re
+    from pathlib import Path
+
+    from jobflow.db import STATUSES
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
+    job_id = _one("SELECT id FROM jobs")[0]
+    for status in STATUSES:
+        with connect() as conn:
+            set_job_state(conn, job_id, status=status, via="test")
+        assert _one("SELECT status FROM jobs")[0] == status
+    script = (Path(__file__).parents[1] / "src/jobflow/web/static/format.js").read_text()
+    labels = re.search(r"LABELS = \{(.*?)\};", script, re.S).group(1)
+    assert set(re.findall(r"(\w+):", labels)) == set(STATUSES)
+
+
 def test_one_posting_that_cant_be_saved_does_not_lose_the_rest_of_a_paid_run(database):
     # A JSON "\ud800" escape is valid JSON, and PostgreSQL rejects it.
     broken = {**SEEK, "id": "999", "title": "Analyst \ud800", "jobLink": "https://www.seek.com.au/job/999"}
@@ -624,28 +704,35 @@ def test_one_posting_that_cant_be_saved_does_not_lose_the_rest_of_a_paid_run(dat
 
 
 def test_old_sightings_lose_only_their_scraped_record(database):
+    # Pruning old sightings frees space: it must not lose the job's own record, or stop a later
+    # sighting merging into the job.
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
     save_run("indeed:a", "r2", "d2", [INDEED], country="AU")
     with connect() as conn:   # the LinkedIn sighting is 31 days old
         conn.execute("""UPDATE job_observations SET observed_at = now() - interval '31 days'
-                        WHERE scraper_run_id = (SELECT id FROM scraper_runs WHERE apify_run_id='r1')""")
+                        WHERE scraper_run_id = (SELECT id FROM scraper_runs
+                                                WHERE apify_run_id='r1')""")
     assert prune_sightings() == 1
     assert _rows("SELECT observed_json IS NULL FROM job_observations ORDER BY observed_at") == [
         (True,), (False,)]
-    assert _one("SELECT raw_json->>'id' FROM jobs")[0] == LINKEDIN["id"]   # the job keeps its record
+    # The job keeps its record.
+    assert _one("SELECT raw_json->>'id' FROM jobs")[0] == LINKEDIN["id"]
     # A later sighting still merges by the site's ID.
     assert save_run("linkedin:a", "r3", "d3", [LINKEDIN], country="AU") == 0
 
 
 def test_jobs_archived_over_90_days_ago_lose_their_ad_but_are_still_recognised(database):
+    # A cleared job that no longer matched would return to the Inbox as new each time it was
+    # reposted.
     save_run("linkedin:a", "r1", "d1", [LINKEDIN, {**SEEK, "title": "Quant"}], country="AU")
     with connect() as conn:
-        conn.execute("UPDATE jobs SET status='archived', status_updated_at = now() - interval '91 days' "
-                     "WHERE source_job_id=%s", (LINKEDIN["id"],))
-        conn.execute("UPDATE jobs SET status='archived', status_updated_at = now() - interval '89 days' "
-                     "WHERE source_job_id=%s", (SEEK["id"],))
+        for key, days in ((LINKEDIN["id"], 91), (SEEK["id"], 89)):
+            conn.execute("UPDATE jobs SET status='archived', "
+                         "status_updated_at = now() - make_interval(days => %s) "
+                         "WHERE source_job_id=%s", (days, key))
     assert prune_archived_jobs() == 1
-    assert sorted(_rows("SELECT source_job_id, description IS NULL, raw_json IS NULL FROM jobs")) == [
+    assert sorted(_rows("SELECT source_job_id, description IS NULL, raw_json IS NULL "
+                        "FROM jobs")) == [
         (LINKEDIN["id"], True, True), (SEEK["id"], False, False)]
     # Seen again, the cleared job is still the same job, and stays archived.
     assert save_run("linkedin:a", "r2", "d2", [LINKEDIN], country="AU") == 0
@@ -658,7 +745,8 @@ def test_dates_are_in_your_timezone_in_python_and_the_database(database, monkeyp
     from jobflow.settings import today
 
     monkeypatch.setenv("JOBFLOW_TIMEZONE", "Pacific/Kiritimati")   # UTC+14
-    assert _one("SELECT current_setting('TimeZone'), now()::date") == ("Pacific/Kiritimati", today())
+    assert _one("SELECT current_setting('TimeZone'), now()::date") == (
+        "Pacific/Kiritimati", today())
 
 
 def test_score_all_scores_the_jobs_you_are_pursuing_and_picked_inbox_jobs(database, scoring):
@@ -705,8 +793,8 @@ def test_skill_gaps_count_the_jobs_you_are_pursuing(database, monkeypatch):
     with connect() as conn:
         for key, status in statuses.items():
             conn.execute("UPDATE jobs SET status=%s WHERE id=%s", (status, ids[key]))
-            conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score, gaps,
-                                evidence) VALUES (%s, 'dev', 'd', 0, %s, %s)""",
+            conn.execute("""INSERT INTO match_assessments(job_id, cv_variant, cv_sha256, score,
+                                gaps, evidence) VALUES (%s, 'dev', 'd', 0, %s, %s)""",
                          (ids[key], json.dumps([{"requirement": f"Skill {key}",
                                                  "importance": "required",
                                                  "status": "not_evidenced"}]),
@@ -804,9 +892,11 @@ def test_the_job_list_filters_hide_only_what_they_say(database):
     from datetime import timedelta
 
     from jobflow.settings import today
-    recently, long_ago = (today() - timedelta(days=2)).isoformat(), (today() - timedelta(days=60)).isoformat()
+    recently = (today() - timedelta(days=2)).isoformat()
+    long_ago = (today() - timedelta(days=60)).isoformat()
     def ad(job_id, title, location, **more):
-        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}", "title": title,
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
+                "title": title,
                 "companyName": f"Employer {job_id}", "location": location,
                 "descriptionText": " ".join(f"{title}{i}" for i in range(40)), **more}
     save_run("linkedin:a", "r1", "d1", [ad("1", "Analyst", "Sydney", salaryInfo=["$150,000/yr"],
@@ -824,10 +914,15 @@ def test_the_job_list_filters_hide_only_what_they_say(database):
         return sorted(key for key, pk in ids.items()
                       if pk in {job["id"] for job in list_jobs(parse_filters(query))})
     assert shown() == ["1", "2", "3"]
-    # USD 100,000 a year: 150,000 AUD (about 99,000 USD) is under it, 600,000 HKD (about
-    # 77,000) too; a job without a salary or a known currency is kept.
-    assert shown(salary_min_usd=90000) == ["1", "3"]
-    assert shown(salary_min_usd=100000) == ["3"]
+    # A minimum in USD just under and just over each salary converted at USD_PER_UNIT (worked
+    # out here, so updating the rates doesn't break this); a job without a salary or a known
+    # currency is always kept.
+    from jobflow.ingest.options import USD_PER_UNIT
+    in_usd = {"1": 150000 * USD_PER_UNIT["AUD"], "2": 600000 * USD_PER_UNIT["HKD"]}
+    for usd in in_usd.values():
+        for minimum in (int(usd - 1), int(usd + 1)):
+            assert shown(salary_min_usd=minimum) == sorted(
+                ["3"] + [key for key, salary in in_usd.items() if salary >= minimum])
     assert shown(country=["HK"]) == ["2"] and shown(country=["none"]) == ["3"]
     assert shown(site=["indeed"]) == []
     # Posted in the past week, or over a month ago, by the posted date, else the date first seen.

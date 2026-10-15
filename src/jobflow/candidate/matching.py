@@ -195,7 +195,8 @@ def _assess(job: dict, variant: str, source: str, weights: tuple[float, float]) 
     prompt = {"job": job_prompt(job), "cv_variant": variant, "cv_source": source,
               "instructions": MATCH_INSTRUCTIONS}
     content, model = complete(
-        "You are a careful CV-to-job evidence assessor. Never invent facts. Return valid JSON only.",
+        "You are a careful CV-to-job evidence assessor. Never invent facts. Return valid JSON "
+        "only.",
         json.dumps(prompt, ensure_ascii=False), json_mode=True)
     result = parse_json(content)
     items = normalise_requirements(result.get("requirements"), source)
@@ -309,7 +310,8 @@ OUTDATED_SQL = f"""SELECT j.id, cv.variant FROM jobs j
     ORDER BY j.first_seen_at DESC"""
 
 
-def outdated_scores(digests: dict[str, str], only: list[int] | None = None) -> list[tuple[int, str]]:
+def outdated_scores(digests: dict[str, str],
+                    only: list[int] | None = None) -> list[tuple[int, str]]:
     """(job id, CV) for each score of a job you're pursuing made against an earlier version
     of that CV (digests: current_digests()), newest job first; limited to `only` when given."""
     with db.connect() as conn:

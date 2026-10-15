@@ -1,3 +1,6 @@
+"""The database: connections (encrypted unless on this machine, in your timezone),
+migrations, loading a job, and changing a job's status, which every status change goes
+through so status_history stays complete."""
 from __future__ import annotations
 
 import os
@@ -114,11 +117,13 @@ def migration_files() -> list[tuple[str, str, str | None]]:
         sql = entry.read_text()
         headers = list(re.finditer(r"^-- Migration ID: (\d{2})\s*$", sql, re.MULTILINE))
         if not headers:
-            raise RuntimeError(f"Migration file {entry.name} is missing a '-- Migration ID: 01' header")
+            raise RuntimeError(f"Migration file {entry.name} is missing a "
+                               "'-- Migration ID: 01' header")
         ids = [header.group(1) for header in headers]
         expected = [f"{number:02d}" for number in range(1, len(ids) + 1)]
         if ids != expected:
-            raise RuntimeError(f"Migration IDs in {entry.name} must start at 01 and increase by one")
+            raise RuntimeError(f"Migration IDs in {entry.name} must start at 01 and increase "
+                               "by one")
         for index, header in enumerate(headers):
             end = headers[index + 1].start() if index + 1 < len(headers) else len(sql)
             statement = sql[header.end():end].strip()

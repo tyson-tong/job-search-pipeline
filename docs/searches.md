@@ -67,7 +67,7 @@ Use `1` for the daily schedule; a longer window suits a first run. Not every sit
 
 A site without your window searches the next wider one, so no jobs are missed, and jobs posted before your window are marked `filtered` after import. The tracker's Searches tab notes when this happens. You still pay Apify for those extra results.
 
-For a one-off manual import, `jobflow ingest --posted-within-days 14` overrides the window for every search in that run only. Use `1`, `7`, `14`, or `30`; this does not change the searches file or the copy published to GitHub Actions.
+For a one-off manual import, `jobflow ingest --posted-within-days 14` overrides the window for every search in that run only. Use `1`, `7`, `14`, or `30`; this does not change the searches file or the copy published to GitHub Actions. Jobs it filters for their posted date stay filtered ([rules](rules.md#changing-your-searches)).
 
 ## Which site applies which filter
 

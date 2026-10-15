@@ -42,6 +42,7 @@ def provider(monkeypatch):
 
 
 def test_reviewer_llm_settings_fall_back_but_never_leak_the_main_key(monkeypatch):
+    # Sending your main LLM key to a reviewer's different provider would leak it.
     monkeypatch.setenv("LLM_API_KEY", "main-key")
     monkeypatch.setenv("LLM_MODEL", "main-model")
     assert llm.credentials(reviewer=True) == ("main-key", "main-model")
@@ -92,7 +93,8 @@ def test_llm_drops_settings_the_provider_rejects(monkeypatch):
     def post(url, json, **kwargs):
         sent.append(sorted(k for k in json if k in llm.OPTIONAL))
         if "response_format" in json:
-            return Reply(400, {"error": {"message": "response_format.type: Input should be 'json_schema'"}})
+            return Reply(400, {"error": {
+                "message": "response_format.type: Input should be 'json_schema'"}})
         if "temperature" in json:
             return Reply(400, {"error": {"message": "`temperature` is deprecated for this model."}})
         return answer('```json\n{"a": 1}\n```')

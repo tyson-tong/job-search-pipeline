@@ -7,7 +7,8 @@ from jobflow.ingest.searches import SearchConfigError
 def test_update_searches_never_publishes_an_invalid_file(tmp_path, monkeypatch):
     # The daily import reads the published copy, so a typo must stop before gh runs.
     broken = tmp_path / "searches.toml"
-    broken.write_text('[[search]]\nname = "x"\nterms = ["quant"]\nlocations = { AU = ["Syndey"] }\n')
+    broken.write_text('[[search]]\nname = "x"\nterms = ["quant"]\n'
+                      'locations = { AU = ["Syndey"] }\n')
     monkeypatch.setattr(settings, "searches_file", lambda: broken)
     # conftest's no_github fails the test if gh runs.
     with pytest.raises(SearchConfigError, match="unknown AU city"):
@@ -15,6 +16,9 @@ def test_update_searches_never_publishes_an_invalid_file(tmp_path, monkeypatch):
 
 
 def test_clean_up_deletes_only_closed_jobs_folders_and_only_on_yes(tmp_path, monkeypatch):
+    # Clean-up deletes folders for good: matching on a job id within a folder name would delete the
+    # folders of other jobs whose ids contain it, and deleting without a yes loses the CVs and
+    # letters you sent.
     class Conn:
         def execute(self, *args): return self
         def fetchall(self): return [(4, "withdrawn")]
@@ -80,7 +84,8 @@ def test_a_big_batch_in_a_terminal_asks_before_spending(monkeypatch, capsys):
     from jobflow import batch
 
     todo = [(job_id, "Acme", "Analyst") for job_id in range(1, batch.CONFIRM_ABOVE + 2)]
-    monkeypatch.setattr(batch, "_plan_jobs", lambda *args: batch.Plan(len(todo), todo, [], [], 0, 0))
+    monkeypatch.setattr(batch, "_plan_jobs",
+                        lambda *args: batch.Plan(len(todo), todo, [], [], 0, 0))
     monkeypatch.setattr(batch, "_in_terminal", lambda: True)
     ran: list[int] = []
     command = batch.JobCommand(command="tailor-cv", status="interested", kind="tailor",

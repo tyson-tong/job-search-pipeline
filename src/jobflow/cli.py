@@ -1,3 +1,6 @@
+"""The jobflow command: each command's arguments and a thin run_* that imports what it
+needs only when run, so every command starts fast. main turns expected problems into a
+one-line error and exit status 1."""
 from __future__ import annotations
 
 import argparse
@@ -15,6 +18,15 @@ def positive_int(text: str) -> int:
     return value
 
 
+def port(text: str) -> int:
+    """A fixed TCP port: the tracker checks each request's Host against it, so 0 (any free
+    port) would turn every request away."""
+    value = int(text)
+    if not 1 <= value <= 65535:
+        raise argparse.ArgumentTypeError("must be from 1 to 65535")
+    return value
+
+
 def check_variant(variant: str | None, yaml_only: bool) -> str | None:
     """--cv as a CV's short name, which it may also give as the exact file name. Stops
     before any job is tried if cvs in config/profile.toml has a problem, or --cv names none
@@ -24,7 +36,8 @@ def check_variant(variant: str | None, yaml_only: bool) -> str | None:
     if variant is None:
         chosen_files()   # still check the setting before any job is tried
         return None
-    choices = {name: path for name, path in chosen_files().items() if is_yaml(path) or not yaml_only}
+    choices = {name: path for name, path in chosen_files().items()
+               if is_yaml(path) or not yaml_only}
     by_file = {path.name: name for name, path in choices.items()}
     if variant not in choices and variant not in by_file:
         raise RuntimeError(f"No {'RenderCV YAML ' if yaml_only else ''}CV {variant!r} among "
@@ -46,8 +59,8 @@ def check_keys(reviewer: bool = False, web_search: bool = False) -> None:
                            "Tavily company research")
 
 
-DESCRIPTION = ("First time: init. Every day: web, tailor-cv, cover-letter (optional), "
-               "interview-prep, and skill-gaps. After editing config/searches.toml: "
+DESCRIPTION = ("First time: init. Every day: web, tailor-cv, cover-letter (optional), and "
+               "interview-prep. Now and then: skill-gaps. After editing config/searches.toml: "
                "update-searches. The rules each command follows are in docs/rules.md.")
 
 
@@ -78,7 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--dry-run", action="store_true",
                         help="Check and list what would change; change nothing")
     web = command("web", run_web, "Run the job tracker on this machine")
-    web.add_argument("--port", type=int, default=8765, help="Default: 8765")
+    web.add_argument("--port", type=port, default=8765, help="Default: 8765")
     tailor = command("tailor-cv", run_tailor_cv, "A tailored, fact-checked CV for each "
                      "Interested job without one")
     tailor.add_argument("--cv", help="The YAML CV to use for every job, by file or short name "
@@ -153,7 +166,8 @@ def init() -> None:
     print("""
 Next:
   1. config/.env           DATABASE_URL, APIFY_TOKEN, LLM_API_KEY, LLM_MODEL, WEB_SEARCH_API_KEY
-  2. cv/                   your CVs (.yaml, .tex, .docx, or .pdf); name 1 or 2 with cvs in profile.toml
+  2. cv/                   your CVs (.yaml, .tex, .docx, or .pdf); name 1 or 2 with cvs
+                           in profile.toml
   3. config/searches.toml  your job searches (it starts with an example search: replace it)
   4. uv run jobflow web, then the Searches tab to check your searches
   5. GitHub secrets        DATABASE_URL and APIFY_TOKEN (gh secret set NAME), then

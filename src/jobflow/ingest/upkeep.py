@@ -42,7 +42,8 @@ def archive_old_jobs(today: date | None = None) -> int:
                          WHERE (status = 'filtered'
                                 AND greatest(posted_at, first_seen_at::date) < %(cutoff)s)
                             OR (status = 'not_interested' AND status_updated_at::date < %(cutoff)s)
-                            OR (status = 'new' AND coalesce(posted_at, first_seen_at::date) < %(inbox_cutoff)s
+                            OR (status = 'new'
+                                AND coalesce(posted_at, first_seen_at::date) < %(inbox_cutoff)s
                                 AND status_updated_at::date < %(inbox_cutoff)s)
                          FOR UPDATE) old
                    WHERE j.id = old.id

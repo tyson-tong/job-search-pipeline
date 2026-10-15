@@ -1,3 +1,6 @@
+"""Your settings: config/.env (never overriding real environment variables, so GitHub's
+secrets win), config/profile.toml (CVs, folders, scoring weights), and the timezone every
+date is compared in."""
 from __future__ import annotations
 
 import math

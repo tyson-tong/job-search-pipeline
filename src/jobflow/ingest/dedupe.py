@@ -71,6 +71,10 @@ def canonical_url(value: str | None) -> str | None:
 
 
 def simplify(value: object) -> str:
+    """Like text.words, but dropping + and # as well. Kept apart because the fingerprints
+    stored for every job are made from it: changing it would change every new fingerprint,
+    so a repost of a job already saved would no longer match it. Titles, where "C++" and
+    "C#" must stay apart, go through title_key instead."""
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
 
 

@@ -1,3 +1,6 @@
+"""Running the planned searches on Apify (jobflow ingest and the daily import): the sites
+side by side, each site's runs one after another, saving what each found, within the time
+GitHub allows; then archiving and pruning old jobs."""
 from __future__ import annotations
 
 import math
@@ -218,6 +221,7 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
     if failed or late:
         raise RuntimeError(f"{len(failed)} of {len(runs)} Apify runs failed"
                            + (f", and {len(late)} weren't started, to finish within "
-                              f"{INGEST_MINUTES} minutes: search fewer terms or places per site, or "
-                              "lower APIFY_MAX_WAIT_MINUTES (for the daily import, its GitHub variable)"
+                              f"{INGEST_MINUTES} minutes: search fewer terms or places per "
+                              "site, or lower APIFY_MAX_WAIT_MINUTES (for the daily import, "
+                              "its GitHub variable)"
                               if late else ""))

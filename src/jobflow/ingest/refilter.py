@@ -7,7 +7,13 @@ from typing import Any
 from psycopg.rows import namedtuple_row
 
 from .. import db
-from .filters import EXCLUDED_EMPLOYER, EXCLUDED_TITLE, excluded_reason, filter_reason
+from .filters import (
+    EXCLUDED_EMPLOYER,
+    EXCLUDED_TITLE,
+    POSTED_TOO_EARLY,
+    excluded_reason,
+    filter_reason,
+)
 from .sources import normalise
 
 # Each job, its stored record, and the search whose run first found it and that run's site.
@@ -82,13 +88,18 @@ def restore_filtered_jobs(searches: list, dry_run: bool = False,
     """Bring Filtered jobs (not yet archived) back to the Inbox when the search that found
     them wouldn't filter them now (see _judge). A job judged by `fallback` comes back only
     if it was filtered by an excluded title term or employer: [defaults] can't judge the
-    other filters. Returns (the jobs brought back, with the reason they were filtered, and
-    the number of Filtered jobs checked); with dry_run, nothing is changed."""
+    other filters. A job filtered for its posted date never comes back: the window it was
+    judged by may have been a one-off (ingest --posted-within-days) or since narrowed, and
+    the site wouldn't list it under the search's window now either. Returns (the jobs
+    brought back, with the reason they were filtered, and the number of Filtered jobs
+    checked); with dry_run, nothing is changed."""
     by_name = {search.name: search for search in searches}
     with db.connect() as conn:
         jobs = _jobs(conn, "j.status = 'filtered'")
         restored = []
         for job in jobs:
+            if (job.filter_reason or "").startswith(POSTED_TOO_EARLY):
+                continue   # the window isn't stored, so it can't be judged again
             if not _by_search(job, by_name) \
                     and not (job.filter_reason or "").startswith(EXCLUSION_REASONS):
                 continue   # [defaults] can't judge why it was filtered

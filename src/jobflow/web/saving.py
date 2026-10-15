@@ -44,7 +44,8 @@ def validate_changes(raw: object) -> list[dict]:
         if "note" in item:
             note = item["note"]
             if not isinstance(note, str) or len(note) > MAX_NOTE:
-                raise InvalidChange(f"Job {job_id}: a note must be text of at most {MAX_NOTE} characters")
+                raise InvalidChange(f"Job {job_id}: a note must be text of at most {MAX_NOTE} "
+                                    "characters")
             if note.strip():
                 change["note"] = note
         if "follow_up_on" in item:

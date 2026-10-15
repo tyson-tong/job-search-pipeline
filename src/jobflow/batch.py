@@ -296,4 +296,5 @@ def _run_todo(command: JobCommand, todo: list[tuple[int, str | None, str]]) -> N
         raise RuntimeError(f"Stopped: the LLM provider will refuse the other {len(skipped)} "
                            "job(s) too. Fix that, then run the command again")
     if failed:
-        raise RuntimeError(f"{len(failed)} of {len(todo)} failed; run the command again to retry them")
+        raise RuntimeError(f"{len(failed)} of {len(todo)} failed; run the command again to "
+                           "retry them")

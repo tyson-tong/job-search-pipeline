@@ -45,15 +45,15 @@ warn_unused_ignores = true
 
 [tool.ruff]
 target-version = "py312"
-# The width the code is written to; it decides how the import sorter wraps long imports.
+# The width the code is written to: E501 enforces it, and the import sorter wraps to it.
 line-length = 100
 src = ["src", "tests"]
 
 [tool.ruff.lint]
 # Lint only; the code isn't reformatted. Unused imports and undefined names (F), syntax
-# errors (E9), likely bugs (B), import order (I), outdated syntax (UP), simpler forms
-# (SIM), and ruff's own checks (RUF).
-select = ["F", "E9", "B", "I", "UP", "SIM", "RUF"]
+# errors (E9), lines over line-length (E501), likely bugs (B), import order (I), outdated
+# syntax (UP), simpler forms (SIM), and ruff's own checks (RUF).
+select = ["F", "E9", "E501", "B", "I", "UP", "SIM", "RUF"]
 # En dashes are deliberate (date ranges in CVs), and an if/else with a comment on each
 # branch can read better than one long conditional expression.
 ignore = ["RUF001", "SIM108"]

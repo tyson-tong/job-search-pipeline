@@ -11,6 +11,7 @@ from jobflow.web.server import make_handler
 
 
 def test_csv_cells_cannot_run_as_spreadsheet_formulas():
+    # A scraped title starting with = runs as a formula when the export is opened in a spreadsheet.
     assert _csv_cell('=HYPERLINK("http://evil","x")') == "'=HYPERLINK(\"http://evil\",\"x\")"
     assert _csv_cell("+61 400 000 000") == "'+61 400 000 000"
     assert _csv_cell("Data Analyst") == "Data Analyst" and _csv_cell(None) == ""
@@ -37,6 +38,8 @@ def _request(port, path, headers, method="GET", body=None):
 
 
 def test_api_requires_the_token_and_a_local_host(server):
+    # The tracker changes your jobs: any web page you visit could call it on 127.0.0.1 without the
+    # token and Host checks.
     port, token = server
     local = f"127.0.0.1:{port}"
     assert _request(port, "/api/summary", {"Host": local})[0] == 403
@@ -44,7 +47,8 @@ def test_api_requires_the_token_and_a_local_host(server):
     # Only in a header: a token in a URL stays in the browser's history.
     assert _request(port, f"/api/summary?token={token}", {"Host": local})[0] == 403
     # DNS rebinding: a foreign host name pointing at 127.0.0.1 is refused even with a token.
-    assert _request(port, "/api/summary", {"Host": "evil.example", "X-Jobflow-Token": token})[0] == 403
+    foreign = {"Host": "evil.example", "X-Jobflow-Token": token}
+    assert _request(port, "/api/summary", foreign)[0] == 403
     status, _ = _request(port, "/api/save", {"Host": local, "Content-Type": "application/json"},
                          "POST", json.dumps({"changes": [{"id": 1, "status": "applied"}]}))
     assert status == 403

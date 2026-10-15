@@ -24,11 +24,11 @@ class Revised(NamedTuple):
 
 def revise(draft, checked: Checked, review, revision_of, check, notes: list[str]) -> Revised:
     """The reviewer's revision of `draft` if it has fewer fact-check errors than the
-    draft's own check, or as many and no more warnings; else the draft. review(draft) returns (the reviewer's answer, the
-    reviewer's model); revision_of(answer) is the revised draft, or None if there is none;
-    check(revision) is its Checked. What happened is added to `notes`; a failed review
-    keeps the draft, unless the provider will refuse every request (a fatal LLMError), which
-    is raised."""
+    draft's own check, or as many and no more warnings; else the draft. review(draft)
+    returns (the reviewer's answer, the reviewer's model); revision_of(answer) is the revised
+    draft, or None if there is none; check(revision) is its Checked. What happened is added
+    to `notes`; a failed review keeps the draft, unless the provider will refuse every
+    request (a fatal LLMError), which is raised."""
     critique: list[str] = []
     try:
         answer, reviewer = review(draft)

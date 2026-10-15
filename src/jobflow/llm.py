@@ -1,3 +1,6 @@
+"""Chat completions from any OpenAI-compatible provider: the main and reviewer settings,
+retries with backoff, settings a model rejects dropped and the request sent again, and
+LLMError(fatal=True) for problems every later request would hit too."""
 from __future__ import annotations
 
 import json
@@ -34,7 +37,8 @@ class LLMError(RuntimeError):
 
 def base_url(reviewer: bool = False) -> str:
     # An empty setting (as in config/.env.example) means "use the default".
-    name = "LLM_REVIEW_BASE_URL" if reviewer and os.environ.get("LLM_REVIEW_BASE_URL") else "LLM_BASE_URL"
+    name = ("LLM_REVIEW_BASE_URL" if reviewer and os.environ.get("LLM_REVIEW_BASE_URL")
+            else "LLM_BASE_URL")
     url = (os.environ.get(name) or DEFAULT_BASE_URL).rstrip("/")
     # The API key goes with every request, so only a server on this machine may use plain http.
     parts = urlsplit(url)

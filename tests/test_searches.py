@@ -50,7 +50,8 @@ NO_LOCATIONS = '[[search]]\nname = "x"\nterms = ["a"]\n'
 
 
 @pytest.mark.parametrize("text, message", [
-    ("[[search]]\n" + SEARCH + 'job_types = ["fulltime"]\n', "unknown value.*choose from.*full-time"),
+    ("[[search]]\n" + SEARCH + 'job_types = ["fulltime"]\n',
+     "unknown value.*choose from.*full-time"),
     # A typo'd setting must not be silently ignored.
     ("[[search]]\n" + SEARCH + "keywords = 'x'\n", "unknown setting"),
     # A misspelt city would otherwise search for nothing.
@@ -73,6 +74,8 @@ NO_LOCATIONS = '[[search]]\nname = "x"\nterms = ["a"]\n'
     ("[[search]]\n" + SEARCH + "posted_within_days = true\n", "posted_within_days must be"),
 ])
 def test_invalid_config_is_rejected_with_a_reason(text, message):
+    # A bad searches file must stop update-searches, saying what to fix, before it reaches the daily
+    # import and crashes it.
     with pytest.raises(SearchConfigError, match=message):
         parse_config(text)
 
@@ -102,6 +105,8 @@ def test_linkedin_and_indeed_inputs_cover_each_term_and_place():
     (30, "r2592000", "", 30),     # Indeed has no month: widened to any time
 ])
 def test_posted_windows_are_never_narrowed(days, linkedin, indeed, seek):
+    # A site without the exact window gets a wider one, never a narrower one, or jobs inside your
+    # window are never seen.
     config = CONFIG.replace("posted_within_days = 1", f"posted_within_days = {days}")
     runs = {r.site: r for r in plan(parse_config(config), "analyst")}
     assert parse_qs(urlsplit(runs["linkedin"].run_input["urls"][0]).query)["f_TPR"] == [linkedin]
@@ -112,6 +117,8 @@ def test_posted_windows_are_never_narrowed(days, linkedin, indeed, seek):
 
 
 def test_seek_uses_native_filters_and_skips_countries_it_lacks():
+    # Seek's own filters are free; a run for a country Seek doesn't cover is paid for and finds
+    # nothing.
     runs = plan(searches(), "analyst", "seek")
     assert len(runs) == 8  # the UK is not on Seek
     assert any("country GB" in note for note in runs[0].notes)
@@ -132,6 +139,8 @@ def _linkedin(**fields):
 
 
 def test_unknown_values_always_pass_local_filters():
+    # A job whose ad doesn't state a salary or job type must be kept: filtering it on a missing
+    # value hides jobs you'd want.
     analyst = searches()[0]
     assert filter_reason(_linkedin(), analyst, "linkedin") is None
     # A Seek posting with no salary must not be filtered by salary bounds.
@@ -141,6 +150,8 @@ def test_unknown_values_always_pass_local_filters():
 
 
 def test_local_salary_filter():
+    # A salary misread or compared on the wrong pay period filters out jobs you'd want, or keeps
+    # ones you wouldn't.
     analyst = searches()[0]
     low = _linkedin(salaryInfo=["$60,000.00/yr", "$70,000.00/yr"])
     assert "outside 100,000-150,000/yr" in filter_reason(low, analyst, "linkedin")
@@ -161,6 +172,7 @@ def test_local_salary_filter():
 
 
 def test_widened_window_drops_older_jobs_after_import():
+    # A window widened for a site would otherwise fill the Inbox with jobs older than you asked for.
     from datetime import date
     two_weeks = parse_config(CONFIG.replace("posted_within_days = 1", "posted_within_days = 14"))[0]
     today = date(2026, 9, 26)
@@ -175,6 +187,8 @@ def test_widened_window_drops_older_jobs_after_import():
 
 
 def test_local_job_type_and_arrangement_filters():
+    # Job types and work arrangements are filtered locally where a site can't: missed, the Inbox
+    # fills with jobs you excluded.
     analyst = searches()[0]
     assert "job type part-time" in filter_reason(_linkedin(employmentType="Part-time"),
                                                  analyst, "linkedin")
@@ -184,6 +198,7 @@ def test_local_job_type_and_arrangement_filters():
 
 
 def test_parse_salary_formats():
+    # A salary parsed wrongly filters jobs on a figure the ad never gave.
     assert parse_salary("$90k - $120k + super + bonus") == (90000, 120000)
     assert parse_salary("$120,000 - $140,000 + 11.5% super") == (120000, 140000)
     assert parse_salary("$120,000 - 140,000 + 11.5% super") == (120000, 140000)
@@ -257,10 +272,13 @@ class FakeClient:
 
 
 def test_run_passes_cost_cap_and_applies_the_search_filter(monkeypatch):
+    # Without the cost cap and result cap passed to Apify, a run can charge more than the search
+    # allows.
     import jobflow.ingest.store as store
     saved = []
     monkeypatch.setattr(store, "save_run", lambda *a, **k: saved.append(k) or 1)
-    capped = parse_config(CONFIG.replace("max_results = 40", "max_results = 40\nmax_cost_usd = 0.5"))
+    capped = parse_config(CONFIG.replace("max_results = 40",
+                                         "max_results = 40\nmax_cost_usd = 0.5"))
     planned = plan(capped, "analyst", "indeed")[0]
     client = FakeClient(_run(cost=0.02), [{"viewJobLink": "/viewjob?jk=1", "title": "x"}])
     apify.run_search(client, planned, timedelta(minutes=5))
@@ -293,6 +311,8 @@ def test_a_run_that_returns_all_it_may_is_flagged():
     (_run("RUNNING"), "still running after"),  # partial results must not be imported
 ])
 def test_unsuccessful_runs_are_recorded_not_imported(monkeypatch, result, message):
+    # Importing a failed or partial run's results would save an incomplete set as if it were
+    # complete; not recording it hides the failure.
     import jobflow.ingest.store as store
     recorded = []
     monkeypatch.setattr(store, "record_failed_run", lambda *a: recorded.append(a))
@@ -307,6 +327,7 @@ def test_unsuccessful_runs_are_recorded_not_imported(monkeypatch, result, messag
 
 
 def test_a_run_whose_import_fails_is_not_recorded_as_succeeded(monkeypatch):
+    # A run recorded as succeeded though its jobs were never saved hides the loss of a paid run.
     import jobflow.ingest.store as store
     recorded = []
     monkeypatch.setattr(store, "record_failed_run", lambda *a: recorded.append(a))
@@ -321,6 +342,7 @@ def test_a_run_whose_import_fails_is_not_recorded_as_succeeded(monkeypatch):
 
 
 def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
+    # One site failing must not lose the other sites' runs, or the archiving and pruning after them.
     monkeypatch.setenv("APIFY_TOKEN", "t")
     monkeypatch.setenv("JOBFLOW_SEARCHES", CONFIG)
     seen = []
@@ -353,14 +375,18 @@ def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
 
 
 def test_each_run_knows_its_country_so_one_ad_in_two_countries_stays_two_jobs():
+    # Without its country, one employer's ad in two countries would be merged into one job, losing
+    # the other.
     runs = plan(searches())
     for run in runs:
         if run.site != "linkedin":
-            assert run.country == {"au": "AU", "nz": "NZ", "sg": "SG", "uk": "GB", "australia": "AU",
-                                   "new zealand": "NZ", "singapore": "SG"}[run.run_input["country"]]
+            assert run.country == {"au": "AU", "nz": "NZ", "sg": "SG", "uk": "GB",
+                                   "australia": "AU", "new zealand": "NZ",
+                                   "singapore": "SG"}[run.run_input["country"]]
     # One LinkedIn run covers every place in a search, so a multi-country search has no
     # single country; a one-country search does.
-    assert next(r for r in runs if r.site == "linkedin" and r.search.name == "analyst").country is None
+    assert next(r for r in runs
+                if r.site == "linkedin" and r.search.name == "analyst").country is None
     single = parse_config(CONFIG.replace(', NZ = [], SG = ["singapore"], UK = ["London"]', ""))
     assert next(r for r in plan(single) if r.site == "linkedin").country == "AU"
     # Without a run country, LinkedIn-style locations still give one.
@@ -377,8 +403,11 @@ def test_each_run_knows_its_country_so_one_ad_in_two_countries_stays_two_jobs():
 
 
 def test_excluded_titles_and_employers_keep_jobs_out_of_the_inbox():
+    # An exclusion that misses capitalisation or punctuation lets excluded jobs in; one matching
+    # inside a longer word filters jobs you want.
     config = CONFIG.replace("max_results = 40",
-                            'max_results = 40\nexclude_title_terms = ["Internship", "Fresh Grad", "Graduate"]')
+                            'max_results = 40\n'
+                            'exclude_title_terms = ["Internship", "Fresh Grad", "Graduate"]')
     search = parse_config(config)[0]
     def reason(title):
         return filter_reason(normalise({"title": title, "companyName": "Acme"}), search, "linkedin")
@@ -390,7 +419,8 @@ def test_excluded_titles_and_employers_keep_jobs_out_of_the_inbox():
     assert reason("Postgraduate Researcher") is None
     assert reason("Quant Analyst") is None
     # Symbols count: "C++" and "C#" once both matched any title with the word "C".
-    cpp = parse_config(CONFIG.replace("max_results = 40", 'max_results = 40\nexclude_title_terms = ["C++", "C#"]'))[0]
+    cpp = parse_config(CONFIG.replace("max_results = 40",
+                                      'max_results = 40\nexclude_title_terms = ["C++", "C#"]'))[0]
     assert filter_reason(normalise({"title": "Senior C++ Developer", "companyName": "Acme"}), cpp,
                          "linkedin") == "title contains 'C++'"
     assert filter_reason(normalise({"title": "Series C Fintech Quant", "companyName": "Acme"}), cpp,
@@ -398,7 +428,8 @@ def test_excluded_titles_and_employers_keep_jobs_out_of_the_inbox():
     # A kept title overrides an excluded term, but not an excluded employer.
     kept = parse_config(CONFIG.replace("max_results = 40", 'max_results = 40\n'
                                        'exclude_title_terms = ["Analyst"]\n'
-                                       'include_title_terms = ["Quant Analyst", "Quantitative Analyst"]\n'
+                                       'include_title_terms = '
+                                       '["Quant Analyst", "Quantitative Analyst"]\n'
                                        'exclude_companies = ["Acme", "Big Bank"]'))[0]
 
     def judged(title, company):
@@ -412,12 +443,14 @@ def test_excluded_titles_and_employers_keep_jobs_out_of_the_inbox():
 
 
 def test_a_term_or_city_listed_twice_is_searched_and_paid_for_once():
+    # A term or city listed twice in other capitals would be searched, and paid for, twice.
     searches = parse_config('[[search]]\nname = "a"\nsites = ["indeed"]\n'
                             'terms = ["Data analyst", "data Analyst"]\n'
                             'locations = { AU = ["Sydney", "sydney"] }\n')
     assert len(plan(searches)) == 1
     with pytest.raises(SearchConfigError, match="GB is listed twice"):
-        parse_config('[[search]]\nname = "a"\nterms = ["x"]\nlocations = { UK = [], GB = ["London"] }\n')
+        parse_config('[[search]]\nname = "a"\nterms = ["x"]\n'
+                     'locations = { UK = [], GB = ["London"] }\n')
 
 
 def test_runs_that_could_outlast_the_daily_job_are_not_started(monkeypatch):

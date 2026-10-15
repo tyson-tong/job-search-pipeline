@@ -1,7 +1,7 @@
 """The skills your CVs don't show that scored jobs ask for most, with a plan to close them.
 
 Built from stored match scores, so it costs one LLM call and no rescoring. Each scored job
-you're pursuing (STATUSES) contributes the requirements its best-matching CV didn't fully
+you're pursuing (matching.PURSUING) contributes the requirements its best-matching CV didn't fully
 evidence. The LLM only groups those requirements into skills and suggests how to close each
 gap; the counts and the ranking are computed here, from the stored requirements.
 """
@@ -23,9 +23,6 @@ from .pages import html_page
 IMPORTANCE_WEIGHT = {"required": 1.0, "preferred": 0.5}
 STATUS_WEIGHT = {"not_evidenced": 1.0, "partial": 0.5}
 MAX_GAPS_SENT = 600
-# The jobs whose gaps count: the ones you're pursuing. Jobs still in the Inbox, and ones
-# rejected, withdrawn, declined, or accepted, don't.
-STATUSES = list(PURSUING)
 
 
 def outdated_note(jobs: int) -> str:
@@ -37,9 +34,9 @@ def outdated_note(jobs: int) -> str:
 
 
 def collect_gaps() -> tuple[list[dict], int, int]:
-    """Requirements not fully evidenced by the best CV of each scored job with one of
-    STATUSES, among those
-    cvs in config/profile.toml names, newest job first; the job count; and how many of
+    """Requirements not fully evidenced by the best CV of each scored job you're pursuing
+    (Inbox jobs and ones rejected, withdrawn, declined, or accepted don't count), among
+    those cvs in config/profile.toml names, newest job first; the job count; and how many of
     those jobs' best scores were made against an earlier version of the CV, so may list
     gaps you've since filled."""
     weights, chosen, digests = matching_weights(), chosen_files(), current_digests()
@@ -50,17 +47,19 @@ def collect_gaps() -> tuple[list[dict], int, int]:
             """SELECT j.id, j.title, j.company FROM jobs j
                WHERE j.status = ANY(%s)
                  AND EXISTS (SELECT 1 FROM match_assessments m WHERE m.job_id = j.id)
-               ORDER BY j.id DESC""", (STATUSES,)).fetchall()
+               ORDER BY j.id DESC""", (list(PURSUING),)).fetchall()
         scored = 0
         for job_id, title, company in jobs:
-            stored = [r for r in stored_assessments(conn, job_id, weights) if r["variant"] in chosen]
+            stored = [r for r in stored_assessments(conn, job_id, weights)
+                      if r["variant"] in chosen]
             if not stored:
                 continue
             scored += 1
             best = best_variant(stored)
             outdated += best["cv_sha256"] != digests[best["variant"]]
             for item in best["partial"] + best["not_evidenced"]:
-                gaps.append({"id": len(gaps), "job_id": job_id, "job": f"{title} ({company or 'unknown employer'})",
+                gaps.append({"id": len(gaps), "job_id": job_id,
+                             "job": f"{title} ({company or 'unknown employer'})",
                              "requirement": item["requirement"], "importance": item["importance"],
                              "status": item["status"]})
     return gaps, scored, outdated
@@ -116,7 +115,8 @@ def _group(gaps: list[dict]) -> tuple[object, str]:
     return parse_json(content).get("skills"), model
 
 
-REPORT_STYLE = """table{border-collapse:collapse;width:100%;background:white}th,td{padding:.6rem;border-bottom:1px solid #e3e7eb;text-align:left;vertical-align:top}
+REPORT_STYLE = """table{border-collapse:collapse;width:100%;background:white}
+th,td{padding:.6rem;border-bottom:1px solid #e3e7eb;text-align:left;vertical-align:top}
 th{background:#eef1f4}.meta{font-size:.9em}details{margin-top:.4rem}li{margin:.25rem 0}"""
 
 
@@ -143,15 +143,16 @@ def _page(skills: list[dict], scored: int, ungrouped: int, model: str, generated
         note += (f"<p class=meta>Only the {MAX_GAPS_SENT} requirements from your most recently "
                  f"added scored jobs are grouped; {left_out} older ones are left out.</p>")
     return html_page("Skill gaps", f"""<h1>Skill gaps</h1>
-<p class=meta>Generated {generated} from {plural(scored, 'scored job')} you're pursuing (interested,
-applied, interviewing, or offered), using each job's
-best-matching CV of those cvs in config/profile.toml names. Ranked by how often a skill is asked for and not shown: a required
-requirement counts 1, a preferred one 0.5, halved when your CV partly shows it. "Not shown"
-means your CV doesn't evidence it, not that you lack it: if you have the skill, add evidence
-of it to your CV.</p>{note}
+<p class=meta>Generated {generated} from {plural(scored, 'scored job')} you're pursuing
+(interested, applied, interviewing, or offered), using each job's best-matching CV of those
+cvs in config/profile.toml names. Ranked by how often a skill is asked for and not shown: a
+required requirement counts 1, a preferred one 0.5, halved when your CV partly shows it.
+"Not shown" means your CV doesn't evidence it, not that you lack it: if you have the skill,
+add evidence of it to your CV.</p>{note}
 <table><tr><th>#</th><th>Skill</th><th>Jobs</th><th>Required</th><th>How to close it</th></tr>
 {''.join(rows)}</table>
-<p class=meta>Grouping and suggestions by model {html.escape(model)}; counts are computed from your stored match scores.</p>""",
+<p class=meta>Grouping and suggestions by model {html.escape(model)}; counts are computed from
+your stored match scores.</p>""",
         REPORT_STYLE, width="1100px", font_size="15px")
 
 
@@ -170,6 +171,7 @@ def report() -> tuple[Path, list[dict], int]:
     generated = now()
     target = output_directory() / f"skill-gaps-{generated:%Y-%m-%d}.html"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(_page(skills, scored, ungrouped, model, generated.strftime("%Y-%m-%d %H:%M %Z"),
+    target.write_text(_page(skills, scored, ungrouped, model,
+                            generated.strftime("%Y-%m-%d %H:%M %Z"),
                             left_out=max(0, len(gaps) - MAX_GAPS_SENT), outdated=outdated))
     return target, skills, outdated

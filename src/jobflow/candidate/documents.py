@@ -53,7 +53,8 @@ def _entry(entry: object) -> dict:
     if "bullet" in entry:
         return {"kind": "bullet", "text": _text(entry["bullet"])}
     if "label" in entry:
-        return {"kind": "text", "text": f"**{_text(entry['label'])}:** {_text(entry.get('details'))}"}
+        return {"kind": "text",
+                "text": f"**{_text(entry['label'])}:** {_text(entry.get('details'))}"}
     if "number" in entry or "reversed_number" in entry:
         return {"kind": "text", "text": _text(entry.get("number") or entry.get("reversed_number"))}
     title, detail = "", ""
@@ -68,7 +69,8 @@ def _entry(entry: object) -> dict:
     elif entry.get("title"):
         title = f"**{_text(entry['title'])}**"
         authors = entry.get("authors") or []
-        detail = ", ".join(_text(a) for a in authors) if isinstance(authors, list) else _text(authors)
+        detail = (", ".join(_text(a) for a in authors) if isinstance(authors, list)
+                  else _text(authors))
         if entry.get("journal"):
             detail = f"{detail}. {_text(entry['journal'])}" if detail else _text(entry["journal"])
     elif entry.get("name"):
@@ -130,7 +132,8 @@ def write_docx(cv: dict, path: Path) -> None:
         p.paragraph_format.keep_with_next = keep   # keeps an entry on one page
         return p
 
-    def row(left: str, right: str, italic: bool = False, space_before: float = 0, keep: bool = True):
+    def row(left: str, right: str, italic: bool = False, space_before: float = 0,
+            keep: bool = True):
         p = paragraph(space_before, keep)
         p.paragraph_format.tab_stops.add_tab_stop(width, WD_TAB_ALIGNMENT.RIGHT)
         _add_runs(p, left, italic)
@@ -155,7 +158,8 @@ def write_docx(cv: dict, path: Path) -> None:
         run.bold, run.font.size = True, Pt(12)
         border = OxmlElement("w:pBdr")
         bottom = OxmlElement("w:bottom")
-        for attribute, value in (("val", "single"), ("sz", "6"), ("space", "1"), ("color", "808080")):
+        for attribute, value in (("val", "single"), ("sz", "6"), ("space", "1"),
+                                 ("color", "808080")):
             bottom.set(qn(f"w:{attribute}"), value)
         border.append(bottom)
         heading.paragraph_format.element.get_or_add_pPr().append(border)
@@ -167,7 +171,8 @@ def write_docx(cv: dict, path: Path) -> None:
             if block["kind"] == "text":
                 _add_runs(paragraph(2, keep=False), block["text"])
                 continue
-            lines = ([(block["detail"], block["location"])] if block["detail"] or block["location"] else [])
+            lines = ([(block["detail"], block["location"])]
+                     if block["detail"] or block["location"] else [])
             last = not lines and not block["summary"] and not block["bullets"]
             row(block["title"], block["dates"], space_before=5, keep=not last)
             for detail, location in lines:
@@ -300,7 +305,8 @@ def write_latex(cv: dict, path: Path) -> None:
             r"{\small " + r" \textbar{} ".join(_latex(c) for c in contact) + "}",
             r"\end{center}"]
     for section_title, blocks in sections:
-        body += ["", rf"\section*{{{_latex(section_title)}}}", r"\vspace{-0.8em}\hrule\vspace{0.4em}"]
+        body += ["", rf"\section*{{{_latex(section_title)}}}",
+                 r"\vspace{-0.8em}\hrule\vspace{0.4em}"]
         for block in blocks:
             if block["kind"] == "bullet":
                 body.append(rf"\textbullet{{}} {_latex(block['text'])}\par")

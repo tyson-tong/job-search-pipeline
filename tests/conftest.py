@@ -36,7 +36,8 @@ def isolated_settings(monkeypatch, tmp_path_factory):
     (home / "output").mkdir()
     profile = home / "config" / "profile.toml"
     profile.parent.mkdir()
-    profile.write_text('cvs = []\n[paths]\ncv_directory = "../cv"\noutput_directory = "../output"\n')
+    profile.write_text('cvs = []\n[paths]\ncv_directory = "../cv"\n'
+                       'output_directory = "../output"\n')
     monkeypatch.setenv("JOBFLOW_PROFILE", str(profile))
     # Nor your config/.env, with its real keys.
     monkeypatch.setattr(settings, "env_path", lambda: home / "config" / ".env")

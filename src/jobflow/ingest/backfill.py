@@ -16,7 +16,7 @@ def backfill_sources(conn) -> int:
     before = conn.execute("SELECT count(*) FROM job_sources").fetchone()[0]
     for job_pk, raw in rows:
         # Older observations may already have had their full records pruned. An empty
-        # placeholder would normalize to the same synthetic "unknown" identity for every
+        # placeholder would normalise to the same synthetic "unknown" identity for every
         # such row, incorrectly attaching one fake source to an arbitrary job.
         if not isinstance(raw, dict) or not raw:
             continue

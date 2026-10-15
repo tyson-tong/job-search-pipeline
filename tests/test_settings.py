@@ -9,6 +9,8 @@ from jobflow.settings import init_files, load_env
 
 
 def test_env_file_never_overrides_real_environment(monkeypatch, tmp_path):
+    # On GitHub the secrets are real environment variables: a config/.env overriding them would use
+    # the wrong keys; a misread value (quotes, comments) breaks a setting.
     env = tmp_path / ".env"
     env.write_text("# comment\n"
                    "export LLM_MODEL='gpt-x'\n"
@@ -33,6 +35,8 @@ def test_env_file_never_overrides_real_environment(monkeypatch, tmp_path):
 
 
 def test_init_never_overwrites_personal_files_and_keeps_env_private(tmp_path):
+    # init run again must not overwrite your keys or settings, and config/.env holds secrets, so
+    # only you may read it.
     config = tmp_path / "config"
     config.mkdir()
     for template in (".env.example", "profile.example.toml", "searches.example.toml"):

@@ -46,7 +46,8 @@ def describe_searches() -> dict:
             "max_results": search.max_results, "max_cost_usd": search.max_cost_usd,
             "radius_km": search.radius_km, "salary_min": search.salary_min,
             "salary_max": search.salary_max, "salary_period": search.salary_period,
-            "job_types": list(search.job_types), "work_arrangements": list(search.work_arrangements),
+            "job_types": list(search.job_types),
+            "work_arrangements": list(search.work_arrangements),
             "seek_classifications": list(search.seek_classifications),
             "exclude_title_terms": list(search.exclude_title_terms),
             "include_title_terms": list(search.include_title_terms),
@@ -71,7 +72,8 @@ def reference() -> dict:
         "countries": [{"code": code, "name": opt.LINKEDIN_COUNTRIES[code], "cities": list(cities),
                        "sites": [s for s, table in (("linkedin", opt.LINKEDIN_COUNTRIES),
                                                      ("indeed", opt.INDEED_COUNTRIES),
-                                                     ("seek", opt.SEEK_COUNTRIES)) if code in table]}
+                                                     ("seek", opt.SEEK_COUNTRIES))
+                                 if code in table]}
                       for code, cities in opt.CITIES.items()],
         "seek_classifications": [
             {"key": key, "name": name,

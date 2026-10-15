@@ -50,10 +50,12 @@ def excluded_title_term(title: str | None, terms: tuple[str, ...],
     return next((term for term in terms if found(term)), None)
 
 
-# How the reasons for the two exclusions begin. update-searches (refilter.py) tells them from
-# the other reasons by these, so they're shared rather than written out twice.
+# How the reasons for the two exclusions, and for the posted-date window, begin.
+# update-searches (refilter.py) tells them from the other reasons by these, so they're shared
+# rather than written out twice.
 EXCLUDED_EMPLOYER = "employer matches "
 EXCLUDED_TITLE = "title contains "
+POSTED_TOO_EARLY = "posted "
 
 
 def excluded_reason(title: str | None, company: str | None, search: Search) -> str | None:
@@ -99,7 +101,7 @@ def filter_reason(posting: Posting, search: Search, site: str,
         # One day of slack: sites and time zones disagree on what "today" is.
         oldest = (today or settings.today()) - timedelta(days=search.posted_within_days + 1)
         if posting.posted_at < oldest:
-            return (f"posted {posting.posted_at.isoformat()}, older than "
+            return (f"{POSTED_TOO_EARLY}{posting.posted_at.isoformat()}, older than "
                     f"{WINDOW_NAMES[search.posted_within_days]}")
     # A salary whose period was guessed (no "per year" or "per hour" in the ad) may be far
     # off, so it never filters a job out.

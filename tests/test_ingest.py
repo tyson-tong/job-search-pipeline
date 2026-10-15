@@ -25,6 +25,8 @@ SEEK = {"id": "81234567", "jobLink": "https://www.seek.com.au/job/81234567?type=
 
 
 def test_canonical_url_drops_tracking_so_repeat_links_match():
+    # Links differing only by tracking parameters must match, or a repeat sighting becomes a second
+    # job.
     assert canonical_url("HTTPS://Example.com/jobs/1/?utm_source=x&b=2&a=1&trk=y") == \
         "https://example.com/jobs/1?a=1&b=2"
     assert canonical_url("not a url") is None
@@ -33,6 +35,8 @@ def test_canonical_url_drops_tracking_so_repeat_links_match():
 
 
 def test_each_scraper_format_is_normalised():
+    # Each scraper names its fields differently: a field read from the wrong place loses the
+    # employer, location, date, or filters.
     linkedin, indeed, seek = (normalise(i) for i in (LINKEDIN, INDEED, SEEK))
     assert (linkedin.source, linkedin.company, linkedin.location, linkedin.posted_at) == \
         ("linkedin", "Acme Pty Ltd", "Sydney, NSW", date(2026, 9, 20))
@@ -46,6 +50,8 @@ def test_each_scraper_format_is_normalised():
 
 
 def test_to_date_handles_iso_and_unix_seconds_or_milliseconds():
+    # A posted date read wrongly (a timestamp in seconds as milliseconds, a compact date as a
+    # timestamp) filters or archives the job wrongly.
     assert to_date("2026-09-01T10:00:00Z") == date(2026, 9, 1)
     assert to_date(1789862400000) == to_date(1789862400) == date(2026, 9, 20)
     assert to_date("3 days ago") is None

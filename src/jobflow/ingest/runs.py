@@ -135,7 +135,8 @@ def seek_runs(search: Search) -> list[PlannedRun]:
 
 def _notes(site: str, search: Search, window_note: str | None) -> list[str]:
     notes = [window_note] if window_note else []
-    if search.seek_classifications and opt.FILTER_SUPPORT[site]["seek_classifications"] == "unsupported":
+    if (search.seek_classifications
+            and opt.FILTER_SUPPORT[site]["seek_classifications"] == "unsupported"):
         notes.append("seek_classifications skipped (Seek only; use search terms instead)")
     return notes
 
@@ -157,7 +158,8 @@ def run_country(site: str, run_input: dict | None) -> str | None:
     run_input = run_input or {}
     if site in ("indeed", "seek"):
         table = opt.INDEED_COUNTRIES if site == "indeed" else opt.SEEK_COUNTRIES
-        return next((code for code, value in table.items() if value == run_input.get("country")), None)
+        return next((code for code, value in table.items()
+                     if value == run_input.get("country")), None)
     countries = {_url_country(url) for url in run_input.get("urls") or []}
     return countries.pop() if len(countries) == 1 else None
 

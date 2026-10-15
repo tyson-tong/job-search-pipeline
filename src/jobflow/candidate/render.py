@@ -231,6 +231,7 @@ def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
         for page, empty in page_gaps(pdf):
             warnings.append(f"Page {page} is {empty:.0%} empty at the bottom (as RenderCV lays "
                             "it out): the next entry was too long for the space, so it moved "
-                            "whole to the next page. Cutting a few of its bullets would pull it up.")
+                            "whole to the next page. Cutting a few of its bullets would pull "
+                            "it up.")
         kept = shutil.copy(pdf, keep_pdf / pdf.name) if keep_pdf else None
     return cv, cut, Path(kept) if kept else None

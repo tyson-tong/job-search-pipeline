@@ -306,7 +306,8 @@ def job_detail(job_id: int) -> dict | None:
                 "applied_at", "follow_up_on", "country", "version")
         job = dict(zip(keys, row, strict=True))
         job["currency"] = CURRENCIES.get(job["country"])
-        job["sources"] = [dict(zip(("source", "url", "first_seen_at"), r, strict=True)) for r in conn.execute(
+        job["sources"] = [dict(zip(("source", "url", "first_seen_at"), r, strict=True))
+                          for r in conn.execute(
             """SELECT source, url, first_seen_at FROM job_sources WHERE job_id=%s
                ORDER BY first_seen_at""", (job_id,)).fetchall()]
         job["matches"] = [
@@ -324,7 +325,8 @@ def job_detail(job_id: int) -> dict | None:
         stale = _outdated(conn, [job_id], digests).get(job_id, [])
         for match in job["matches"]:
             match["outdated"] = match["variant"] in stale
-        job["history"] = [dict(zip(("from_status", "to_status", "via", "changed_at"), r, strict=True))
+        job["history"] = [dict(zip(("from_status", "to_status", "via", "changed_at"), r,
+                                   strict=True))
                           for r in conn.execute(
             """SELECT from_status, to_status, via, changed_at FROM status_history
                WHERE job_id=%s ORDER BY changed_at""", (job_id,)).fetchall()]

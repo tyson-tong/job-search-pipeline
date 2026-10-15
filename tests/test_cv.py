@@ -43,6 +43,8 @@ SOURCE_CV = {
 
 
 def test_quote_verification_ignores_case_punctuation_and_markup():
+    # Scores count only verified quotes: too strict a match drops real evidence and lowers scores,
+    # too loose one counts a fragment ("Pres") as evidence.
     assert quote_in_cv("built python ETL pipelines", CV_TEXT)
     assert quote_in_cv("Built Python ETL pipelines processing 2M records daily.", CV_TEXT)
     assert not quote_in_cv("Built Spark pipelines", CV_TEXT)
@@ -52,6 +54,8 @@ def test_quote_verification_ignores_case_punctuation_and_markup():
 
 
 def test_unverifiable_quotes_downgrade_status():
+    # An LLM quote not in the CV would raise the score on evidence that doesn't exist; malformed
+    # items from the LLM must be dropped, not crash scoring.
     items = normalise_requirements([
         {"requirement": "Python", "importance": "Must have", "status": "matched",
          "evidence": ["Built Python ETL pipelines"]},
@@ -80,6 +84,8 @@ def _item(importance, status):
 
 
 def test_score_is_computed_from_evidence_and_profile_weights():
+    # The score is computed in code: a wrong formula ranks every job wrongly, and a job with no
+    # preferred requirements must not be penalised for lacking them.
     items = [_item("required", "matched"), _item("required", "partial"),
              _item("preferred", "not_evidenced")]
     score, breakdown = score_requirements(items, 0.75, 0.25)
@@ -92,6 +98,8 @@ def test_score_is_computed_from_evidence_and_profile_weights():
 
 
 def test_fact_check_accepts_reordering_and_omitted_bullets():
+    # Tailoring reorders and drops bullets: if the fact check flagged that, every draft would fail
+    # it and be drafted again, paying for the LLM each time.
     draft = copy.deepcopy(SOURCE_CV)
     draft["sections"]["experiences"][0]["highlights"] = [
         "Presented dashboards to executives using Tableau"]
@@ -102,6 +110,8 @@ def test_fact_check_accepts_reordering_and_omitted_bullets():
 
 
 def test_fact_check_flags_factual_changes():
+    # A tailored CV must not change contact details, titles, dates, numbers, or education: one sent
+    # with an invented fact could cost you the job.
     draft = copy.deepcopy(SOURCE_CV)
     draft["phone"] = "+61 400 999 999"
     draft["website"] = "https://invented.example"
@@ -122,9 +132,12 @@ def test_fact_check_flags_factual_changes():
 
 
 def test_fact_check_flags_removed_employer_and_warns_on_new_terms():
+    # A dropped employer leaves a gap in your history, and a new tool name may be a skill you don't
+    # have.
     draft = copy.deepcopy(SOURCE_CV)
     draft["sections"]["experiences"] = []
-    draft["sections"]["skills"] = [{"label": "Tools", "details": "Python, SQL, Tableau, Kubernetes"}]
+    draft["sections"]["skills"] = [{"label": "Tools",
+                                    "details": "Python, SQL, Tableau, Kubernetes"}]
     errors, warnings = fact_check(SOURCE_CV, draft)
     assert "Employer removed: Example Corp." in errors
     assert warnings and "Kubernetes" in warnings[0]
@@ -134,7 +147,8 @@ def test_fact_check_warns_on_a_new_term_that_starts_a_list_or_a_bullet():
     # The first word of a sentence was never checked, and the draft leads with what the job
     # wants: an invented skill first in a list, or a bullet, went unmentioned.
     draft = copy.deepcopy(SOURCE_CV)
-    draft["sections"]["skills"] = [{"label": "Tools", "details": "Kubernetes, Python, SQL, Tableau"}]
+    draft["sections"]["skills"] = [{"label": "Tools",
+                                    "details": "Kubernetes, Python, SQL, Tableau"}]
     draft["sections"]["experiences"][0]["highlights"] = [
         "Terraform ETL pipelines processing 2M records daily", "PyTorch dashboards for executives",
         "Spearheaded dashboards for executives using Tableau"]
@@ -145,6 +159,8 @@ def test_fact_check_warns_on_a_new_term_that_starts_a_list_or_a_bullet():
 
 
 def test_fact_check_flags_a_changed_location_and_markup_rendercv_would_run():
+    # RenderCV passes Typst commands and links through: a job ad could steer the LLM into hidden
+    # text or a link the PDF doesn't show. A changed location is a false fact; a dropped one isn't.
     source = copy.deepcopy(SOURCE_CV)
     source["sections"]["experiences"][0]["location"] = "Sydney"
     moved = copy.deepcopy(source)
@@ -163,6 +179,7 @@ def test_fact_check_flags_a_changed_location_and_markup_rendercv_would_run():
 
 
 def test_fact_check_flags_a_removed_role_at_an_employer_still_listed():
+    # Checked by employer alone, a draft could drop one of your roles there and still pass.
     source = copy.deepcopy(SOURCE_CV)
     source["sections"]["experiences"].append(
         {"company": "Example Corp", "position": "Junior Analyst", "start_date": "2019-06",
@@ -230,6 +247,8 @@ JOB = {"title": "Data Analyst", "company": "Acme",
 
 
 def test_letter_check_flags_numbers_and_terms_from_nowhere():
+    # A cover letter with a figure or skill from nowhere states something untrue; ones from the CV,
+    # the ad, or the research are fine.
     research = [{"title": "Acme news", "content": "Acme was founded in 1998 in Sydney."}]
     letter = ("Dear Hiring Manager,\nAt Example Corp I built Python ETL pipelines processing "
               "2M records daily, and I'd enjoy owning your 3 dashboards at a company founded in "
@@ -263,6 +282,8 @@ def letter_llm(monkeypatch, no_database):
 
 
 def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, letter_llm):
+    # A .docx looks ready to send: one with an unchecked claim, or an older one left beside a failed
+    # letter, could be sent by mistake.
     letter = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
     letter_llm(letter, {"critique": [], "cover_letter": letter})
     # A cover-letter.docx from an earlier run would look like this letter, checked.
@@ -274,6 +295,8 @@ def test_letter_failing_the_check_is_never_written_as_a_docx(tmp_path, letter_ll
 
 
 def test_a_revision_with_more_fact_check_errors_is_discarded(tmp_path, letter_llm):
+    # The reviewer's revision can add claims: kept regardless, it would replace a letter that passed
+    # the check with one that doesn't.
     draft = "Dear Hiring Manager,\n\nAt Example Corp I built Python ETL pipelines.\n\nAlex Example"
     revised = "Dear Hiring Manager,\n\nI cut costs by 40% at Example Corp.\n\nAlex Example"
     letter_llm(draft, {"critique": ["Add a metric"], "cover_letter": revised})
@@ -314,6 +337,8 @@ def test_a_reviewer_every_job_would_fail_on_stops_the_batch(tmp_path, letter_llm
 
 
 def test_skill_ranking_counts_only_real_gaps_once():
+    # The LLM groups gaps by id: repeated, unknown, or reused ids would count a gap twice or invent
+    # one, and rank skills wrongly.
     gaps = [{"id": 0, "job_id": 1, "job": "A", "requirement": "AWS", "importance": "required",
              "status": "not_evidenced"},
             {"id": 1, "job_id": 2, "job": "B", "requirement": "Amazon Web Services",
@@ -331,6 +356,8 @@ def test_skill_ranking_counts_only_real_gaps_once():
 
 
 def test_shortening_never_empties_an_entry_or_rewrites_anything():
+    # Cutting to fit is done in code so nothing is rewritten: an emptied entry or a changed bullet
+    # would put an unchecked CV in front of an employer.
     cv = copy.deepcopy(SOURCE_CV)
     cv["sections"]["experiences"].append({"company": "Other Co", "highlights": ["Only bullet"]})
     found = bullets(cv)
@@ -353,6 +380,8 @@ def test_shortening_never_empties_an_entry_or_rewrites_anything():
 
 
 def test_cutting_to_fit_cuts_the_fewest_least_relevant_bullets(tmp_path, monkeypatch):
+    # Cutting too many bullets throws away your best evidence; cutting the wrong ones keeps the
+    # least relevant.
     import yaml
 
     from jobflow.candidate import render
@@ -462,6 +491,8 @@ def test_a_cv_photo_is_copied_beside_the_draft_and_never_outside_it(tmp_path):
 
 
 def test_the_cv_files_named_in_the_profile_are_read_as_text(tmp_path, monkeypatch):
+    # A .docx or .tex CV read wrongly (LaTeX commands or comments left in) is scored against text
+    # that isn't what an employer sees.
     from jobflow.candidate import cvs
 
     write_docx(SOURCE_CV, tmp_path / "Resume 2026.docx")

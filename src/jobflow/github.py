@@ -153,7 +153,8 @@ def _print_published_searches(text: str | None) -> dict[str, list[str]]:
                 same = None
             print(f"Searches: JOBFLOW_SEARCHES, {plural(len(searches), 'search', 'es')}"
                   + ("" if same is None else " (same as config/searches.toml)" if same
-                     else " (differs from config/searches.toml: run `uv run jobflow update-searches`)"))
+                     else " (differs from config/searches.toml: run "
+                          "`uv run jobflow update-searches`)"))
     return used
 
 
@@ -209,7 +210,8 @@ def status() -> None:
     secrets = {s["name"]: s["updatedAt"][:10] for s in json.loads(_gh(
         ["secret", "list", "--json", "name,updatedAt"], "Reading the repository's secret names"))}
     variables = {v["name"]: v["value"] for v in json.loads(_gh(
-        ["variable", "list", "--json", "name,value"], "Reading the repository's Actions variables"))}
+        ["variable", "list", "--json", "name,value"],
+        "Reading the repository's Actions variables"))}
     print(f"Daily import (.github/workflows/{WORKFLOW}): {WORKFLOW_STATES.get(state, state)}")
     if runs:
         run = runs[0]

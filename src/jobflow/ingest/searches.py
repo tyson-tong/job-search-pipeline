@@ -102,12 +102,14 @@ def _locations(raw_locations: object, where: str) -> dict[str, tuple[str, ...]]:
                                     f"{', '.join(opt.CITIES)} (UK also works for GB)")
         if isinstance(cities, str):
             cities = [cities]
-        if not isinstance(cities, list) or not all(isinstance(c, str) and c.strip() for c in cities):
+        if not isinstance(cities, list) \
+                or not all(isinstance(c, str) and c.strip() for c in cities):
             raise SearchConfigError(f"{where}: cities for {code} must be a list of names")
         known = {city.casefold(): city for city in opt.CITIES[code]}
         unknown_cities = [c for c in cities if c.strip().casefold() not in known]
         if unknown_cities:
-            raise SearchConfigError(f"{where}: unknown {code} cit{'y' if len(unknown_cities) == 1 else 'ies'} "
+            cities_word = "city" if len(unknown_cities) == 1 else "cities"
+            raise SearchConfigError(f"{where}: unknown {code} {cities_word} "
                                     f"{unknown_cities}; choose from {', '.join(opt.CITIES[code])}, "
                                     "or [] for the whole country")
         # A city listed twice would be searched, and paid for, twice.
@@ -155,7 +157,8 @@ def parse_search(raw: dict, defaults: dict) -> Search:
     max_results = int(_number(merged, "max_results", where, whole=True) or 0)
     if max_results < 1:
         raise SearchConfigError(f"{where}: max_results must be at least 1")
-    salary_min, salary_max = _number(merged, "salary_min", where), _number(merged, "salary_max", where)
+    salary_min = _number(merged, "salary_min", where)
+    salary_max = _number(merged, "salary_max", where)
     max_cost_usd = _number(merged, "max_cost_usd", where)
     radius_km = _number(merged, "radius_km", where, whole=True)
     # A cap of 0 would be sent as no cap at all, the opposite of what it says.
@@ -264,7 +267,8 @@ def defaults_search(text: str) -> Search:
 
 def load_searches() -> list[Search]:
     """From JOBFLOW_SEARCHES (the TOML text, as used in GitHub Actions), else the file
-    named by paths.searches_file in config/profile.toml (default ./searches.toml relative to config/profile.toml)."""
+    named by paths.searches_file in config/profile.toml (default ./searches.toml relative to
+    config/profile.toml)."""
     text = os.environ.get("JOBFLOW_SEARCHES")
     if not text and os.environ.get("GITHUB_ACTIONS"):
         # There is no config/profile.toml here, so the fallback below would only confuse.

@@ -171,7 +171,8 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
         # job_sources and as an observation. A longer description from any site is preferred.
         conn.execute(
             """UPDATE jobs SET raw_json=CASE WHEN %s THEN %s ELSE raw_json END,
-                   description=CASE WHEN length(coalesce(%s, '')) > length(coalesce(description, ''))
+                   description=CASE WHEN length(coalesce(%s, ''))
+                                             > length(coalesce(description, ''))
                                     THEN %s ELSE description END,
                    canonical_url=coalesce(canonical_url, %s),
                    posted_at=coalesce(posted_at, %s),
@@ -256,7 +257,8 @@ RECENT_RUNS = timedelta(hours=36)
 def recent_failed_runs(conn) -> list[dict]:
     """Each site with runs that failed in RECENT_RUNS, even if its other runs (or other
     sites') succeeded: {site, failed, total, error}, with the latest failure's error."""
-    return [dict(zip(("site", "failed", "total", "error"), row, strict=True)) for row in conn.execute(
+    keys = ("site", "failed", "total", "error")
+    return [dict(zip(keys, row, strict=True)) for row in conn.execute(
         """SELECT split_part(actor_id, ':', 1),
                   count(*) FILTER (WHERE status <> 'SUCCEEDED'), count(*),
                   (array_agg(error ORDER BY created_at DESC)
@@ -270,7 +272,8 @@ def recent_capped_runs(conn) -> list[dict]:
     """Each site with runs in RECENT_RUNS that returned as many results as max_results
     allows, so probably left jobs behind: {site, capped, total, searches}, the searches
     being those of the capped runs."""
-    return [dict(zip(("site", "capped", "total", "searches"), row, strict=True)) for row in conn.execute(
+    keys = ("site", "capped", "total", "searches")
+    return [dict(zip(keys, row, strict=True)) for row in conn.execute(
         """SELECT split_part(actor_id, ':', 1), count(*) FILTER (WHERE hit_cap), count(*),
                   coalesce(array_agg(DISTINCT search_name)
                                FILTER (WHERE hit_cap AND search_name IS NOT NULL), '{}')

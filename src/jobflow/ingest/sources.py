@@ -152,7 +152,8 @@ def _period(text: str, span: tuple[int, int], low: float, high: float,
         for word in re.finditer(pattern, text, re.I):
             if not any(a <= word.start() < b for a, b in ignore):
                 after = word.start() >= end
-                found.append((not after, word.start() - end if after else start - word.end(), period))
+                distance = word.start() - end if after else start - word.end()
+                found.append((not after, distance, period))
     for *_, period in sorted(found):
         least, most = PLAUSIBLE[period]
         if least <= high < most:
@@ -241,7 +242,8 @@ def _parse_text(text: str, country: str | None) -> Pay | None:
     # A number that isn't pay takes its next word with it, so "2 weeks leave" and
     # "11.5% super" don't read as a period.
     ignore = [(e.start, _next_word_end(text, e.end)) for e in expressions if e not in pay]
-    ignore += [(m.start(), _next_word_end(text, m.end())) for m in AMOUNT.finditer(text) if m["pct"]]
+    ignore += [(m.start(), _next_word_end(text, m.end()))
+               for m in AMOUNT.finditer(text) if m["pct"]]
     period, stated = _period(text, (chosen.start, chosen.end), chosen.low, chosen.high, ignore,
                              country)
     return _annual(chosen.low, chosen.high, period, stated)

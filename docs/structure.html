@@ -157,7 +157,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>db.py</code> · <code>migrations/</code></td><td>Connection, schema migrations (applied once each, in order), job lookup, and <code>set_job_state</code> (the changes you make: status, notes, follow-up) and <code>move_job</code> (<code>update-searches</code> filtering or restoring a job), each recording the change in history. Imports set <code>new</code> or <code>filtered</code> on a new job, and archiving (<code>ingest/upkeep.py</code>) moves old jobs in one statement, also with history.</td></tr>
   <tr><td><code>text.py</code></td><td>Small text helpers shared across jobflow: words for comparing text regardless of case and punctuation, plurals for messages, and reading the ids an LLM returns as numbers.</td></tr>
   <tr><td><code>llm.py</code></td><td>One call to any OpenAI-compatible chat-completions endpoint.</td></tr>
-  <tr><td><code>batch.py</code></td><td>Working through jobs two at a time: which jobs tailor-cv, cover-letter, and interview-prep still have to do, one run of each at a time, and each job's output printed in one piece; also the tracker's scoring runs.</td></tr>
+  <tr><td><code>batch.py</code></td><td>Working through jobs a few at a time (<a href="rules.md#which-jobs-the-commands-do">rules</a>): which jobs tailor-cv, cover-letter, and interview-prep still have to do, one run of each at a time, and each job's output printed in one piece; also the tracker's scoring runs.</td></tr>
   <tr><td><code>cleanup.py</code></td><td><code>jobflow clean-up</code>: deleting the output folders of jobs you're done with, after you confirm.</td></tr>
   <tr><td><code>github.py</code></td><td>The daily import seen from your machine, with the GitHub CLI: <code>update-searches</code> publishes your searches and timezone, <code>status</code> reads back what it uses.</td></tr>
   <tr><td><code>ingest/options.py</code></td><td>Constants: allowed search values (including the countries and their cities) and how each site's actor expresses them.</td></tr>
@@ -226,7 +226,7 @@ applications      42   notes "2026-09-25: Applied via referral"</div>
   <div class="tbl"><h3>job_sources</h3><p>Every site's copy of a job.</p><ul>
     <li><span class="k">source_key</span> <span class="muted">e.g. seek:8123…</span></li><li>job_id → jobs</li>
     <li>source, url</li><li>first_seen_at</li></ul></div>
-  <div class="tbl"><h3>job_observations</h3><p>Every sighting, with the original record for its first 30 days.</p><ul>
+  <div class="tbl"><h3>job_observations</h3><p>Every sighting, with the original record while it's recent (<a href="rules.md#duplicates">rules</a>).</p><ul>
     <li><span class="k">job_id</span> → jobs</li><li><span class="k">scraper_run_id</span> → scraper_runs</li>
     <li>observed_json, observed_at</li></ul></div>
   <div class="tbl"><h3>match_assessments</h3><p>Each score of a job against a CV (by its short name); a rescore after the CV is edited adds a row, and the latest counts.</p><ul>
