@@ -2,9 +2,9 @@
 // paging, then the page's wiring and start. Ticking rows is in selection.js, scoring in
 // scoring.js, the job panel in detail.js, and the Searches tab in searches.js.
 import {
-  api, AUTO_REFRESH_MS, current, el, fill, NOT_MY_JOBS, QUICK_STATUSES, recall, remember,
-  renderSaveBar, RETURN_TABS, save, setPending, sortInput, state, TAB_STATUS, toast, TOKEN,
-  TRIAGE_STATUSES,
+  api, AUTO_REFRESH_MS, current, el, fill, NOT_MY_JOBS, page, pageStarts, QUICK_STATUSES, recall,
+  remember, renderSaveBar, RETURN_TABS, save, setPending, sortInput, state, statusSelect,
+  TAB_STATUS, toast, TOKEN,
 } from "./common.js";
 import { closeDetail, openDetail, renderDetail } from "./detail.js";
 import { fmtDate, fmtSalary, label, SITE_NAMES } from "./format.js";
@@ -22,11 +22,11 @@ function statusParams() {
   statuses.forEach((s) => params.append("status", s));
   return params;
 }
-// Jobs in the Inbox, Filtered, and Not interested aren't followed up, and only Inbox jobs
-// you pick (with Score selected) are scored there, so those sorts (and, for Filtered,
-// Recently added) don't apply.
+// Jobs in the Inbox, Filtered, Not interested, and Archived aren't followed up, and only
+// Inbox jobs you pick (with Score selected) are scored there, so those sorts (and, for
+// Filtered, Recently added) don't apply.
 const HIDDEN_SORTS = { inbox: ["follow_up"], filtered: ["score", "added", "follow_up"],
-  not_interested: ["score", "follow_up"] };
+  not_interested: ["score", "follow_up"], archived: ["score", "follow_up"] };
 // The tabs with a Match column: My jobs, and the Inbox, where jobs you pick can be scored.
 const SCORED_TABS = ["jobs", "inbox"];
 function fitSort() {
@@ -58,7 +58,7 @@ function filterParams() {
 // Each refresh's number: a slower, older one (two quick filter clicks, say) must not land
 // after a newer one, showing jobs for a filter no longer chosen.
 let refreshes = 0;
-export async function refresh() {
+async function refresh() {
   const mine = ++refreshes;
   try {
     if (state.view === "searches") {
@@ -160,16 +160,6 @@ function renderStatusMenu() {
   document.getElementById("status-summary").textContent =
     "Status: " + (!chosen.length ? "none" : chosen.length > 3 ? `${chosen.length} selected` : chosen.join(", ")) + " ▾";
 }
-export function statusSelect(job) {
-  const value = current(job, "status");
-  // A new, not interested, or filtered job can only be triaged (or go back to the Inbox);
-  // any other doesn't go back to New.
-  const choices = ["new", "not_interested", "filtered"].includes(job.status) ? TRIAGE_STATUSES
-    : state.summary.editable.filter((s) => s !== "new");
-  const options = choices.map((s) => el("option", { value: s, selected: s === value }, label(s)));
-  if (value === "filtered") options.unshift(el("option", { value: "filtered", selected: true, disabled: true }, "Filtered"));
-  return el("select", { "aria-label": "Status", onchange: (event) => setPending(job, "status", event.target.value) }, options);
-}
 function duplicateFlag(job) {
   const started = job.duplicate_in_progress;
   const applying = ["interested", "applied"].includes(current(job, "status"));
@@ -198,11 +188,10 @@ function duplicateFlag(job) {
 // filters" when it belongs to this tab; null when it's in the list.
 function similarPlace(similar) {
   if (state.jobs.some((job) => job.id === similar.id)) return null;
-  const tab = Object.keys(TAB_STATUS).find((view) => TAB_STATUS[view] === similar.status)
-    || (similar.status === "archived" ? null : "jobs");
+  const tab = Object.keys(TAB_STATUS).find((view) => TAB_STATUS[view] === similar.status) || "jobs";
   if (tab === state.view) return "hidden by your filters";
-  return { inbox: "Inbox", filtered: "Filtered", not_interested: "Not interested", jobs: "My jobs" }[tab]
-    || label(similar.status);
+  return { inbox: "Inbox", filtered: "Filtered", not_interested: "Not interested", archived: "Archived",
+    jobs: "My jobs" }[tab];
 }
 function renderSortHeads() {
   document.querySelectorAll(".sort-head").forEach((head) => {
@@ -211,20 +200,6 @@ function renderSortHeads() {
     head.textContent = head.textContent.replace(/ [▲▼]$/, "")
       + (sort === desc ? " ▼" : sort === `${desc}_asc` ? " ▲" : "");
   });
-}
-// Where each page starts in state.jobs: every pageSize rows, except that similar jobs, and
-// the same ad in other countries, stay together on one page (so a page can run longer).
-export function pageStarts() {
-  const starts = [0];
-  let count = 0;
-  state.jobs.forEach((job, i) => {
-    const prev = state.jobs[i - 1];
-    const continues = prev && ((job.group != null && job.group === prev.group)
-      || (job.area != null && job.area === prev.area));
-    if (count >= state.pageSize && !continues) { starts.push(i); count = 0; }
-    count++;
-  });
-  return starts;
 }
 function renderPager(starts) {
   const pages = starts.length;
@@ -247,10 +222,10 @@ function renderExports(first, end) {
   exportAll.hidden = noStatuses() || !tabTotal(state.view);
   exportView.hidden = !state.jobs.length;
 }
-function goToPage(page) {
-  state.page = page; state.lastPicked = null; renderRows();
+function goToPage(number) {
+  state.page = number; state.lastPicked = null; renderRows();
 }
-export function renderRows() {
+function renderRows() {
   renderSortHeads();
   renderCountryFilter();
   renderSiteFilter();
@@ -290,6 +265,7 @@ function emptyMessage(total) {
     : state.view === "inbox" && !total ? "Inbox is empty: no new jobs to review."
     : state.view === "filtered" && !total ? "No filtered jobs."
     : state.view === "not_interested" && !total ? "No jobs marked not interested."
+    : state.view === "archived" && !total ? "No archived jobs."
     : "No jobs match these filters.";
 }
 // One job's row; index is its place in state.jobs, for shift-click ranges and grouping.
@@ -341,7 +317,8 @@ function jobSummary(job) {
       job.stale ? el("span", { className: "flag" }, "Applied 3+ weeks ago") : null,
       job.has_notes || current(job, "note") ? el("span", { className: "flag" }, "Notes") : null)];
 }
-// The Inbox, Filtered, and Not interested tabs' one-click buttons, else the status menu.
+// The Inbox, Filtered, Not interested, and Archived tabs' one-click buttons, else the
+// status menu.
 function statusCell(job) {
   if (!QUICK_STATUSES[state.view]) return statusSelect(job);
   return el("div", { className: "quick" }, QUICK_STATUSES[state.view].map((s) => {
@@ -388,6 +365,8 @@ function renderSiteFilter() {
 }
 
 // ---- Wiring ----------------------------------------------------------------------------
+// What the other modules call back into (see common.js).
+Object.assign(page, { refresh, renderRows, openDetail, renderDetail });
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
   state.view = tab.dataset.view; remember(); refresh(); }));
 let searchTimer;

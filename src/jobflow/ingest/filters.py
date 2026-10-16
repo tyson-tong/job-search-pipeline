@@ -3,6 +3,7 @@ title terms and employers, salary, job type, work arrangement, and a widened dat
 from __future__ import annotations
 
 from datetime import date, timedelta
+from typing import NamedTuple
 
 from .. import settings
 from ..text import words
@@ -50,23 +51,32 @@ def excluded_title_term(title: str | None, terms: tuple[str, ...],
     return next((term for term in terms if found(term)), None)
 
 
-# How the reasons for the two exclusions, and for the posted-date window, begin.
-# update-searches (refilter.py) tells them from the other reasons by these, so they're shared
-# rather than written out twice.
-EXCLUDED_EMPLOYER = "employer matches "
-EXCLUDED_TITLE = "title contains "
-POSTED_TOO_EARLY = "posted "
+# Which filter kept a job out, stored as jobs.filter_kind: update-searches (refilter.py)
+# reads it to tell which filtered jobs it can judge again, so rewording a reason never
+# changes what it does. Older jobs' kinds were filled in from their reasons' wording
+# (migrations/002_jobs.sql, ID 10).
+EMPLOYER, TITLE, POSTED, SALARY, JOB_TYPE, WORK_ARRANGEMENT = (
+    "employer", "title", "posted", "salary", "job_type", "work_arrangement")
+# The filters [defaults] has, so the only ones it can judge a job by again.
+EXCLUSIONS = (EMPLOYER, TITLE)
 
 
-def excluded_reason(title: str | None, company: str | None, search: Search) -> str | None:
+class Filtered(NamedTuple):
+    """Why a job is filtered: which filter (kind, jobs.filter_kind) and the reason the
+    tracker shows (jobs.filter_reason)."""
+    kind: str
+    reason: str
+
+
+def excluded_reason(title: str | None, company: str | None, search: Search) -> Filtered | None:
     """Why the search's excluded employers or title terms keep a job out, or None. An
     excluded employer is matched like a title term (whole words, so "Acme" excludes "Acme
     Pty Ltd" but not "Acmera") and include_title_terms don't override it."""
     employer = excluded_title_term(company, search.exclude_companies)
     if employer:
-        return f"{EXCLUDED_EMPLOYER}{employer!r}"
+        return Filtered(EMPLOYER, f"employer matches {employer!r}")
     term = excluded_title_term(title, search.exclude_title_terms, search.include_title_terms)
-    return f"{EXCLUDED_TITLE}{term!r}" if term else None
+    return Filtered(TITLE, f"title contains {term!r}") if term else None
 
 
 def local_filters(site: str, search: Search) -> list[str]:
@@ -87,7 +97,7 @@ def local_filters(site: str, search: Search) -> list[str]:
 
 
 def filter_reason(posting: Posting, search: Search, site: str,
-                  today: date | None = None) -> str | None:
+                  today: date | None = None) -> Filtered | None:
     """Why a job fails this search's local filters, or None to keep it.
 
     Only known values can exclude a job: no salary, job type, work arrangement, or
@@ -101,8 +111,8 @@ def filter_reason(posting: Posting, search: Search, site: str,
         # One day of slack: sites and time zones disagree on what "today" is.
         oldest = (today or settings.today()) - timedelta(days=search.posted_within_days + 1)
         if posting.posted_at < oldest:
-            return (f"{POSTED_TOO_EARLY}{posting.posted_at.isoformat()}, older than "
-                    f"{WINDOW_NAMES[search.posted_within_days]}")
+            return Filtered(POSTED, f"posted {posting.posted_at.isoformat()}, older than "
+                                    f"{WINDOW_NAMES[search.posted_within_days]}")
     # A salary whose period was guessed (no "per year" or "per hour" in the ad) may be far
     # off, so it never filters a job out.
     if "salary" in active and posting.salary_min is not None and posting.salary_max is not None \
@@ -114,12 +124,13 @@ def filter_reason(posting: Posting, search: Search, site: str,
                 (high is not None and posting.salary_min > high):
             wanted = f"{low:,.0f}" if low is not None else "any"
             wanted += f"-{high:,.0f}" if high is not None else "+"
-            return (f"salary {posting.salary_min:,.0f}-{posting.salary_max:,.0f}/yr "
-                    f"outside {wanted}/yr")
+            return Filtered(SALARY, f"salary {posting.salary_min:,.0f}-"
+                                    f"{posting.salary_max:,.0f}/yr outside {wanted}/yr")
     if "job_types" in active and posting.job_types \
             and not posting.job_types & set(search.job_types):
-        return f"job type {', '.join(sorted(posting.job_types))} not wanted"
+        return Filtered(JOB_TYPE, f"job type {', '.join(sorted(posting.job_types))} not wanted")
     if "work_arrangements" in active and posting.work_arrangements \
             and not posting.work_arrangements & set(search.work_arrangements):
-        return f"work arrangement {', '.join(sorted(posting.work_arrangements))} not wanted"
+        return Filtered(WORK_ARRANGEMENT, "work arrangement "
+                        f"{', '.join(sorted(posting.work_arrangements))} not wanted")
     return None

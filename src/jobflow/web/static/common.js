@@ -1,10 +1,13 @@
 // What every module of the page shares: constants, the page's state, DOM and API helpers,
-// and unsaved changes. app.js is the page's entry point and loads the rest: detail.js (the
-// job panel), selection.js (ticking rows), scoring.js, and searches.js (the Searches tab).
-// The modules import each other's functions, which run only once the page has loaded.
+// the status menu, paging, and unsaved changes. app.js is the page's entry point and loads
+// the rest: detail.js (the job panel), selection.js (ticking rows), scoring.js, and
+// searches.js (the Searches tab). Each module imports only modules loaded before it.
 import { fmtDate, isSaved, label, SITE_NAMES } from "./format.js";
-import { refresh, renderRows } from "./app.js";
-import { openDetail, renderDetail } from "./detail.js";
+
+// What other modules call back into: the job list's refresh and rows (app.js), and the job
+// panel (detail.js). app.js fills these in as it loads, so no module has to import a module
+// that imports it.
+export const page = { refresh: null, renderRows: null, openDetail: null, renderDetail: null };
 
 // Sent in a header only, never in a URL, where it would stay in the browser's history.
 export const TOKEN = document.querySelector('meta[name="jobflow-token"]').content;
@@ -24,18 +27,21 @@ export const state = { view: "jobs", statuses: null, jobs: [], summary: null,
   page: 0, pageSize: 50, pageKey: null };
 // A job still in the Inbox can only be triaged; the other statuses come after Interested.
 export const TRIAGE_STATUSES = ["new", "interested", "not_interested"];
+// Jobs at these statuses can only be triaged, or go back to the Inbox.
+const UNTRIAGED_STATUSES = ["new", "not_interested", "filtered", "archived"];
 // My jobs holds only jobs you picked as Interested and what followed; these never show there.
 export const NOT_MY_JOBS = ["new", "not_interested", "filtered", "archived"];
 const PAGE_SIZES = [5, 10, 20, 50, 100];
 // The sort menu, which the remembered filters include.
 export const sortInput = document.getElementById("sort");
 // The tabs that each show one status; My jobs shows the statuses chosen in its menu.
-export const TAB_STATUS = { inbox: "new", filtered: "filtered", not_interested: "not_interested" };
+export const TAB_STATUS = { inbox: "new", filtered: "filtered", not_interested: "not_interested",
+  archived: "archived" };
 // Tabs whose jobs you can send back to the Inbox by ticking several at once.
-export const RETURN_TABS = ["filtered", "not_interested"];
+export const RETURN_TABS = ["filtered", "not_interested", "archived"];
 // The one-click statuses in each tab's Status column; My jobs has a menu instead.
 export const QUICK_STATUSES = { inbox: ["interested", "not_interested"], filtered: ["interested", "not_interested"],
-  not_interested: ["interested"] };
+  not_interested: ["interested"], archived: ["interested"] };
 
 // ---- Helpers -------------------------------------------------------------------------
 export function el(tag, attrs = {}, ...children) {
@@ -88,6 +94,33 @@ export function recall() {
   } catch (e) { /* optional */ }
 }
 
+// The status menu of a job's row, and of the job panel.
+export function statusSelect(job) {
+  const value = current(job, "status");
+  // A new, not interested, filtered, or archived job can only be triaged (or go back to
+  // the Inbox); any other doesn't go back to New.
+  const choices = UNTRIAGED_STATUSES.includes(job.status) ? TRIAGE_STATUSES
+    : state.summary.editable.filter((s) => s !== "new");
+  const options = choices.map((s) => el("option", { value: s, selected: s === value }, label(s)));
+  // Statuses only jobflow sets: shown, but not a choice.
+  if (!choices.includes(value)) options.unshift(el("option", { value, selected: true, disabled: true }, label(value)));
+  return el("select", { "aria-label": "Status", onchange: (event) => setPending(job, "status", event.target.value) }, options);
+}
+// Where each page starts in state.jobs: every pageSize rows, except that similar jobs, and
+// the same ad in other countries, stay together on one page (so a page can run longer).
+export function pageStarts() {
+  const starts = [0];
+  let count = 0;
+  state.jobs.forEach((job, i) => {
+    const prev = state.jobs[i - 1];
+    const continues = prev && ((job.group != null && job.group === prev.group)
+      || (job.area != null && job.area === prev.area));
+    if (count >= state.pageSize && !continues) { starts.push(i); count = 0; }
+    count++;
+  });
+  return starts;
+}
+
 // ---- Pending (unsaved) changes ---------------------------------------------------------
 export function current(job, field) {
   const pending = state.pending.get(job.id);
@@ -96,9 +129,9 @@ export function current(job, field) {
 export function setPending(job, field, value) {
   stagePending(job, field, value);
   renderSaveBar();
-  renderRows();
+  page.renderRows();
   // Rebuilding the drawer while typing a note would lose the cursor.
-  if (field !== "note" && state.detail && state.detail.id === job.id) renderDetail();
+  if (field !== "note" && state.detail && state.detail.id === job.id) page.renderDetail();
 }
 export function stagePending(job, field, value) {
   const pending = { ...(state.pending.get(job.id) || {}) };
@@ -141,8 +174,8 @@ export async function save(force = false) {
     state.versions.clear();
     renderSaveBar();
     toast(`Saved ${result.saved.length} job${result.saved.length > 1 ? "s" : ""}`);
-    await refresh();
-    if (state.detail) await openDetail(state.detail.id);
+    await page.refresh();
+    if (state.detail) await page.openDetail(state.detail.id);
   } catch (error) {
     if (error.status === 409 && error.data && error.data.conflicts) {
       state.saving = false;   // resolveConflicts may save again
@@ -167,8 +200,8 @@ async function resolveConflicts(conflicts) {
   // You've now seen these changes: the next Save goes over them, not into this conflict again.
   conflicts.forEach((c) => { if (state.versions.has(c.id)) state.versions.set(c.id, c.version); });
   toast("Nothing saved. Showing the latest data; your drafts are kept.");
-  await refresh();
-  if (state.detail) await openDetail(state.detail.id);
+  await page.refresh();
+  if (state.detail) await page.openDetail(state.detail.id);
 }
 window.addEventListener("beforeunload", (event) => {
   if (state.pending.size) { event.preventDefault(); event.returnValue = ""; }

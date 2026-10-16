@@ -6,6 +6,8 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta
 
+from psycopg.rows import dict_row
+
 from .. import db
 from ..candidate.matching import ASSESSMENT_FORMAT, PURSUING, score_sql, score_weights
 from ..db import CLOSED_STATUSES, STATUSES
@@ -132,7 +134,7 @@ def job_rows(conn, filters: dict, digests: dict[str, str] | None = None) -> list
     (_digests_now(), read here if not given) names the CVs whose scores count."""
     if digests is None:
         digests = _digests_now()
-    rows = conn.execute(
+    jobs = conn.cursor(row_factory=dict_row).execute(
         f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
                    j.status, j.salary_min, j.salary_max, j.salary_estimated, best.score,
                    best.cv_variant,
@@ -188,10 +190,6 @@ def job_rows(conn, filters: dict, digests: dict[str, str] | None = None) -> list
          "within_days": POSTED_WITHIN.get(filters["posted"]),
          "older_than_days": POSTED_OLDER_THAN if filters["posted"] == "older" else None}
     ).fetchall()
-    keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
-            "salary_min", "salary_max", "salary_estimated", "score", "cv_variant", "sites", "url",
-            "follow_up_on", "applied_at", "has_notes", "filter_reason", "country", "version")
-    jobs = [dict(zip(keys, row, strict=True)) for row in rows]
     for job in jobs:
         job["currency"] = CURRENCIES.get(job["country"])
     return jobs
@@ -291,53 +289,44 @@ def job_detail(job_id: int) -> dict | None:
     (all of them when those can't be read), as tailor-cv chooses from."""
     digests = _digests_now()
     with db.connect() as conn:
-        row = conn.execute(
+        rows = conn.cursor(row_factory=dict_row)
+        job = rows.execute(
             f"""SELECT j.id, j.title, j.company, j.location, j.posted_at, j.first_seen_at,
-                      j.status, j.salary_min, j.salary_max, j.salary_estimated, j.description,
-                      j.filter_reason,
+                      j.status, j.status_updated_at, j.salary_min, j.salary_max,
+                      j.salary_estimated, j.description, j.filter_reason,
                       a.notes, a.applied_at, a.follow_up_on, j.country, {VERSION_SQL} AS version
                FROM jobs j LEFT JOIN applications a ON a.job_id = j.id WHERE j.id=%s""",
             (job_id,)).fetchone()
-        if not row:
+        if not job:
             return None
-        keys = ("id", "title", "company", "location", "posted_at", "first_seen_at", "status",
-                "salary_min", "salary_max", "salary_estimated", "description",
-                "filter_reason", "notes",
-                "applied_at", "follow_up_on", "country", "version")
-        job = dict(zip(keys, row, strict=True))
         job["currency"] = CURRENCIES.get(job["country"])
-        job["sources"] = [dict(zip(("source", "url", "first_seen_at"), r, strict=True))
-                          for r in conn.execute(
+        job["sources"] = rows.execute(
             """SELECT source, url, first_seen_at FROM job_sources WHERE job_id=%s
-               ORDER BY first_seen_at""", (job_id,)).fetchall()]
-        job["matches"] = [
-            {"variant": v, "score": score, "matched": matched, "partial": partial,
-             "not_evidenced": gaps, "rationale": (evidence or {}).get("rationale", ""),
-             "assessed_at": created}
-            for v, score, matched, partial, gaps, evidence, created in conn.execute(
-                f"""SELECT DISTINCT ON (cv_variant) cv_variant, {SCORE}, matched, partial,
-                           gaps, evidence, created_at
-                    FROM match_assessments WHERE job_id=%(job_id)s
-                      AND (%(variants)s::text[] IS NULL OR cv_variant = ANY(%(variants)s))
-                    ORDER BY cv_variant, created_at DESC""",
-                {"job_id": job_id, **_weights(), "variants": list(digests) or None}).fetchall()]
+               ORDER BY first_seen_at""", (job_id,)).fetchall()
+        job["matches"] = rows.execute(
+            f"""SELECT DISTINCT ON (cv_variant) cv_variant AS variant, {SCORE} AS score,
+                       matched, partial, gaps AS not_evidenced,
+                       coalesce(evidence->>'rationale', '') AS rationale,
+                       created_at AS assessed_at
+                FROM match_assessments WHERE job_id=%(job_id)s
+                  AND (%(variants)s::text[] IS NULL OR cv_variant = ANY(%(variants)s))
+                ORDER BY cv_variant, created_at DESC""",
+            {"job_id": job_id, **_weights(), "variants": list(digests) or None}).fetchall()
         job["matches"].sort(key=lambda m: (m["score"], m["variant"]), reverse=True)
         stale = _outdated(conn, [job_id], digests).get(job_id, [])
         for match in job["matches"]:
             match["outdated"] = match["variant"] in stale
-        job["history"] = [dict(zip(("from_status", "to_status", "via", "changed_at"), r,
-                                   strict=True))
-                          for r in conn.execute(
+        job["history"] = rows.execute(
             """SELECT from_status, to_status, via, changed_at FROM status_history
-               WHERE job_id=%s ORDER BY changed_at""", (job_id,)).fetchall()]
+               WHERE job_id=%s ORDER BY changed_at""", (job_id,)).fetchall()
         similar = similar_jobs(conn, [job_id]).get(job_id, [])
-        shown = {row[0]: row[1:] for row in conn.execute(
+        shown = {row.pop("id"): row for row in rows.execute(
             """SELECT j.id, j.title, j.company, j.location,
                       (SELECT url FROM job_sources s WHERE s.job_id = j.id
-                       ORDER BY s.first_seen_at LIMIT 1)
+                       ORDER BY s.first_seen_at LIMIT 1) AS url
                FROM jobs j WHERE j.id = ANY(%s)""", ([s["id"] for s in similar],)).fetchall()}
     for other in similar:
-        other.update(zip(("title", "company", "location", "url"), shown[other["id"]], strict=True))
+        other.update(shown[other["id"]])
     job["duplicates"] = [s for s in similar if s["same_country"]][:SIMILAR_SHOWN]
     job["elsewhere"] = [s for s in similar if not s["same_country"]][:SIMILAR_SHOWN]
     return job

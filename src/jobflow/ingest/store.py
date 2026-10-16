@@ -12,6 +12,7 @@ from typing import Any
 
 import psycopg
 import psycopg.types.json
+from psycopg.rows import dict_row
 
 from .. import db
 from .dedupe import (
@@ -26,10 +27,11 @@ from .dedupe import (
     title_key,
     title_patterns,
 )
+from .filters import Filtered
 from .runs import country_from_location, search_url_country
 from .sources import Posting, normalise, seek_url
 
-JobFilter = Callable[[Posting], "str | None"]
+JobFilter = Callable[[Posting], "Filtered | None"]
 
 
 def _same_copy(conn, key: str) -> tuple[int, bool] | None:
@@ -155,16 +157,18 @@ def save_job(conn, run_pk: int, item: dict, job_filter: JobFilter | None = None,
     found = find_duplicate(conn, key, fp, mkey, posting.title, description, posting.location,
                            country)
     if found is None:
-        reason = job_filter(posting) if job_filter else None
+        filtered = job_filter(posting) if job_filter else None
         job_pk = conn.execute(
-            """INSERT INTO jobs(canonical_key, source_job_id, canonical_url, title, company,
-                   location, posted_at, description, raw_json, fingerprint, source, match_key,
-                   salary_min, salary_max, salary_estimated, status, filter_reason, country)
+            """INSERT INTO jobs(canonical_key, canonical_url, title, company, location,
+                   posted_at, description, raw_json, fingerprint, source, match_key,
+                   salary_min, salary_max, salary_estimated, status, filter_reason,
+                   filter_kind, country)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-            (key, posting.source_id, url, posting.title, posting.company, posting.location,
+            (key, url, posting.title, posting.company, posting.location,
              posting.posted_at, description, raw, fp, posting.source, mkey,
              posting.salary_min, posting.salary_max, posting.salary_estimated,
-             "filtered" if reason else "new", reason, country)).fetchone()[0]
+             "filtered" if filtered else "new", filtered and filtered.reason,
+             filtered and filtered.kind, country)).fetchone()[0]
     else:
         job_pk, is_first_copy = found
         # Another site's copy keeps the first site's record; its own copy is kept in
@@ -257,29 +261,29 @@ RECENT_RUNS = timedelta(hours=36)
 def recent_failed_runs(conn) -> list[dict]:
     """Each site with runs that failed in RECENT_RUNS, even if its other runs (or other
     sites') succeeded: {site, failed, total, error}, with the latest failure's error."""
-    keys = ("site", "failed", "total", "error")
-    return [dict(zip(keys, row, strict=True)) for row in conn.execute(
-        """SELECT split_part(actor_id, ':', 1),
-                  count(*) FILTER (WHERE status <> 'SUCCEEDED'), count(*),
+    return conn.cursor(row_factory=dict_row).execute(
+        """SELECT split_part(actor_id, ':', 1) AS site,
+                  count(*) FILTER (WHERE status <> 'SUCCEEDED') AS failed, count(*) AS total,
                   (array_agg(error ORDER BY created_at DESC)
-                       FILTER (WHERE status <> 'SUCCEEDED'))[1]
+                       FILTER (WHERE status <> 'SUCCEEDED'))[1] AS error
            FROM scraper_runs WHERE created_at > now() - %s
            GROUP BY 1 HAVING count(*) FILTER (WHERE status <> 'SUCCEEDED') > 0
-           ORDER BY 1""", (RECENT_RUNS,)).fetchall()]
+           ORDER BY 1""", (RECENT_RUNS,)).fetchall()
 
 
 def recent_capped_runs(conn) -> list[dict]:
     """Each site with runs in RECENT_RUNS that returned as many results as max_results
     allows, so probably left jobs behind: {site, capped, total, searches}, the searches
     being those of the capped runs."""
-    keys = ("site", "capped", "total", "searches")
-    return [dict(zip(keys, row, strict=True)) for row in conn.execute(
-        """SELECT split_part(actor_id, ':', 1), count(*) FILTER (WHERE hit_cap), count(*),
+    return conn.cursor(row_factory=dict_row).execute(
+        """SELECT split_part(actor_id, ':', 1) AS site,
+                  count(*) FILTER (WHERE hit_cap) AS capped, count(*) AS total,
                   coalesce(array_agg(DISTINCT search_name)
-                               FILTER (WHERE hit_cap AND search_name IS NOT NULL), '{}')
+                               FILTER (WHERE hit_cap AND search_name IS NOT NULL),
+                           '{}') AS searches
            FROM scraper_runs WHERE created_at > now() - %s AND status = 'SUCCEEDED'
            GROUP BY 1 HAVING bool_or(hit_cap)
-           ORDER BY 1""", (RECENT_RUNS,)).fetchall()]
+           ORDER BY 1""", (RECENT_RUNS,)).fetchall()
 
 
 def record_failed_run(actor_id: str, run_id: str | None, dataset_id: str | None, status: str,

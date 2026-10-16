@@ -1,7 +1,6 @@
 // The Searches tab: your config/searches.toml, the Apify runs it plans, and the allowed
 // values. app.js's refresh calls renderSearches.
-import { refresh } from "./app.js";
-import { copyCommand, el, fill, state, toast } from "./common.js";
+import { copyCommand, el, fill, page, state, toast } from "./common.js";
 import { SITE_NAMES } from "./format.js";
 
 const siteName = (s) => SITE_NAMES[s] || s;
@@ -11,7 +10,7 @@ export function renderSearches() {
     el("h2", {}, "Your searches"),
     el("div", {}, data.ok ? el("span", { className: "ok" }, "✓ Valid") : el("span", { className: "err" }, "✗ Can't be used"),
       el("span", { className: "meta" }, `  ·  from ${data.source || "(no config/profile.toml)"}`), "  ",
-      el("button", { className: "btn small", onclick: () => refresh().then(() => toast("Searches reloaded")) }, "Reload")),
+      el("button", { className: "btn small", onclick: () => page.refresh().then(() => toast("Searches reloaded")) }, "Reload")),
     data.ok ? el("p", { className: "meta", style: "margin:8px 0 0" },
       `${data.total_runs} Apify run${data.total_runs === 1 ? "" : "s"} per import, at most ${data.total_max_results} results. `
       + "Actors charge per result. Nothing runs from this page.") : null,

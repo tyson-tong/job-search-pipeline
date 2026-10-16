@@ -7,31 +7,23 @@ from typing import Any
 from psycopg.rows import namedtuple_row
 
 from .. import db
-from .filters import (
-    EXCLUDED_EMPLOYER,
-    EXCLUDED_TITLE,
-    POSTED_TOO_EARLY,
-    excluded_reason,
-    filter_reason,
-)
+from .filters import EXCLUSIONS, POSTED, Filtered, excluded_reason, filter_reason
 from .sources import normalise
 
 # Each job, its stored record, and the search whose run first found it and that run's site.
 _JOBS_SQL = """
-    SELECT j.id, j.title, j.company, j.filter_reason, j.raw_json, j.country,
+    SELECT j.id, j.title, j.company, j.filter_reason, j.filter_kind, j.raw_json, j.country,
            j.first_seen_at::date AS first_seen, r.search_name,
            split_part(r.actor_id, ':', 1) AS site
     FROM jobs j
     LEFT JOIN LATERAL (SELECT scraper_run_id FROM job_observations o
                        WHERE o.job_id = j.id ORDER BY observed_at LIMIT 1) first ON true
     LEFT JOIN scraper_runs r ON r.id = first.scraper_run_id"""
-# A job you moved out of Filtered yourself (and so, if it's in the Inbox now, one you chose to
-# keep), which update-searches leaves be.
+# A job you moved out of Filtered or Archived yourself (and so, if it's in the Inbox now, one
+# you chose to keep), which update-searches leaves be.
 _MOVED_BACK_SQL = """EXISTS (SELECT 1 FROM status_history h WHERE h.job_id = j.id
-                            AND h.from_status = 'filtered'
+                            AND h.from_status IN ('filtered', 'archived')
                             AND h.via NOT IN ('update-searches', 'archive'))"""
-# The reasons a [defaults] search can judge again: it has only the exclusions.
-EXCLUSION_REASONS = (EXCLUDED_TITLE, EXCLUDED_EMPLOYER)
 
 
 def _jobs(conn, where: str) -> list[Any]:
@@ -46,7 +38,7 @@ def _by_search(job, by_name: dict) -> bool:
     return job.search_name in by_name and job.raw_json is not None
 
 
-def _judge(job, by_name: dict, fallback) -> tuple[bool, str | None]:
+def _judge(job, by_name: dict, fallback) -> tuple[bool, Filtered | None]:
     """(whether the job can be judged, why the searches would filter it now, or None).
     A job is judged by every filter an import applies (filter_reason), from its stored
     record, by the search that found it, as on the day it was first seen: a posted-date
@@ -66,20 +58,21 @@ def filter_inbox_jobs(searches: list, dry_run: bool = False,
     """Filter jobs already in the Inbox that the search which found them would filter now
     (see _judge): each becomes 'filtered', with the reason an import would record, and the
     change is recorded in status_history. Only New jobs are touched, and never one you moved
-    back to the Inbox from Filtered. Returns (the jobs filtered, the number of Inbox jobs
-    checked); with dry_run, nothing is changed."""
+    back to the Inbox from Filtered or Archived. Returns (the jobs filtered, the number of
+    Inbox jobs checked); with dry_run, nothing is changed."""
     by_name = {search.name: search for search in searches}
     with db.connect() as conn:
         jobs = _jobs(conn, f"j.status = 'new' AND NOT {_MOVED_BACK_SQL}")
         matched = []
         for job in jobs:
-            _, reason = _judge(job, by_name, fallback)
-            if reason:
+            _, filtered = _judge(job, by_name, fallback)
+            if filtered:
                 matched.append({"id": job.id, "title": job.title, "company": job.company,
-                                "reason": reason})
+                                "reason": filtered.reason, "kind": filtered.kind})
         if not dry_run:   # a job that left the Inbox meanwhile is skipped, and not counted
             matched = [job for job in matched if db.move_job(
-                conn, job["id"], "new", "filtered", "update-searches", job["reason"])]
+                conn, job["id"], "new", "filtered", "update-searches", job["reason"],
+                job["kind"])]
     return matched, len(jobs)
 
 
@@ -98,10 +91,9 @@ def restore_filtered_jobs(searches: list, dry_run: bool = False,
         jobs = _jobs(conn, "j.status = 'filtered'")
         restored = []
         for job in jobs:
-            if (job.filter_reason or "").startswith(POSTED_TOO_EARLY):
+            if job.filter_kind == POSTED:
                 continue   # the window isn't stored, so it can't be judged again
-            if not _by_search(job, by_name) \
-                    and not (job.filter_reason or "").startswith(EXCLUSION_REASONS):
+            if not _by_search(job, by_name) and job.filter_kind not in EXCLUSIONS:
                 continue   # [defaults] can't judge why it was filtered
             judged, still = _judge(job, by_name, fallback)
             if judged and not still:

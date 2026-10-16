@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import NamedTuple, TextIO
 
 from .llm import LLMError
-from .text import plural
+from .text import job_label, plural
 
 # Jobs worked on at once. More would be faster, but each job makes several LLM calls
 # sending whole CVs and ads, and providers cap tokens per minute (rate-limited calls are
@@ -168,7 +168,7 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
                ORDER BY j.id""", (kind, statuses, only, only)).fetchall()
         todo, done_jobs, fixed, redrafted, lost = [], [], [], 0, 0
         for job_id, company, title, done, tried in rows:
-            name = f"#{job_id} {title} ({company or 'unknown employer'})"
+            name = job_label(job_id, title, company)
             folder = job_directory(job_id, {"company": company, "title": title})
             if redo:
                 todo.append((job_id, company, title))
@@ -277,7 +277,7 @@ def _run_todo(command: JobCommand, todo: list[tuple[int, str | None, str]]) -> N
         job_id, company, title = row
         lines: list[tuple[TextIO, str]] = []
         out.held.lines = err.held.lines = lines
-        print(f"\n#{job_id} {title} ({company or 'unknown employer'})")
+        print(f"\n{job_label(job_id, title, company)}")
         try:
             command.run_one(job_id)
         except Exception as exc:

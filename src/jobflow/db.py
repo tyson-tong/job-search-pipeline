@@ -10,6 +10,7 @@ from importlib import resources
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from .settings import LOCAL_HOSTS, timezone, today
@@ -175,13 +176,11 @@ def migrate() -> None:
 
 def fetch_job(job_id: int) -> dict:
     with connect() as conn:
-        row = conn.execute(
-            "SELECT id, canonical_url, title, company, location, description, raw_json "
+        job = conn.cursor(row_factory=dict_row).execute(
+            "SELECT id, canonical_url AS url, title, company, location, description, raw_json "
             "FROM jobs WHERE id=%s", (job_id,)).fetchone()
-    if not row:
+    if not job:
         raise RuntimeError(f"No job with database id {job_id}")
-    keys = ("id", "url", "title", "company", "location", "description", "raw_json")
-    job = dict(zip(keys, row, strict=True))
     job["description"] = job["description"] or ""
     return job
 
@@ -213,8 +212,9 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
     if status is not None and status != row[0]:
         # A job you move out of Filtered no longer has a reason to be filtered.
         conn.execute("""UPDATE jobs SET status=%s, status_updated_at=now(),
-                            filter_reason=CASE WHEN %s = 'filtered' THEN filter_reason END
-                        WHERE id=%s""", (status, status, job_id))
+                            filter_reason=CASE WHEN %s = 'filtered' THEN filter_reason END,
+                            filter_kind=CASE WHEN %s = 'filtered' THEN filter_kind END
+                        WHERE id=%s""", (status, status, status, job_id))
         conn.execute("""INSERT INTO status_history(job_id, from_status, to_status, via)
                         VALUES (%s,%s,%s,%s)""", (job_id, row[0], status, via))
     note_line = f"{today().isoformat()}: {note.strip()}" if note and note.strip() else None
@@ -236,14 +236,16 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
 
 
 def move_job(conn, job_id: int, from_status: str, to_status: str, via: str,
-             filter_reason: str | None = None) -> bool:
+             filter_reason: str | None = None, filter_kind: str | None = None) -> bool:
     """Move a job jobflow itself is moving (update-searches filtering or restoring it) from
-    one status to another, with filter_reason, recording it in status_history; False, and
-    nothing changed, if the job has left from_status since it was read. set_job_state is
-    for the changes you make."""
-    moved = conn.execute("""UPDATE jobs SET status=%s, filter_reason=%s, status_updated_at=now()
+    one status to another, with filter_reason and filter_kind (which filter, see
+    ingest/filters.py), recording it in status_history; False, and nothing changed, if the
+    job has left from_status since it was read. set_job_state is for the changes you make."""
+    moved = conn.execute("""UPDATE jobs SET status=%s, filter_reason=%s, filter_kind=%s,
+                                status_updated_at=now()
                             WHERE id=%s AND status=%s""",
-                         (to_status, filter_reason, job_id, from_status)).rowcount
+                         (to_status, filter_reason, filter_kind, job_id,
+                          from_status)).rowcount
     if moved:
         conn.execute("""INSERT INTO status_history(job_id, from_status, to_status, via)
                         VALUES (%s,%s,%s,%s)""", (job_id, from_status, to_status, via))

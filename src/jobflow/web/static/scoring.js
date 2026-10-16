@@ -1,8 +1,6 @@
 // Scoring: LLM match scores, run by the tracker on this machine in the background, with
 // the page polling their progress.
-import { refresh } from "./app.js";
-import { api, el, fill, state, toast } from "./common.js";
-import { openDetail } from "./detail.js";
+import { api, el, fill, page, state, toast } from "./common.js";
 
 export function renderScoring() {
   const button = document.getElementById("score-btn"), chip = document.getElementById("scoring");
@@ -43,8 +41,8 @@ export async function pollScoring() {
   toast(`Scored ${scored.length} job${scored.length === 1 ? "" : "s"}` + (errors.length
     ? `; ${errors.length} failed (${errors[0].error})` : "")
     + (done < total ? `. Stopped: the other ${total - done} would fail the same way` : ""), errors.length > 0);
-  await refresh();  // unsaved drafts are kept; rows just gain their new scores
-  if (state.detail && !state.pending.size) await openDetail(state.detail.id);
+  await page.refresh();  // unsaved drafts are kept; rows just gain their new scores
+  if (state.detail && !state.pending.size) await page.openDetail(state.detail.id);
 }
 // Inbox jobs you tick, scored to help you triage them; each keeps its score if you mark it
 // Interested.

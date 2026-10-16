@@ -18,9 +18,15 @@ def plural(count: int, word: str, suffix: str = "s") -> str:
 
 def whole_number(value: object) -> int | None:
     """An id the LLM gave, as a number: 3 or "3"; None for anything else (True included,
-    which Python would otherwise count as 1)."""
+    which Python would otherwise count as 1, and "²", a digit int() can't read)."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value
-    return int(value) if isinstance(value, str) and value.isdigit() else None
+    return int(value) if isinstance(value, str) and value.isascii() and value.isdecimal() \
+        else None
+
+
+def job_label(job_id: int, title: str, company: str | None) -> str:
+    """A job as messages name it: "#42 Data Analyst (Acme)"."""
+    return f"#{job_id} {title} ({company or 'unknown employer'})"

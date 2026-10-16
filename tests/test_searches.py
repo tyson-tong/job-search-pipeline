@@ -39,6 +39,12 @@ def searches():
     return parse_config(CONFIG)
 
 
+def why(posting, search, site, today=None):
+    """Why filter_reason filters the posting (its reason, as the tracker shows it), or None."""
+    filtered = filter_reason(posting, search, site, today)
+    return filtered and filtered.reason
+
+
 def parse_salary(value, country=None):
     """parse_pay's annual (min, max), without whether the period was guessed."""
     pay = parse_pay(value, country)
@@ -142,11 +148,11 @@ def test_unknown_values_always_pass_local_filters():
     # A job whose ad doesn't state a salary or job type must be kept: filtering it on a missing
     # value hides jobs you'd want.
     analyst = searches()[0]
-    assert filter_reason(_linkedin(), analyst, "linkedin") is None
+    assert why(_linkedin(), analyst, "linkedin") is None
     # A Seek posting with no salary must not be filtered by salary bounds.
     seek = normalise({"jobLink": "https://www.seek.com.au/job/1", "title": "Data Analyst",
                       "workTypes": "Part time"})
-    assert filter_reason(seek, analyst, "seek") is None
+    assert why(seek, analyst, "seek") is None
 
 
 def test_local_salary_filter():
@@ -154,21 +160,21 @@ def test_local_salary_filter():
     # ones you wouldn't.
     analyst = searches()[0]
     low = _linkedin(salaryInfo=["$60,000.00/yr", "$70,000.00/yr"])
-    assert "outside 100,000-150,000/yr" in filter_reason(low, analyst, "linkedin")
+    assert "outside 100,000-150,000/yr" in why(low, analyst, "linkedin")
     overlapping = _linkedin(salaryInfo=["$140,000.00/yr", "$170,000.00/yr"])
-    assert filter_reason(overlapping, analyst, "linkedin") is None
+    assert why(overlapping, analyst, "linkedin") is None
     seek_low = normalise({"jobLink": "https://www.seek.com.au/job/2", "title": "Data Analyst",
                          "salary": "$60,000/year"})
-    assert "outside 100,000-150,000/yr" in filter_reason(seek_low, analyst, "seek")
+    assert "outside 100,000-150,000/yr" in why(seek_low, analyst, "seek")
     hourly = normalise({"viewJobLink": "/viewjob?jk=1", "title": "Data Analyst",
                         "salary": {"min": 60, "max": 70, "type": "HOUR"}})
-    assert filter_reason(hourly, analyst, "indeed") is None  # ~118k-138k a year
+    assert why(hourly, analyst, "indeed") is None  # ~118k-138k a year
     # With no pay period, the yearly figure is a guess from the amount's size ($18,000
     # reads as a month's pay), so it never filters a job out, however low it looks.
     for salary in ("$60,000", "$18,000", {"min": 60000, "max": 70000}):
         unstated = normalise({"jobLink": "https://www.seek.com.au/job/3", "title": "Data Analyst",
                               "salary": salary})
-        assert unstated.salary_estimated and filter_reason(unstated, analyst, "seek") is None
+        assert unstated.salary_estimated and why(unstated, analyst, "seek") is None
 
 
 def test_widened_window_drops_older_jobs_after_import():
@@ -178,11 +184,11 @@ def test_widened_window_drops_older_jobs_after_import():
     today = date(2026, 9, 26)
     old = _linkedin(postedAt="2026-09-01")      # 25 days old: inside LinkedIn's month, not 2 weeks
     recent = _linkedin(postedAt="2026-09-20")
-    assert "older than 2 weeks" in filter_reason(old, two_weeks, "linkedin", today)
-    assert filter_reason(recent, two_weeks, "linkedin", today) is None
-    assert filter_reason(_linkedin(), two_weeks, "linkedin", today) is None  # no date: kept
+    assert "older than 2 weeks" in why(old, two_weeks, "linkedin", today)
+    assert why(recent, two_weeks, "linkedin", today) is None
+    assert why(_linkedin(), two_weeks, "linkedin", today) is None  # no date: kept
     # Indeed has an exact 2-week window, so its results aren't re-checked.
-    assert filter_reason(normalise({"viewJobLink": "/viewjob?jk=1", "title": "Data Analyst",
+    assert why(normalise({"viewJobLink": "/viewjob?jk=1", "title": "Data Analyst",
                                     "pubDate": "2026-09-01"}), two_weeks, "indeed", today) is None
 
 
@@ -190,11 +196,11 @@ def test_local_job_type_and_arrangement_filters():
     # Job types and work arrangements are filtered locally where a site can't: missed, the Inbox
     # fills with jobs you excluded.
     analyst = searches()[0]
-    assert "job type part-time" in filter_reason(_linkedin(employmentType="Part-time"),
+    assert "job type part-time" in why(_linkedin(employmentType="Part-time"),
                                                  analyst, "linkedin")
     onsite = normalise({"viewJobLink": "/viewjob?jk=1", "title": "Data Analyst",
                         "jobTypes": ["Full-time"], "attributes": [{"label": "In-person"}]})
-    assert "work arrangement on-site" in filter_reason(onsite, analyst, "indeed")
+    assert "work arrangement on-site" in why(onsite, analyst, "indeed")
 
 
 def test_parse_salary_formats():
@@ -290,7 +296,7 @@ def test_run_passes_cost_cap_and_applies_the_search_filter(monkeypatch):
     # Apify stops the run itself too, in case this process is killed while it waits.
     assert call["run_timeout"] == call["wait_duration"] == timedelta(minutes=5)
     part_time = normalise({"viewJobLink": "/viewjob?jk=2", "title": "x", "jobTypes": ["Part-time"]})
-    assert "part-time" in saved[0]["job_filter"](part_time)
+    assert "part-time" in saved[0]["job_filter"](part_time).reason
     assert saved[0]["hit_cap"] is False   # 1 result of the 40 it may return
 
 
@@ -410,7 +416,7 @@ def test_excluded_titles_and_employers_keep_jobs_out_of_the_inbox():
                             'exclude_title_terms = ["Internship", "Fresh Grad", "Graduate"]')
     search = parse_config(config)[0]
     def reason(title):
-        return filter_reason(normalise({"title": title, "companyName": "Acme"}), search, "linkedin")
+        return why(normalise({"title": title, "companyName": "Acme"}), search, "linkedin")
     # Any capitalisation or punctuation, anywhere in the title.
     assert reason("Quant INTERNSHIP - Summer 2027") == "title contains 'Internship'"
     assert reason("Fresh-Grad Trader") == "title contains 'Fresh Grad'"
@@ -421,9 +427,9 @@ def test_excluded_titles_and_employers_keep_jobs_out_of_the_inbox():
     # Symbols count: "C++" and "C#" once both matched any title with the word "C".
     cpp = parse_config(CONFIG.replace("max_results = 40",
                                       'max_results = 40\nexclude_title_terms = ["C++", "C#"]'))[0]
-    assert filter_reason(normalise({"title": "Senior C++ Developer", "companyName": "Acme"}), cpp,
+    assert why(normalise({"title": "Senior C++ Developer", "companyName": "Acme"}), cpp,
                          "linkedin") == "title contains 'C++'"
-    assert filter_reason(normalise({"title": "Series C Fintech Quant", "companyName": "Acme"}), cpp,
+    assert why(normalise({"title": "Series C Fintech Quant", "companyName": "Acme"}), cpp,
                          "linkedin") is None
     # A kept title overrides an excluded term, but not an excluded employer.
     kept = parse_config(CONFIG.replace("max_results = 40", 'max_results = 40\n'
@@ -433,7 +439,7 @@ def test_excluded_titles_and_employers_keep_jobs_out_of_the_inbox():
                                        'exclude_companies = ["Acme", "Big Bank"]'))[0]
 
     def judged(title, company):
-        return filter_reason(normalise({"title": title, "companyName": company}), kept, "linkedin")
+        return why(normalise({"title": title, "companyName": company}), kept, "linkedin")
     assert judged("Credit Analyst", "Beta") == "title contains 'Analyst'"
     assert judged("MGR/AVP, Quantitative Analyst", "Beta") is None
     assert judged("Quant Analyst", "ACME Pty Ltd") == "employer matches 'Acme'"

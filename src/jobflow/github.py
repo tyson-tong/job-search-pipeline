@@ -8,7 +8,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-from .text import plural
+from .text import job_label, plural
 
 # The daily import's workflow file, the secrets it needs, and what GitHub's workflow states
 # mean for it.
@@ -92,13 +92,12 @@ def _refilter_jobs(text: str, searches: list, dry_run: bool) -> None:
     fallback = defaults_search(text)
     matched, checked = filter_inbox_jobs(searches, dry_run=dry_run, fallback=fallback)
     for job in matched:
-        print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
-              f"{job['reason']}")
+        print(f"  {job_label(job['id'], job['title'], job['company'])}: {job['reason']}")
     print(f"{'Would filter' if dry_run else 'Filtered'} {len(matched)} of {checked} Inbox jobs"
           f"{' (dry run: none filtered)' if dry_run else ''}")
     restored, checked = restore_filtered_jobs(searches, dry_run=dry_run, fallback=fallback)
     for job in restored:
-        print(f"  #{job['id']} {job['title']} ({job['company'] or 'unknown employer'}): "
+        print(f"  {job_label(job['id'], job['title'], job['company'])}: "
               f"was filtered: {job['reason']}")
     print(f"{'Would bring' if dry_run else 'Brought'} {len(restored)} of {checked} Filtered jobs "
           f"back to the Inbox{' (dry run: none moved)' if dry_run else ''}")

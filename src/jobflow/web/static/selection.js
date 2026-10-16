@@ -1,6 +1,5 @@
-// Ticking rows in the Inbox, Filtered, and Not interested tabs for a bulk change.
-import { pageStarts, renderRows } from "./app.js";
-import { el, fill, RETURN_TABS, renderSaveBar, stagePending, state, toast } from "./common.js";
+// Ticking rows in the Inbox, Filtered, Not interested, and Archived tabs for a bulk change.
+import { el, fill, page, pageStarts, RETURN_TABS, renderSaveBar, stagePending, state, toast } from "./common.js";
 import { renderDetail } from "./detail.js";
 import { label } from "./format.js";
 import { scoreSelected } from "./scoring.js";
@@ -15,7 +14,7 @@ export function pick(id, index, event) {
     on ? state.selected.add(rowId) : state.selected.delete(rowId);
   }
   state.lastPicked = index;
-  renderRows();
+  page.renderRows();
 }
 function markSelected(status, done = `marked ${label(status).toLowerCase()}`) {
   const jobs = state.jobs.filter((job) => state.selected.has(job.id));
@@ -23,7 +22,7 @@ function markSelected(status, done = `marked ${label(status).toLowerCase()}`) {
   state.selected.clear();
   state.lastPicked = null;
   renderSaveBar();
-  renderRows();
+  page.renderRows();
   if (state.detail && jobs.some((job) => job.id === state.detail.id)) renderDetail();
   toast(`${jobs.length} job${jobs.length === 1 ? "" : "s"} ${done}: click Save to keep`);
 }
@@ -50,13 +49,13 @@ export function renderBulk() {
         title: "Ask the LLM to compare the ticked jobs with each of your CVs, to help you decide",
         onclick: scoreSelected }, "Score selected")]
       : el("button", { className: "btn small", onclick: () => markSelected("new", "moved to the Inbox") }, "Move to Inbox"),
-    el("button", { className: "btn small", onclick: () => { state.selected.clear(); state.lastPicked = null; renderRows(); } }, "Clear selection"),
+    el("button", { className: "btn small", onclick: () => { state.selected.clear(); state.lastPicked = null; page.renderRows(); } }, "Clear selection"),
     el("span", { className: "meta" }, "Shift-click a checkbox to select a range.")]);
 }
 document.getElementById("select-all").addEventListener("change", (event) => {
   // Ticks or clears this page's jobs; ticks on other pages stay.
   pageJobs().forEach((job) => event.target.checked ? state.selected.add(job.id) : state.selected.delete(job.id));
   state.lastPicked = null;
-  renderRows();
+  page.renderRows();
 });
 

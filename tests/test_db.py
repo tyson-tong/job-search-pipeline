@@ -192,7 +192,7 @@ def test_the_job_list_and_the_job_panel_show_the_same_similar_jobs(database):
     # Only about 60% the same words, abroad: a similar role there, not the same ad.
     save_run("linkedin:a", "r4", "d4", [ad("4", "Data Analyst", "Acme", "Singapore", reposted)],
              country="SG")
-    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    ids = dict(_rows("SELECT split_part(canonical_key, ':', 2), id FROM jobs"))
     listed = {job["id"]: job for job in list_jobs(parse_filters({"status": ["new"]}))}
     panel = job_detail(ids["1"])
     def found(job, kind):
@@ -215,7 +215,7 @@ def test_similar_jobs_stay_current_between_refreshes(database):
     save_run("linkedin:a", "r1", "d1", [ad("1", "Data Analyst", "Acme", first)], country="AU")
     save_run("linkedin:a", "r2", "d2", [ad("2", "Data Analyst", "Hays", first + more)],
              country="AU")
-    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    ids = dict(_rows("SELECT split_part(canonical_key, ':', 2), id FROM jobs"))
 
     def similar_to_first():
         listed = {job["id"]: job for job in list_jobs(parse_filters({"status": ["new"]}))}
@@ -231,7 +231,7 @@ def test_similar_jobs_stay_current_between_refreshes(database):
     save_run("linkedin:a", "r4", "d4", [ad("4", "Senior Data Analyst", "Robert Walters",
                                          first + more[:40] + [f"own{i}" for i in range(10)])],
              country="AU")
-    new = _one("SELECT id FROM jobs WHERE source_job_id='4'")[0]
+    new = _one("SELECT id FROM jobs WHERE split_part(canonical_key, ':', 2)='4'")[0]
     assert similar_to_first() == sorted([ids["2"], new])
 
 
@@ -416,7 +416,8 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
         return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
                 "title": title, "companyName": f"Employer {job_id}", "postedAt": posted,
                 "descriptionText": " ".join(f"{words}{i}" for i in range(40))}
-    filtered = lambda posting: "title contains 'Intern'"
+    from jobflow.ingest.filters import TITLE, Filtered
+    filtered = lambda posting: Filtered(TITLE, "title contains 'Intern'")
     for key, posted, words in (("1", "2026-09-10", "old"), ("2", "2026-09-18", "recent"),
                                ("9", "2026-08-20", "late")):
         save_run("linkedin:a", f"r{key}", f"d{key}", [ad(key, "Intern", posted, words)],
@@ -430,18 +431,21 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
     with connect() as conn:
         # Each first seen on its posted date, except job 9: posted on 08-20, first seen on
         # 09-20 (in a month-long search), so it still gets its 2 weeks in Filtered.
-        conn.execute("UPDATE jobs SET first_seen_at = posted_at WHERE source_job_id <> '9'")
-        conn.execute("UPDATE jobs SET first_seen_at = '2026-09-20' WHERE source_job_id = '9'")
+        conn.execute("UPDATE jobs SET first_seen_at = posted_at "
+                     "WHERE split_part(canonical_key, ':', 2) <> '9'")
+        conn.execute("UPDATE jobs SET first_seen_at = '2026-09-20' "
+                     "WHERE split_part(canonical_key, ':', 2) = '9'")
         # Marked not interested: job 5 on 09-10, job 6 on 09-20.
         for job_id, marked in (("5", "2026-09-10"), ("6", "2026-09-20")):
             conn.execute("UPDATE jobs SET status='not_interested', status_updated_at=%s "
-                         "WHERE source_job_id=%s", (marked, job_id))
+                         "WHERE split_part(canonical_key, ':', 2)=%s", (marked, job_id))
         # Job 4, which you're pursuing, has been Interested since 08-01.
         conn.execute("UPDATE jobs SET status='interested', status_updated_at='2026-08-01' "
-                     "WHERE source_job_id='4'")
+                     "WHERE split_part(canonical_key, ':', 2)='4'")
         # In the Inbox since 08-01 (job 7), and moved back to it on 09-20 (job 8).
         for job_id, since in (("7", "2026-08-01"), ("8", "2026-09-20")):
-            conn.execute("UPDATE jobs SET status_updated_at=%s WHERE source_job_id=%s",
+            conn.execute("UPDATE jobs SET status_updated_at=%s "
+                         "WHERE split_part(canonical_key, ':', 2)=%s",
                          (since, job_id))
     # 2026-09-28: job 1 is 18 days past posting; job 2 is 10; job 5 was marked 18 days ago,
     # job 6 8 days ago, though both were posted weeks ago. Inbox jobs wait 30 days: job 3
@@ -450,7 +454,8 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
     # you're pursuing would vanish from every tab.
     assert archive_old_jobs(date(2026, 9, 28)) == 3
     with connect() as conn:
-        statuses = dict(conn.execute("SELECT source_job_id, status FROM jobs").fetchall())
+        statuses = dict(conn.execute(
+            "SELECT split_part(canonical_key, ':', 2), status FROM jobs").fetchall())
     assert statuses == {"1": "archived", "2": "filtered", "3": "new", "4": "interested",
                         "5": "archived",
                         "6": "not_interested", "7": "archived", "8": "new", "9": "filtered"}
@@ -458,7 +463,8 @@ def test_old_filtered_not_interested_and_untriaged_inbox_jobs_are_archived(datab
         ("filtered", "archive"), ("new", "archive"), ("not_interested", "archive")]
     # Still a known job: seeing it again adds no new one, and it stays archived.
     assert save_run("linkedin:a", "r4", "d4", [ad("1", "Intern", "2026-09-10", "old")]) == 0
-    assert _one("SELECT status FROM jobs WHERE source_job_id='1'")[0] == "archived"
+    assert _one("SELECT status FROM jobs "
+                "WHERE split_part(canonical_key, ':', 2)='1'")[0] == "archived"
 
 
 def _tailor(run_one, output_exists, **more):
@@ -480,7 +486,7 @@ def test_a_job_is_done_only_while_its_output_exists_and_its_last_draft_passed(da
     save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "id": key, "title": title,
                                          "descriptionText": f"{title} role"}
                                         for key, title in titles.items()], country="AU")
-    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    ids = dict(_rows("SELECT split_part(canonical_key, ':', 2), id FROM jobs"))
     runs = {"1": ["SUCCEEDED"],                # done, output deleted
             "2": ["SUCCEEDED"],                # done, output there
             "3": ["NEEDS-FIX"],                # failed the check, fixed by hand
@@ -521,9 +527,10 @@ def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database
                                                    "descriptionText": "Price options."},
                                         {**LINKEDIN, "id": "3", "title": "Trader",
                                          "descriptionText": "Trade futures."}], country="AU")
-    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    ids = dict(_rows("SELECT split_part(canonical_key, ':', 2), id FROM jobs"))
     with connect() as conn:
-        conn.execute("UPDATE jobs SET status='interested' WHERE source_job_id <> '3'")
+        conn.execute("UPDATE jobs SET status='interested' "
+                     "WHERE split_part(canonical_key, ':', 2) <> '3'")
     monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
     ran = []
     tailor = _tailor(ran.append, lambda folder: False)
@@ -534,7 +541,7 @@ def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database
     assert ran == [ids["2"]]
     # A letter for a job you've applied for: named with --job, but never in the batch.
     with connect() as conn:
-        conn.execute("UPDATE jobs SET status='applied' WHERE source_job_id='3'")
+        conn.execute("UPDATE jobs SET status='applied' WHERE split_part(canonical_key, ':', 2)='3'")
     pursuing = _tailor(ran.append, lambda folder: False, job_statuses=("interested", "applied"))
     batch._run_jobs(pursuing)
     assert sorted(ran[1:]) == sorted([ids[LINKEDIN["id"]], ids["2"]])
@@ -542,9 +549,9 @@ def test_job_option_does_only_those_jobs_and_only_with_the_right_status(database
     assert ran[-1] == ids["3"]
 
 
-def test_update_searches_filters_the_inbox_but_not_a_job_moved_back_from_filtered(database):
-    # A job you moved back from Filtered is one you chose to keep: filtering it again would hide it
-    # from you.
+def test_update_searches_filters_the_inbox_but_not_a_job_you_moved_back(database):
+    # A job you moved back from Filtered or Archived is one you chose to keep: filtering it
+    # again would hide it from you.
     from jobflow.ingest.refilter import filter_inbox_jobs
     from jobflow.ingest.searches import parse_config
 
@@ -560,20 +567,25 @@ def test_update_searches_filters_the_inbox_but_not_a_job_moved_back_from_filtere
                 "companyName": f"Employer {job_id}", "descriptionText": f"ad {job_id}", **more}
     save_run("linkedin:a", "r1", "d1", [ad("1", "Intern Analyst"), ad("2", "Intern Trader"),
                                          ad("3", "Analyst", postedAt="2026-01-01"),
-                                         ad("4", "Quant", salaryInfo=["$60,000/yr"])],
+                                         ad("4", "Quant", salaryInfo=["$60,000/yr"]),
+                                         ad("5", "Intern Quant")],
              search_name="s", country="AU")
     with connect() as conn:   # job 3 was posted the day before it was imported, long ago
-        conn.execute("UPDATE jobs SET first_seen_at='2026-01-02' WHERE source_job_id='3'")
-    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+        conn.execute("UPDATE jobs SET first_seen_at='2026-01-02' "
+                     "WHERE split_part(canonical_key, ':', 2)='3'")
+    ids = dict(_rows("SELECT split_part(canonical_key, ':', 2), id FROM jobs"))
     with connect() as conn:   # filtered earlier, then moved back to the Inbox by hand
         conn.execute("UPDATE jobs SET status='filtered' WHERE id=%s", (ids["2"],))
         set_job_state(conn, ids["2"], status="new", via="web")
+        # Archived while untriaged, then brought back from the Archived tab.
+        conn.execute("UPDATE jobs SET status='archived' WHERE id=%s", (ids["5"],))
+        set_job_state(conn, ids["5"], status="new", via="web")
     assert [job["id"] for job in filter_inbox_jobs([search], dry_run=True)[0]] == [
         ids["1"], ids["4"]]
     assert _one("SELECT count(*) FROM jobs WHERE status='filtered'")[0] == 0   # dry run
     filter_inbox_jobs([search])
-    assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {
-        "1": "filtered", "2": "new", "3": "new", "4": "filtered"}
+    assert dict(_rows("SELECT split_part(canonical_key, ':', 2), status FROM jobs")) == {
+        "1": "filtered", "2": "new", "3": "new", "4": "filtered", "5": "new"}
 
 
 def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
@@ -597,15 +609,16 @@ def test_relaxing_a_filter_brings_back_only_the_jobs_it_kept_out(database):
              [ad("1", "Intern Analyst"), ad("2", "Analyst", ["$60,000/yr"])],
              search_name="s", country="AU",
              job_filter=partial(filter_reason, search=strict, site="linkedin"))
-    assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {"1": "filtered",
-                                                                     "2": "filtered"}
+    assert dict(_rows("SELECT split_part(canonical_key, ':', 2), status FROM jobs")) == {
+        "1": "filtered", "2": "filtered"}
     relaxed = parse_config(base)
     restored, checked = restore_filtered_jobs(relaxed, dry_run=True)
     assert [job["reason"] for job in restored] == ["title contains 'Intern'"] and checked == 2
     assert _one("SELECT count(*) FROM jobs WHERE status='new'")[0] == 0   # dry run
     restore_filtered_jobs(relaxed)
     # The salary filter still applies to the other job.
-    assert dict(_rows("SELECT source_job_id, status FROM jobs")) == {"1": "new", "2": "filtered"}
+    assert dict(_rows("SELECT split_part(canonical_key, ':', 2), status FROM jobs")) == {
+        "1": "new", "2": "filtered"}
     # Brought back by update-searches, not by you: putting the term back filters it again.
     assert [job["title"] for job in filter_inbox_jobs([strict])[0]] == ["Intern Analyst"]
 
@@ -634,9 +647,11 @@ def test_a_renamed_search_brings_back_only_jobs_its_defaults_can_judge(database)
                                                    "descriptionText": "Price options."}],
              search_name="old-name", country="AU")
     with connect() as conn:
-        conn.execute("UPDATE jobs SET status='filtered', filter_reason=%s WHERE source_job_id='2'",
+        conn.execute("UPDATE jobs SET status='filtered', filter_reason=%s, "
+                     "filter_kind='salary' WHERE split_part(canonical_key, ':', 2)='2'",
                      ("salary 60,000-60,000/yr outside 100,000+/yr",))
-        conn.execute("UPDATE jobs SET status='filtered', filter_reason=%s WHERE source_job_id<>'2'",
+        conn.execute("UPDATE jobs SET status='filtered', filter_reason=%s, "
+                     "filter_kind='title' WHERE split_part(canonical_key, ':', 2)<>'2'",
                      ("title contains 'Data'",))
     text = '[[search]]\nname = "renamed"\nterms = ["a"]\nlocations = { AU = [] }\n'
     restored, checked = restore_filtered_jobs(parse_config(text), fallback=defaults_search(text))
@@ -667,6 +682,25 @@ def test_a_job_filtered_for_its_posted_date_stays_filtered(database):
     assert _one("SELECT status FROM jobs")[0] == "filtered"
     assert restore_filtered_jobs([search]) == ([], 1)
     assert _one("SELECT status FROM jobs")[0] == "filtered"
+
+
+def test_jobs_filtered_before_filter_kind_get_the_kind_their_reason_says(database):
+    # update-searches decides which filtered jobs it may bring back by filter_kind: a job
+    # filtered for its posted date, given no kind or the wrong one, could come back to the
+    # Inbox, and one filtered by an excluded term, given none, never could.
+    reasons = {"1": "employer matches 'Acme'", "2": "title contains 'Intern'",
+               "3": "posted 2026-09-01, older than 2 weeks",
+               "4": "salary 60,000-60,000/yr outside 100,000+/yr",
+               "5": "job type part-time not wanted", "6": "work arrangement on-site not wanted"}
+    with connect() as conn:   # as jobflow stored them before filter_kind existed
+        for key, reason in reasons.items():
+            conn.execute("INSERT INTO jobs(canonical_key, title, status, filter_reason) "
+                         "VALUES (%s, 'Job', 'filtered', %s)", (f"linkedin:{key}", reason))
+        conn.execute("DELETE FROM schema_migrations WHERE name = '002_jobs.sql:10'")
+    migrate()
+    assert dict(_rows("SELECT split_part(canonical_key, ':', 2), filter_kind FROM jobs")) == {
+        "1": "employer", "2": "title", "3": "posted", "4": "salary", "5": "job_type",
+        "6": "work_arrangement"}
 
 
 def test_every_status_can_be_saved_and_has_a_label(database):
@@ -729,14 +763,15 @@ def test_jobs_archived_over_90_days_ago_lose_their_ad_but_are_still_recognised(d
         for key, days in ((LINKEDIN["id"], 91), (SEEK["id"], 89)):
             conn.execute("UPDATE jobs SET status='archived', "
                          "status_updated_at = now() - make_interval(days => %s) "
-                         "WHERE source_job_id=%s", (days, key))
+                         "WHERE split_part(canonical_key, ':', 2)=%s", (days, key))
     assert prune_archived_jobs() == 1
-    assert sorted(_rows("SELECT source_job_id, description IS NULL, raw_json IS NULL "
-                        "FROM jobs")) == [
+    assert sorted(_rows("SELECT split_part(canonical_key, ':', 2), description IS NULL, "
+                        "raw_json IS NULL FROM jobs")) == [
         (LINKEDIN["id"], True, True), (SEEK["id"], False, False)]
     # Seen again, the cleared job is still the same job, and stays archived.
     assert save_run("linkedin:a", "r2", "d2", [LINKEDIN], country="AU") == 0
-    assert _one("SELECT status FROM jobs WHERE source_job_id=%s", LINKEDIN["id"])[0] == "archived"
+    assert _one("SELECT status FROM jobs WHERE split_part(canonical_key, ':', 2)=%s",
+                LINKEDIN["id"])[0] == "archived"
 
 
 def test_dates_are_in_your_timezone_in_python_and_the_database(database, monkeypatch):
@@ -760,7 +795,7 @@ def test_score_all_scores_the_jobs_you_are_pursuing_and_picked_inbox_jobs(databa
                                         for key, title in (("1", "Analyst"), ("2", "Quant"),
                                                            ("3", "Trader"), ("4", "Engineer"))],
              country="AU")
-    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    ids = dict(_rows("SELECT split_part(canonical_key, ':', 2), id FROM jobs"))
     with connect() as conn:
         set_job_state(conn, ids["1"], status="interested", via="test")
         set_job_state(conn, ids["3"], status="not_interested", via="test")
@@ -789,7 +824,7 @@ def test_skill_gaps_count_the_jobs_you_are_pursuing(database, monkeypatch):
     statuses = {"1": "interested", "2": "applied", "3": "offered", "4": "new", "5": "rejected"}
     save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "id": key, "title": f"Role {key}"}
                                         for key in statuses], country="AU")
-    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    ids = dict(_rows("SELECT split_part(canonical_key, ':', 2), id FROM jobs"))
     with connect() as conn:
         for key, status in statuses.items():
             conn.execute("UPDATE jobs SET status=%s WHERE id=%s", (status, ids[key]))
@@ -904,9 +939,10 @@ def test_the_job_list_filters_hide_only_what_they_say(database):
     save_run("linkedin:a", "r2", "d2", [ad("2", "Trader", "Hong Kong", salaryInfo=["HK$600,000/yr"],
                                            postedAt=long_ago)], country="HK")
     save_run("linkedin:a", "r3", "d3", [ad("3", "Quant", "Remote")])   # no country, salary, or date
-    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    ids = dict(_rows("SELECT split_part(canonical_key, ':', 2), id FROM jobs"))
     with connect() as conn:
-        conn.execute("UPDATE jobs SET first_seen_at = %s WHERE source_job_id = '3'", (long_ago,))
+        conn.execute("UPDATE jobs SET first_seen_at = %s "
+                     "WHERE split_part(canonical_key, ':', 2) = '3'", (long_ago,))
 
     def shown(**params):
         query = {"status": ["new"], **{k: [str(v)] if not isinstance(v, list) else v
@@ -940,7 +976,7 @@ def test_clean_up_keeps_the_folder_of_every_job_you_applied_for(database, tmp_pa
                                         for key, title in (("1", "Analyst"), ("2", "Quant"),
                                                            ("3", "Trader"), ("4", "Engineer"))],
              country="AU")
-    ids = dict(_rows("SELECT source_job_id, id FROM jobs"))
+    ids = dict(_rows("SELECT split_part(canonical_key, ':', 2), id FROM jobs"))
     with connect() as conn:
         # Applied, then rejected; applied, then withdrawn; withdrawn before applying;
         # rejected without ever being marked Applied, then withdrawn: rejected, so you

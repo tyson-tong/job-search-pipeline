@@ -1,7 +1,8 @@
 // The job panel (the drawer a job's title opens): its details, scores, next steps, similar
 // jobs, and edits, which go through the same unsaved changes as the list (common.js).
-import { statusSelect } from "./app.js";
-import { api, copyCommand, current, el, fill, renderSaveBar, save, setPending, state, toast } from "./common.js";
+import {
+  api, copyCommand, current, el, fill, renderSaveBar, save, setPending, state, statusSelect, toast,
+} from "./common.js";
 import { fmtDate, fmtSalary, label, safeUrl, SITE_NAMES } from "./format.js";
 import { startScoring } from "./scoring.js";
 
@@ -69,7 +70,17 @@ function detailHeader(job, target) {
       ? el("div", { className: "banner" }, `This may be the same role as job #${inProgress[0].id} `
           + `(${inProgress[0].company || "unknown employer"}), which is already ${label(inProgress[0].status).toLowerCase()}.`)
       : null,
-    job.status === "filtered" && job.filter_reason ? el("div", { className: "banner" }, `Filtered on import: ${job.filter_reason}`) : null];
+    job.status === "filtered" && job.filter_reason ? el("div", { className: "banner" }, `Filtered on import: ${job.filter_reason}`) : null,
+    job.status === "archived" ? archivedBanner(job) : null];
+}
+// An archived job: where it was archived from, and how to bring it back.
+function archivedBanner(job) {
+  const archived = [...job.history].reverse().find((h) => h.to_status === "archived");
+  return el("div", { className: "banner" }, `Archived ${fmtDate(job.status_updated_at)}`
+    + (archived ? ` from ${label(archived.from_status)}` : "")
+    + (job.filter_reason ? ` (filtered: ${job.filter_reason})` : "")
+    + ". Mark it Interested, or move it back to the Inbox, with the Status menu."
+    + (job.description ? "" : " Its ad has been cleared since, so it can't be scored or tailored."));
 }
 // The job's scores against each CV, with Score or Rescore when there's something to do.
 // Only a saved Inbox job or one you're pursuing (Interested onwards) is scored here, once

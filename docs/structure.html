@@ -137,7 +137,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
     <div class="lane-title">On your machine, when you choose</div>
     <div class="lane-sub">CVs never leave it, except the text sent to your LLM</div>
     <div class="step"><b>Pick and track</b><span class="mod">web/ · jobflow web</span>
-      <div class="what">Browser tracker on 127.0.0.1: Inbox of new jobs (Interested or Not interested, with Score selected to help decide), My jobs, Filtered and Not interested tabs to change your mind about jobs until they're <a href="rules.md#archiving">archived</a>, filters, statuses, notes, follow-ups, similar-job warnings, saved when you click Save (<a href="rules.md#the-tracker">rules</a>).</div></div>
+      <div class="what">Browser tracker on 127.0.0.1: Inbox of new jobs (Interested or Not interested, with Score selected to help decide), My jobs, Filtered and Not interested tabs to change your mind about jobs, and an Archived tab for those jobflow has <a href="rules.md#archiving">archived</a>, filters, statuses, notes, follow-ups, similar-job warnings, saved when you click Save (<a href="rules.md#the-tracker">rules</a>).</div></div>
     <div class="step"><b>Score jobs against each CV</b><span class="mod">candidate/matching.py · Score all jobs in jobflow web</span>
       <div class="what">Jobs you're pursuing, and Inbox jobs you pick, in the background from the tracker: requirements with verified CV quotes, and a score computed from them (<a href="rules.md#match-scores">rules</a>).</div></div>
     <div class="step"><b>See your skill gaps</b><span class="mod">candidate/skill_gaps.py · jobflow skill-gaps</span>
@@ -220,9 +220,9 @@ applications      42   notes "2026-09-25: Applied via referral"</div>
     <li><span class="k">id</span>, apify_run_id, dataset_id</li><li>actor_id <span class="muted">site:actor</span></li>
     <li>search_name, input <span class="muted">exact actor input</span></li><li>status, error, items_seen, cost_usd</li><li>hit_cap <span class="muted">returned all max_results allows</span></li><li>started_at, finished_at</li></ul></div>
   <div class="tbl"><h3>jobs</h3><p>One per real job, whatever the site.</p><ul>
-    <li><span class="k">id</span>, canonical_key <span class="muted">first copy</span></li><li>source_job_id, canonical_url <span class="muted">first copy's</span></li><li>title, company, location, posted_at</li>
+    <li><span class="k">id</span>, canonical_key <span class="muted">first copy</span></li><li>canonical_url <span class="muted">first copy's</span></li><li>title, company, location, posted_at</li>
     <li>description, raw_json, source</li><li>fingerprint, match_key</li><li>salary_min, salary_max <span class="muted">annual</span></li><li>salary_estimated <span class="muted">period guessed; never filters</span></li>
-    <li>country <span class="muted">ISO code</span></li><li>status, filter_reason, status_updated_at</li><li>first_seen_at</li></ul></div>
+    <li>country <span class="muted">ISO code</span></li><li>status, status_updated_at</li><li>filter_reason, filter_kind <span class="muted">which filter</span></li><li>first_seen_at</li></ul></div>
   <div class="tbl"><h3>job_sources</h3><p>Every site's copy of a job.</p><ul>
     <li><span class="k">source_key</span> <span class="muted">e.g. seek:8123…</span></li><li>job_id → jobs</li>
     <li>source, url</li><li>first_seen_at</li></ul></div>

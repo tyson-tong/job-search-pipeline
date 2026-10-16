@@ -68,3 +68,24 @@ ALTER TABLE jobs ADD COLUMN IF NOT EXISTS salary_estimated BOOLEAN NOT NULL DEFA
 -- titles: the keys of jobs whose title has one are worked out again, in the follow-up.
 -- Then: backfill_title_keys
 SELECT 1;
+
+-- Migration ID: 10
+-- Which filter kept a job out (ingest/filters.py: employer, title, posted, salary, job_type,
+-- work_arrangement), so update-searches tells which filtered jobs it can judge again by
+-- this, not by the reason's wording. Older jobs are classified by their reasons' wording
+-- when this was added.
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS filter_kind TEXT;
+UPDATE jobs SET filter_kind = CASE
+        WHEN filter_reason LIKE 'employer matches %' THEN 'employer'
+        WHEN filter_reason LIKE 'title contains %' THEN 'title'
+        WHEN filter_reason LIKE 'posted %' THEN 'posted'
+        WHEN filter_reason LIKE 'salary %' THEN 'salary'
+        WHEN filter_reason LIKE 'job type %' THEN 'job_type'
+        WHEN filter_reason LIKE 'work arrangement %' THEN 'work_arrangement'
+    END
+    WHERE filter_reason IS NOT NULL AND filter_kind IS NULL;
+
+-- Migration ID: 11
+-- Never read: the first copy's site ID is in canonical_key (as each copy's is in
+-- job_sources.source_key).
+ALTER TABLE jobs DROP COLUMN IF EXISTS source_job_id;

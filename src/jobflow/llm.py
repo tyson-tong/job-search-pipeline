@@ -109,8 +109,9 @@ def complete(system: str, user: str, *, json_mode: bool = False, reviewer: bool 
         time.sleep(_wait(response, attempt))
         attempt += 1
     message = error.get("message") or response.reason or "request failed"
+    # 402 is how some providers (OpenRouter, say) report credit run out.
     raise LLMError(f"{message} (LLM provider, HTTP {response.status_code})",
-                   fatal=quota or response.status_code in (401, 403, 404))
+                   fatal=quota or response.status_code in (401, 402, 403, 404))
 
 
 def _content(response: requests.Response) -> str:

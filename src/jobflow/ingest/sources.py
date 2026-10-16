@@ -276,7 +276,6 @@ def parse_pay(value: object, country: str | None = None) -> Pay | None:
     return _parse_text(value, country)
 
 
-
 def _as_list(value: object) -> list:
     return value if isinstance(value, list) else [] if value is None else [value]
 

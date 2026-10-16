@@ -83,6 +83,11 @@ def test_llm_retries_rate_limits_but_not_an_empty_balance(provider):
     with pytest.raises(llm.LLMError, match="no credits remaining") as caught:
         llm.complete("s", "u")
     assert caught.value.fatal and not provider.replies and provider.waits == [3.0]
+    # OpenRouter reports it as 402: not fatal, every job spent its web searches, then failed.
+    provider.replies[:] = [Reply(402, {"error": {"message": "Insufficient credits"}})]
+    with pytest.raises(llm.LLMError, match="Insufficient credits") as caught:
+        llm.complete("s", "u")
+    assert caught.value.fatal
 
 
 def test_llm_drops_settings_the_provider_rejects(monkeypatch):
