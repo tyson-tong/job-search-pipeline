@@ -164,8 +164,9 @@ footer { margin-top: 48px; color: var(--muted); font-size: 0.85rem; }
   <tr><td><code>ingest/searches.py</code></td><td>Loads and validates your searches.</td></tr>
   <tr><td><code>ingest/runs.py</code></td><td>Translates each search into each site's actor input, and works out the country a run covers.</td></tr>
   <tr><td><code>ingest/filters.py</code></td><td>The filters a site can't apply, applied after import: excluded title terms and employers, salary, job type, work arrangement, widened date windows.</td></tr>
-  <tr><td><code>ingest/apify.py</code></td><td>Runs each planned search on Apify and hands the results to the store.</td></tr>
+  <tr><td><code>ingest/apify.py</code></td><td>Runs each planned search on Apify and hands the results to the store, after importing again the results of earlier runs that couldn't be saved.</td></tr>
   <tr><td><code>ingest/sources.py</code></td><td>Converts LinkedIn, Indeed, and Seek records to one <code>Posting</code> shape.</td></tr>
+  <tr><td><code>ingest/salary.py</code></td><td>Reads a salary from an ad: its amounts or range and pay period (stated, or guessed from the amounts' size), as a yearly range.</td></tr>
   <tr><td><code>ingest/store.py</code></td><td>Saving jobs and sightings, merging copies, and run records.</td></tr>
   <tr><td><code>ingest/refilter.py</code></td><td>A searches change applied to jobs already saved: filtering Inbox jobs, and bringing back Filtered ones.</td></tr>
   <tr><td><code>ingest/upkeep.py</code></td><td>Archiving jobs you're done with, and pruning scraped records no longer needed.</td></tr>

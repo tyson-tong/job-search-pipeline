@@ -81,7 +81,7 @@ It checks the file, brings the jobs you already have in line with it, and update
 | `jobflow clean-up` | Delete the output folders of jobs you're done with, after you confirm ([which](docs/rules.md#clean-up)) |
 | `jobflow update-searches [--dry-run]` | After editing your searches: check them, update your jobs, and publish them to the daily import |
 | `jobflow ingest [--search NAME] [--site SITE] [--posted-within-days DAYS]` | Run the searches now (the daily import does this; uses Apify credits) |
-| `jobflow ingest --retry-imports` | Import the results of runs that succeeded on Apify but couldn't be saved ([rules](docs/rules.md#failures)) |
+| `jobflow ingest --retry-imports` | Only import the results of runs that succeeded on Apify but couldn't be saved (each import does this first; [rules](docs/rules.md#failures)) |
 | `jobflow status` | What the daily GitHub import uses, and why recent Apify runs failed |
 | `jobflow init` | Create your settings files (first time only) |
 | `jobflow help [COMMAND]` | Every command with its options, like a manual page (or one command's; `COMMAND -h` works too) |

@@ -940,11 +940,13 @@ def test_a_failed_import_is_imported_again_as_it_would_have_been(database, monke
     ran = datetime(2026, 10, 1, tzinfo=UTC)
     run_input = {"urls": ["https://www.linkedin.com/jobs/search/?location=Australia"],
                  "limitPerSource": 50}
-    record_failed_run("linkedin:a", "r1", "d1", "IMPORT_FAILED", "server closed the connection",
-                      ran, ran, 0.5, "s", run_input)
+    failed = {"status": "IMPORT_FAILED", "error": "server closed the connection",
+              "started_at": ran, "finished_at": ran, "search_name": "s"}
+    record_failed_run(actor_id="linkedin:a", run_id="r1", dataset_id="d1", cost_usd=0.5,
+                      run_input=run_input, **failed)
     # Its results deleted by Apify since: recorded as such, and not tried again.
-    record_failed_run("seek:a", "r2", "d2", "IMPORT_FAILED", "server closed the connection",
-                      ran, ran, 0.25, "s", {"country": "australia", "maxResults": 50})
+    record_failed_run(actor_id="seek:a", run_id="r2", dataset_id="d2", cost_usd=0.25,
+                      run_input={"country": "australia", "maxResults": 50}, **failed)
     with pytest.raises(RuntimeError, match="1 of 2 failed imports couldn't be imported"):
         apify.retry_imports()
     # Saved as the import would have: filtered by its search, in its country.
@@ -957,6 +959,31 @@ def test_a_failed_import_is_imported_again_as_it_would_have_been(database, monke
     assert capsys.readouterr().out == "No failed imports to retry\n"
 
 
+def test_each_import_first_imports_the_runs_whose_results_couldnt_be_saved(database,
+                                                                           monkeypatch):
+    # Only jobflow ingest --retry-imports imported them, so a paid run whose results
+    # couldn't be saved was lost once Apify deleted its results, unless you noticed in time.
+    from jobflow.ingest import apify
+    from jobflow.ingest.store import record_failed_run
+
+    class Client:
+        def dataset(self, dataset_id):
+            class Dataset:
+                def iterate_items(self, clean):
+                    return iter([LINKEDIN])
+            return Dataset()
+    monkeypatch.setattr(apify, "make_client", Client)
+    monkeypatch.setattr(apify, "run_search", lambda client, planned, max_wait: None)
+    monkeypatch.setenv("JOBFLOW_SEARCHES", '[[search]]\nname = "s"\nterms = ["a"]\n'
+                       'locations = { AU = [] }\nsites = ["linkedin"]\n')
+    record_failed_run(actor_id="linkedin:a", run_id="r1", dataset_id="d1",
+                      status="IMPORT_FAILED", error="server closed the connection",
+                      search_name="s")
+    apify.ingest_searches()
+    assert _rows("SELECT apify_run_id, status FROM scraper_runs") == [("r1", "SUCCEEDED")]
+    assert _one("SELECT title FROM jobs")[0] == LINKEDIN["title"]
+
+
 def test_a_site_failing_while_others_succeed_is_flagged(database):
     # The header only warned when no import had succeeded at all, so a site failing every
     # day (all of them, once the Apify account hit its monthly limit) went unseen.
@@ -964,7 +991,8 @@ def test_a_site_failing_while_others_succeed_is_flagged(database):
     from jobflow.web.queries import summary
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
-    record_failed_run("seek:a", "r2", None, "FAILED", "Monthly usage hard limit exceeded")
+    record_failed_run(actor_id="seek:a", run_id="r2", dataset_id=None, status="FAILED",
+                      error="Monthly usage hard limit exceeded")
     save_run("seek:a", "r3", "d3", [SEEK], country="AU")
     assert summary()["failed_runs"] == [{"site": "seek", "failed": 1, "total": 2,
                                          "error": "Monthly usage hard limit exceeded"}]

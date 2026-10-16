@@ -197,7 +197,8 @@ def _print_recent_runs() -> None:
               f"{hours} hours: {f['error'] or 'no error recorded'}")
     if unsaved:
         print(f"  {plural(unsaved, 'run')} succeeded on Apify but couldn't be saved: run "
-              "`uv run jobflow ingest --retry-imports` to import their results")
+              "`uv run jobflow ingest --retry-imports` to import their results now (the next "
+              "import does it first anyway)")
     for c in capped:
         print(f"  {c['site']:<9} {c['capped']} of {plural(c['total'], 'run')} hit max_results in "
               f"the last {hours} hours, so probably left jobs behind: raise max_results, or "

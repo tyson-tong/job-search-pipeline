@@ -44,7 +44,7 @@ Ask first.
   (per-job commands, two jobs at a time), `github.py` (`gh` for update-searches and
   status), `cleanup.py`, `text.py`.
 - `ingest/`: searches config to Apify runs (`searches`, `options`, `runs`, `apify`),
-  normalising scraped records (`sources`), filtering, merging, and storing (`filters`,
+  normalising scraped records (`sources`, `salary`), filtering, merging, and storing (`filters`,
   `dedupe`, `store`), and later passes (`refilter`, `upkeep`, `similar`, `backfill`,
   `report`).
 - `candidate/`: CV files (`cvs`), scoring (`matching`), tailoring (`tailoring`,

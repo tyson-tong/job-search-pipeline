@@ -304,10 +304,13 @@ def failed_imports() -> list[dict]:
                ORDER BY created_at""").fetchall()
 
 
-def record_failed_run(actor_id: str, run_id: str | None, dataset_id: str | None, status: str,
-                      error: str, started_at: datetime | None = None,
+def record_failed_run(*, actor_id: str, run_id: str | None, dataset_id: str | None,
+                      status: str, error: str, started_at: datetime | None = None,
                       finished_at: datetime | None = None, cost_usd: float | None = None,
                       search_name: str | None = None, run_input: dict | None = None) -> None:
+    """Record a run that failed, wasn't started, or whose results couldn't be saved. Keyword
+    arguments only: several of the ten are IDs or times, which positionally are easily swapped,
+    storing a run that can't be retried."""
     with db.connect() as conn:
         conn.execute(
             """INSERT INTO scraper_runs(actor_id, apify_run_id, dataset_id, status,

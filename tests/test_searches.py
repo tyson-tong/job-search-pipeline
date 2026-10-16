@@ -7,8 +7,9 @@ import pytest
 from jobflow.ingest import apify
 from jobflow.ingest.filters import filter_reason
 from jobflow.ingest.runs import country_from_location, plan, search_url_country
+from jobflow.ingest.salary import parse_pay
 from jobflow.ingest.searches import SearchConfigError, parse_config
-from jobflow.ingest.sources import normalise, parse_pay
+from jobflow.ingest.sources import normalise
 
 CONFIG = """
 [defaults]
@@ -316,13 +317,14 @@ def test_unsuccessful_runs_are_recorded_not_imported(monkeypatch, result, messag
     # complete; not recording it hides the failure.
     import jobflow.ingest.store as store
     recorded = []
-    monkeypatch.setattr(store, "record_failed_run", lambda *a: recorded.append(a))
+    monkeypatch.setattr(store, "record_failed_run", lambda **k: recorded.append(k))
     monkeypatch.setattr(store, "save_run", lambda *a, **k: pytest.fail("imported"))
     planned = plan(searches(), "counsel")[0]
     client = FakeClient(result)
     with pytest.raises(RuntimeError, match=message):
         apify.run_search(client, planned, timedelta(minutes=5))
-    assert recorded[0][-2:] == ("counsel", planned.run_input)
+    assert (recorded[0]["search_name"], recorded[0]["run_input"]) == ("counsel",
+                                                                  planned.run_input)
     # A run still going would keep charging for results never imported: it is stopped.
     assert client.aborted == (["r1"] if result.status == "RUNNING" else [])
 
@@ -331,15 +333,15 @@ def test_a_run_whose_import_fails_is_not_recorded_as_succeeded(monkeypatch):
     # A run recorded as succeeded though its jobs were never saved hides the loss of a paid run.
     import jobflow.ingest.store as store
     recorded = []
-    monkeypatch.setattr(store, "record_failed_run", lambda *a: recorded.append(a))
+    monkeypatch.setattr(store, "record_failed_run", lambda **k: recorded.append(k))
 
     def save_run(*args, **kwargs):
         raise RuntimeError("numeric field overflow")
     monkeypatch.setattr(store, "save_run", save_run)
     with pytest.raises(RuntimeError, match="overflow"):
         apify.run_search(FakeClient(_run()), plan(searches(), "counsel")[0], timedelta(minutes=5))
-    run_id, dataset_id, status = recorded[0][1:4]
-    assert (run_id, dataset_id, status) == ("r1", "d1", "IMPORT_FAILED")
+    assert (recorded[0]["run_id"], recorded[0]["dataset_id"], recorded[0]["status"]) == (
+        "r1", "d1", "IMPORT_FAILED")
 
 
 def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
@@ -354,7 +356,9 @@ def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
             raise RuntimeError("boom")
 
     monkeypatch.setattr(apify, "run_search", fake_run)
+    import jobflow.ingest.store as store
     import jobflow.ingest.upkeep as upkeep
+    monkeypatch.setattr(store, "failed_imports", lambda: [])
     monkeypatch.setattr(upkeep, "archive_old_jobs", lambda: 0)
     monkeypatch.setattr(upkeep, "prune_sightings", lambda: 0)
     monkeypatch.setattr(upkeep, "prune_archived_jobs", lambda: 0)
@@ -469,7 +473,8 @@ def test_runs_that_could_outlast_the_daily_job_are_not_started(monkeypatch):
     monkeypatch.setattr(apify, "run_search", slow_run)
     import jobflow.ingest.store as store
     import jobflow.ingest.upkeep as upkeep
-    monkeypatch.setattr(store, "record_failed_run", lambda *a, **k: recorded.append(a[3]))
+    monkeypatch.setattr(store, "record_failed_run", lambda **k: recorded.append(k["status"]))
+    monkeypatch.setattr(store, "failed_imports", lambda: [])
     upkept = []
     monkeypatch.setattr(upkeep, "archive_old_jobs", lambda: upkept.append(1) or 0)
     monkeypatch.setattr(upkeep, "prune_sightings", lambda: 0)

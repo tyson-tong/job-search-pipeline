@@ -9,8 +9,9 @@ from .. import settings
 from ..text import words
 from . import options as opt
 from .runs import POSTED_WITHIN, WINDOW_NAMES, site_window
+from .salary import ANNUAL_FACTOR
 from .searches import Search
-from .sources import ANNUAL_FACTOR, Posting
+from .sources import Posting
 
 
 def search_warnings(search: Search) -> list[str]:
