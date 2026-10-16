@@ -176,6 +176,7 @@ Next:
   5. GitHub secrets        DATABASE_URL and APIFY_TOKEN (gh secret set NAME), then
                            uv run jobflow update-searches to publish your searches to
                            the daily import (it is already scheduled)
+  6. A cron service        to start the daily import on time each night
 See docs/setup.md for each step.""")
 
 

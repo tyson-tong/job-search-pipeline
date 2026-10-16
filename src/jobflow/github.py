@@ -17,6 +17,10 @@ ACTIONS_SECRETS = ("DATABASE_URL", "APIFY_TOKEN")
 WORKFLOW_STATES = {"active": "on", "disabled_manually": "off",
                    "disabled_inactivity": "off (GitHub turned it off after 60 days without "
                                           "activity in the repository)"}
+# How the import's runs start: on time by your outside cron service (or the Run workflow
+# button), and GitHub's schedule, the fallback, which imports nothing after a recent on-time run.
+RUN_EVENTS = {"workflow_dispatch": "Last run started on time (or by hand)",
+              "schedule": "Last scheduled run (the fallback)"}
 
 
 def _gh(args: list[str], doing: str, input: str | None = None, hint: str = "") -> str:
@@ -202,15 +206,15 @@ def _print_recent_runs() -> None:
 
 def status() -> None:
     """Show what the daily GitHub import uses, reading it from GitHub: whether it's on, its
-    last run, its secrets, its searches (and whether they match config/searches.toml), and
-    which job sites (Apify scrapers) it calls; and from your database, why recent Apify
-    runs failed. Changes nothing."""
+    last run started on time and its last scheduled one, its secrets, its searches (and
+    whether they match config/searches.toml), and which job sites (Apify scrapers) it calls;
+    and from your database, why recent Apify runs failed. Changes nothing."""
     from .ingest.options import ACTORS, SITES
     from .settings import timezone
 
     state = _gh(["api", f"repos/{{owner}}/{{repo}}/actions/workflows/{WORKFLOW}", "--jq", ".state"],
                 "Reading the daily import's workflow").strip()
-    runs = json.loads(_gh(["run", "list", "--workflow", WORKFLOW, "-L", "1", "--json",
+    runs = json.loads(_gh(["run", "list", "--workflow", WORKFLOW, "-L", "20", "--json",
                            "status,conclusion,createdAt,event"], "Reading the daily import's runs"))
     secrets = {s["name"]: s["updatedAt"][:10] for s in json.loads(_gh(
         ["secret", "list", "--json", "name,updatedAt"], "Reading the repository's secret names"))}
@@ -218,13 +222,19 @@ def status() -> None:
         ["variable", "list", "--json", "name,value"],
         "Reading the repository's Actions variables"))}
     print(f"Daily import (.github/workflows/{WORKFLOW}): {WORKFLOW_STATES.get(state, state)}")
-    if runs:
-        run = runs[0]
+    latest: dict[str, dict] = {}   # the newest run of each way of starting, newest first
+    for run in runs:
+        latest.setdefault(run["event"], run)
+    for event, run in latest.items():
         started = datetime.fromisoformat(run["createdAt"]).astimezone(timezone())
-        print(f"  Last run: {started:%Y-%m-%d %H:%M %Z} ({run['event']}), "
+        print(f"  {RUN_EVENTS.get(event, f'Last {event} run')}: {started:%Y-%m-%d %H:%M %Z}, "
               f"{run['conclusion'] or run['status']}")
-    else:
+    if not runs:
         print("  Last run: none yet")
+    if "workflow_dispatch" not in latest:
+        print("  No run started on time lately: GitHub's schedule starts the import hours "
+              "late, in the morning, and Seek's 1-day search returns only that day's jobs. "
+              "Start it on time at night: docs/setup.md, section 7")
     _print_recent_runs()
     print("Secrets:  " + ", ".join(f"{name} set {secrets[name]}" if name in secrets
                                    else f"{name} MISSING (gh secret set {name})"

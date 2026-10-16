@@ -61,7 +61,6 @@ def test_api_requires_the_token_and_a_local_host(server):
     assert "frame-ancestors 'none'" in response.getheader("Content-Security-Policy")
 
 
-
 def test_a_failed_scoring_run_never_leaves_scoring_stuck(monkeypatch):
     # The running flag once stayed set after a failure, so every later Score click said
     # "Scoring is already running" until the tracker was restarted.

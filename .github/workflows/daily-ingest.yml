@@ -1,12 +1,16 @@
 name: Daily job ingestion
 
 on:
-  schedule:
-    # 00:17 daily in Sydney standard time; 01:17 during daylight time. GitHub starts scheduled
-    # runs late whatever the time (4 to 8 hours in October 2026, a different amount each day),
-    # so LinkedIn's 24-hour window is searched as 30 hours (ingest/options.py).
-    - cron: "17 14 * * *"
+  # Started on time, at night, by an outside cron service through GitHub's API (docs/setup.md,
+  # section 7): Seek's 1-day search returns only today's listings, so the import must start
+  # shortly before midnight. Also the Actions tab's "Run workflow" button.
   workflow_dispatch:
+  schedule:
+    # The fallback for a day the outside service missed, or a copy without one: 00:17 daily
+    # in Sydney standard time, 01:17 during daylight time. GitHub starts scheduled runs late
+    # whatever the time (4 to 8 hours in October 2026, a different amount each day), so
+    # LinkedIn's 24-hour window is searched as 30 hours (ingest/options.py).
+    - cron: "17 14 * * *"
 
 permissions:
   contents: read
@@ -17,7 +21,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A scheduled run imports nothing when a run started on time succeeded in the last 20 hours:
+  # it would pay Apify again for the same jobs. Concurrency makes it wait for one still going.
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      skip: ${{ steps.recent.outputs.skip }}
+    steps:
+      - id: recent
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          last=$(gh run list --workflow daily-ingest.yml --event workflow_dispatch \
+            --status success --limit 1 --json createdAt --jq '.[0].createdAt // ""')
+          if [ -n "$last" ] && [ $(( $(date +%s) - $(date -d "$last" +%s) )) -lt 72000 ]; then
+            echo "A run started on time succeeded at $last, so this scheduled run imports nothing."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
   ingest:
+    needs: check
+    if: needs.check.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:

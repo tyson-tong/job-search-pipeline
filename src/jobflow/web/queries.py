@@ -245,7 +245,7 @@ def summary() -> dict:
             """SELECT count(*) FROM applications a JOIN jobs j ON j.id = a.job_id
                WHERE a.follow_up_on < %s AND NOT (j.status = ANY(%s))""",
             (today(), CLOSED_STATUSES)).fetchone()[0]
-        # The searches look back 24 hours, so a day the import didn't run loses its jobs.
+        # The searches look back about a day, so a day the import didn't run loses its jobs.
         last_import = conn.execute("SELECT max(finished_at) FROM scraper_runs "
                                    "WHERE status = 'SUCCEEDED'").fetchone()[0]
         # A site failing every day (a rented actor expired, say) while others succeed

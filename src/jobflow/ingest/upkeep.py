@@ -31,7 +31,7 @@ def archive_old_jobs(today: date | None = None) -> int:
     later, a job ARCHIVE_AFTER after you marked it Not interested, and an Inbox job you
     never triaged, posted and in the Inbox for INBOX_ARCHIVE_AFTER. They stay in the database
     and still match as duplicates, so a repost stays out of the Inbox; the tracker shows
-    them in no tab. Returns how many were archived."""
+    them in its Archived tab. Returns how many were archived."""
     today = today or settings.today()
     with db.connect() as conn:
         # jobflow web archives as it starts, perhaps while the daily import is saving a run.

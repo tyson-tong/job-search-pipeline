@@ -104,6 +104,9 @@ Ask first.
 - It has no config/profile.toml: it reads `JOBFLOW_SEARCHES` and `JOBFLOW_TIMEZONE`, which
   `update-searches` publishes.
 - GitHub stops it at 180 minutes; `apify.INGEST_MINUTES` (150) keeps runs inside that.
+- A cron service the user sets up starts it each night through `workflow_dispatch` (Seek's
+  1-day search is "today" only); GitHub's schedule runs hours late, so it is a fallback whose
+  `check` job skips the import after a dispatched run succeeded in the last 20 hours.
 - Actions are pinned to commit SHAs, with the version in a comment.
 
 ### LLM work

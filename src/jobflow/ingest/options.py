@@ -85,9 +85,10 @@ LINKEDIN_CITY_NAMES = {"Charlotte": "Charlotte, North Carolina", "Miami": "Miami
                        "Denver": "Denver, Colorado"}
 
 # Search URL f_TPR values (seconds) for LinkedIn's own date filter: past week, past month,
-# and the past 24 hours searched as 30, since GitHub starts the daily import hours late, by a
-# different amount each day: a 24-hour window missed the hours between two days' runs
-# whenever a run started later than the day before's. LinkedIn has no 2-week option.
+# and the past 24 hours searched as 30, since the daily import doesn't start at the same time
+# each day (GitHub's fallback schedule starts it hours late, by a different amount each day): a
+# 24-hour window missed the hours between two days' runs whenever a run started later than the
+# day before's. LinkedIn has no 2-week option.
 LINKEDIN_POSTED_WITHIN = {1: "r108000", 7: "r604800", 30: "r2592000"}
 LINKEDIN_POSTED_ANY_TIME = None  # no f_TPR parameter
 
@@ -121,7 +122,9 @@ INDEED_WORK_ARRANGEMENTS = {"remote": "remote", "work from home": "remote",
 SEEK_COUNTRIES = {"AU": "australia", "NZ": "new zealand", "SG": "singapore", "HK": "hongkong"}
 
 SEEK_MAX_RESULTS = 550
-# dateRange input takes any number of days (up to 365), so every window is exact.
+# dateRange input takes any number of days (up to 365), so every window is exact. 1 is the
+# jobs listed today only (the actor's notes), so the daily import starts late in the evening
+# (docs/setup.md, section 7).
 SEEK_POSTED_WITHIN = {1: 1, 7: 7, 14: 14, 30: 30}
 SEEK_POSTED_ANY_TIME = 365
 

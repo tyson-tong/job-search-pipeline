@@ -17,7 +17,7 @@ export const AUTO_REFRESH_MS = 3 * 60 * 1000;
 // statuses: My jobs' chosen statuses; null until recalled, or set to the server's defaults.
 export const state = { view: "jobs", statuses: null, jobs: [], summary: null,
   pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null, saving: false,
-  // Rows ticked for a bulk change (Inbox triage; Filtered and Not interested back to the Inbox); lastPicked anchors shift-click ranges.
+  // Rows ticked for a bulk change (Inbox triage; Filtered, Not interested, and Archived back to the Inbox); lastPicked anchors shift-click ranges.
   selected: new Set(), lastPicked: null,
   // Country and site filters: null for all, else the ticked ones (none ticked: no jobs); and
   // the countries and sites among this tab's jobs, with counts.

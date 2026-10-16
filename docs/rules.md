@@ -84,7 +84,7 @@ A job is done once its run finished and its output is still in its folder: its `
 - **Minimum salary filter:** each job's salary is converted to US dollars at the fixed rates in `src/jobflow/ingest/options.py` (`USD_PER_UNIT`) and compared by the top of its range. A job without a salary, in a country whose currency isn't known, or whose ad gives no pay period (its salary guessed from the amount, shown with `~`; see [searches.md](searches.md#salary-in-different-currencies)) is always kept.
 - **Rows shown:** up to 2,000 jobs per query; narrow the filters to find jobs beyond that. Export CSV (All) has every job in the tab, however many.
 - **Flags on a row:** a follow-up date in the past, on a job not yet closed; an application still at Applied three weeks after you applied; a similar job you've already applied for ([similar jobs](#similar-jobs)).
-- **Flags in the header:** no import has succeeded for 36 hours; a site's runs failed in the last 36 hours, even if other sites' succeeded; a site's runs returned all the results `max_results` allows in that time, so probably left jobs behind (raise `max_results`, or narrow the search). The searches look back 24 hours, so a day the import missed is jobs never seen.
+- **Flags in the header:** no import has succeeded for 36 hours; a site's runs failed in the last 36 hours, even if other sites' succeeded; a site's runs returned all the results `max_results` allows in that time, so probably left jobs behind (raise `max_results`, or narrow the search). The searches look back a day ([when the import runs](#when-the-daily-import-runs)), so a day the import missed is jobs never seen.
 - **Saving:** changes are drafts until you save, and a save is all or nothing. If a job was changed elsewhere since the page loaded it, nothing is saved and the page shows what changed; saving again goes over it. The page refreshes itself every 3 minutes and when you come back to it, but never while you have unsaved drafts.
 
 ## Clean-up
@@ -94,6 +94,10 @@ A job is done once its run finished and its output is still in its folder: its `
 ## Database tables
 
 Every command except `init`, `help`, `status`, and `update-searches --dry-run` brings the database tables up to date when it starts, one command at a time.
+
+## When the daily import runs
+
+A cron service you set up starts the import each night at the time you choose, through GitHub's API ([setup](setup.md#7-start-the-daily-import-on-time)): late in the evening, because Seek's 1-day search returns only the jobs listed that day (in the listing country's timezone), so a run must start shortly before midnight to see the whole day. GitHub's own schedule starts runs hours late (in the morning, from its 00:17 Sydney cron), so it is a fallback: a scheduled run imports nothing when a run started on time (or with **Run workflow**) succeeded in the last 20 hours, and imports as usual otherwise, after a night the cron service missed or whose run failed. LinkedIn's 1-day window is searched as 30 hours and Indeed's as its last day, whenever the run starts ([searches.md](searches.md#posted-date-window)).
 
 ## Failures
 

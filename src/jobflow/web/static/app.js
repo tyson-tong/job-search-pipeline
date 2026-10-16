@@ -102,7 +102,7 @@ function renderAll() {
 // failed lately, and sites whose runs hit max_results; the status counts are in My jobs' menu.
 function renderPipeline() {
   const box = document.getElementById("pipeline");
-  // The daily import searches the past 24 hours, so a day it missed is jobs never seen.
+  // The daily import searches about a day back, so a day it missed is jobs never seen.
   const { overdue, last_import: lastImport, failed_runs: failedRuns, capped_runs: cappedRuns,
     late_after_hours: lateAfter } = state.summary;
   const hours = lastImport ? (Date.now() - new Date(lastImport)) / 3.6e6 : Infinity;
@@ -111,7 +111,7 @@ function renderPipeline() {
       onclick: () => { state.view = "jobs"; sortInput.value = "follow_up"; remember(); refresh(); } },
       "Follow-ups overdue ", el("b", {}, overdue)) : null,
     hours > lateAfter ? el("span", { className: "chip alert",
-      title: "The daily import searches the past 24 hours, so jobs posted on a day it missed "
+      title: "The daily import searches about a day back, so jobs posted on a day it missed "
         + "aren't imported. Run `uv run jobflow status` to see why, and "
         + "`uv run jobflow ingest --posted-within-days 7` (or 14 or 30) to catch up." },
       !lastImport ? "No import yet" : hours < 72 ? `Last import ${Math.floor(hours)} hours ago`
