@@ -15,9 +15,10 @@ from functools import partial
 
 from apify_client import ApifyClient
 
+from .. import settings
 from ..text import plural
 from .filters import filter_reason
-from .runs import PlannedRun, plan
+from .runs import PlannedRun, plan, run_country, run_hit_cap
 from .searches import load_searches
 
 # The longest APIFY_MAX_WAIT_MINUTES may be, and its default. Each site's runs go one after
@@ -225,3 +226,67 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
                               "site, or lower APIFY_MAX_WAIT_MINUTES (for the daily import, "
                               "its GitHub variable)"
                               if late else ""))
+
+
+def retry_imports() -> None:
+    """Import again the results of each run recorded as IMPORT_FAILED: they're in the run's
+    dataset on Apify (already paid for) until Apify deletes it. Each is saved as its import
+    would have been: filtered by the search that ran it, as on the day it ran, so a
+    posted-date window doesn't filter jobs that have merely aged since. A run whose dataset
+    Apify has deleted is recorded as EXPIRED, so it isn't tried again."""
+    from apify_client.errors import ApifyApiError
+
+    from .store import failed_imports, record_failed_run, save_run
+
+    runs = failed_imports()
+    if not runs:
+        print("No failed imports to retry")
+        return
+    searches = {search.name: search for search in load_searches()}
+    client = make_client()
+    failed = 0
+    for run in runs:
+        site = run["actor_id"].split(":", 1)[0]
+        name = f"{run['search_name']}/{site} run {run['apify_run_id']}"
+        search, run_input = searches.get(run["search_name"]), run["input"] or {}
+        ran_on = (run["finished_at"].astimezone(settings.timezone()).date()
+                  if run["finished_at"] else None)
+
+        def record(status: str, error: str, run=run) -> None:
+            record_failed_run(run["actor_id"], run["apify_run_id"], run["dataset_id"], status,
+                              error, run["started_at"], run["finished_at"],
+                              run["cost_usd"], run["search_name"], run["input"])
+        try:
+            items = list(client.dataset(run["dataset_id"]).iterate_items(clean=True))
+        except Exception as exc:
+            if isinstance(exc, ApifyApiError) and exc.status_code == 404:
+                gone = "its results are no longer on Apify, so they can't be imported"
+                record("EXPIRED", gone)
+                print(f"{name}: {gone}", file=sys.stderr)
+            else:   # left as it is, to try again
+                print(f"{name}: couldn't read its results from Apify — {exc}", file=sys.stderr)
+            failed += 1
+            continue
+        job_filter = (partial(filter_reason, search=search, site=site, today=ran_on)
+                      if search else None)
+        try:
+            added = save_run(
+                run["actor_id"], run["apify_run_id"], run["dataset_id"], items,
+                started_at=run["started_at"], finished_at=run["finished_at"],
+                cost_usd=run["cost_usd"], search_name=run["search_name"],
+                run_input=run["input"], country=run_country(site, run_input),
+                hit_cap=bool(run_input) and run_hit_cap(run_input, items),
+                job_filter=job_filter)
+        except Exception as exc:
+            record("IMPORT_FAILED", str(exc))
+            print(f"{name}: FAILED again — {exc}", file=sys.stderr)
+            failed += 1
+            continue
+        print(f"{name}: {len(items)} items, {added} new jobs")
+        if not search:
+            print(f"{name}: its search {run['search_name']!r} is no longer in your searches, "
+                  "so its jobs weren't filtered: run `uv run jobflow update-searches` to judge "
+                  "them by [defaults]", file=sys.stderr)
+    if failed:
+        raise RuntimeError(f"{failed} of {plural(len(runs), 'failed import')} couldn't be "
+                           "imported (see above)")

@@ -84,9 +84,11 @@ LINKEDIN_COUNTRIES = {"AU": "Australia", "NZ": "New Zealand", "SG": "Singapore",
 LINKEDIN_CITY_NAMES = {"Charlotte": "Charlotte, North Carolina", "Miami": "Miami, Florida",
                        "Denver": "Denver, Colorado"}
 
-# Search URL f_TPR values (seconds) for LinkedIn's own date filter: past 24 hours,
-# past week, past month. LinkedIn has no 2-week option.
-LINKEDIN_POSTED_WITHIN = {1: "r86400", 7: "r604800", 30: "r2592000"}
+# Search URL f_TPR values (seconds) for LinkedIn's own date filter: past week, past month,
+# and the past 24 hours searched as 30, since GitHub starts the daily import hours late, by a
+# different amount each day: a 24-hour window missed the hours between two days' runs
+# whenever a run started later than the day before's. LinkedIn has no 2-week option.
+LINKEDIN_POSTED_WITHIN = {1: "r108000", 7: "r604800", 30: "r2592000"}
 LINKEDIN_POSTED_ANY_TIME = None  # no f_TPR parameter
 
 # How LinkedIn output reports job types and workplace types (lower-cased). A temporary role

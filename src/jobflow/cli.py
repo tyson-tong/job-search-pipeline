@@ -85,6 +85,9 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--posted-within-days", type=int, choices=POSTED_WITHIN_DAYS,
                         metavar="DAYS", help="Every search's posted window (1, 7, 14, or 30 "
                         "days), for this import only")
+    ingest.add_argument("--retry-imports", action="store_true",
+                        help="Instead of searching, import the results of runs whose import "
+                        "failed (already paid for, and kept on Apify for a while)")
     update = command("update-searches", run_update_searches, "After editing "
                      "config/searches.toml: check it, update your jobs, and publish it to the "
                      "daily import")
@@ -219,9 +222,14 @@ def run_init(args: argparse.Namespace) -> None:
 
 def run_ingest(args: argparse.Namespace) -> None:
     from .db import migrate
-    from .ingest.apify import ingest_searches
+    from .ingest.apify import ingest_searches, retry_imports
+    if args.retry_imports and (args.search or args.site or args.posted_within_days):
+        raise RuntimeError("--retry-imports runs no searches, so it takes no other option")
     migrate()
-    ingest_searches(args.search, args.site, args.posted_within_days)
+    if args.retry_imports:
+        retry_imports()
+    else:
+        ingest_searches(args.search, args.site, args.posted_within_days)
 
 
 def run_update_searches(args: argparse.Namespace) -> None:

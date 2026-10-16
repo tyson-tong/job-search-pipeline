@@ -34,6 +34,13 @@ from .sources import Posting, normalise, seek_url
 JobFilter = Callable[[Posting], "Filtered | None"]
 
 
+def wait_for_imports(conn) -> None:
+    """Take turns with every other import (and archiving), until conn's transaction ends:
+    two copies of one job saved at once would each miss the other and never merge, and
+    archiving while a run is saved could deadlock with it, failing that run's import."""
+    conn.execute("SELECT pg_advisory_xact_lock(hashtext('jobflow save_run'))")
+
+
 def _same_copy(conn, key: str) -> tuple[int, bool] | None:
     """Rule 1: this site's ID (or URL) on any known copy of a job."""
     row = conn.execute("""SELECT s.job_id, j.canonical_key = s.source_key
@@ -214,10 +221,8 @@ def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict
              run_input: dict | None = None, job_filter: JobFilter | None = None,
              country: str | None = None, hit_cap: bool = False) -> int:
     with db.connect() as conn:
-        # Imports take turns, in this process (sites run in parallel) and across processes
-        # (a manual jobflow ingest during the daily one): two copies of one job saved at
-        # once would each miss the other and never merge. Held until this run commits.
-        conn.execute("SELECT pg_advisory_xact_lock(hashtext('jobflow save_run'))")
+        # Sites run in parallel, and a manual jobflow ingest may overlap the daily one.
+        wait_for_imports(conn)
         run_pk = conn.execute(
             """INSERT INTO scraper_runs(actor_id, apify_run_id, dataset_id, status,
                    started_at, finished_at, items_seen, cost_usd, search_name, input, hit_cap)
@@ -284,6 +289,19 @@ def recent_capped_runs(conn) -> list[dict]:
            FROM scraper_runs WHERE created_at > now() - %s AND status = 'SUCCEEDED'
            GROUP BY 1 HAVING bool_or(hit_cap)
            ORDER BY 1""", (RECENT_RUNS,)).fetchall()
+
+
+def failed_imports() -> list[dict]:
+    """The runs that succeeded on Apify but whose results couldn't be saved (IMPORT_FAILED),
+    oldest first, with what retry_imports needs to save them as they would have been."""
+    with db.connect() as conn:
+        return conn.cursor(row_factory=dict_row).execute(
+            """SELECT actor_id, apify_run_id, dataset_id, search_name, input, started_at,
+                      finished_at, cost_usd
+               FROM scraper_runs
+               WHERE status = 'IMPORT_FAILED' AND apify_run_id IS NOT NULL
+                 AND dataset_id IS NOT NULL
+               ORDER BY created_at""").fetchall()
 
 
 def record_failed_run(actor_id: str, run_id: str | None, dataset_id: str | None, status: str,

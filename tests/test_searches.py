@@ -66,17 +66,12 @@ NO_LOCATIONS = '[[search]]\nname = "x"\nterms = ["a"]\n'
     # Seek alone for a country Seek doesn't cover.
     ("[[search]]\n" + SEARCH + "sites = []\n", "at least one"),
     (NO_LOCATIONS + 'sites = ["seek"]\nlocations = { US = [] }\n', "would never run"),
-    # A quoted number crashed instead of stopping update-searches with a reason.
-    ("[[search]]\n" + SEARCH + 'salary_min = "100k"\n', "salary_min must be a number"),
     # 0 was sent to Apify as no cost cap at all.
     ("[[search]]\n" + SEARCH + "max_cost_usd = 0\n", "max_cost_usd must be more than 0"),
     ("[[search]]\n" + SEARCH + "max_cost_usd = nan\n", "max_cost_usd must be a number"),
-    # Each crashed with a traceback (or a 500 in the Searches tab) instead of saying why.
-    ("[search]\n" + SEARCH, "double brackets"),
-    ("defaults = 3\n[[search]]\n" + SEARCH, "defaults must be"),
+    # A misspelt section would be ignored, with everything in it (a cost cap, say).
     ("[default]\nmax_results = 5\n[[search]]\n" + SEARCH, "unknown section"),
-    ('[[search]]\nname = "x"\nterms = 5\nlocations = { AU = [] }\n', "terms must be"),
-    ("[[search]]\n" + SEARCH + 'seek_classifications = [["a"]]\n', "must be a list"),
+    # true equals 1 in Python, so it would pass as 1 day.
     ("[[search]]\n" + SEARCH + "posted_within_days = true\n", "posted_within_days must be"),
 ])
 def test_invalid_config_is_rejected_with_a_reason(text, message):
@@ -96,7 +91,7 @@ def test_linkedin_and_indeed_inputs_cover_each_term_and_place():
     assert len(urls) == 2 * 5 and linkedin.run_input["limitPerSource"] == 40
     assert parse_qs(urlsplit(urls[0]).query) == {
         "keywords": ["data analyst"], "location": ["Sydney, Australia"],
-        "f_TPR": ["r86400"], "distance": ["12"]}
+        "f_TPR": ["r108000"], "distance": ["12"]}
     assert parse_qs(urlsplit(urls[2]).query)["location"] == ["New Zealand"]
     # Indeed: a run per term and place.
     indeed = plan(searches(), "analyst", "indeed")

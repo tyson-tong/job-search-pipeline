@@ -28,23 +28,30 @@ class PlannedRun:
 
     @property
     def max_results(self) -> int:
-        """The most results this run can return, from the input the actor is actually sent
-        (LinkedIn caps each search URL; Seek caps maxResults below what a search may ask)."""
-        if "urls" in self.run_input:
-            return self.run_input["limitPerSource"] * len(self.run_input["urls"])
-        return self.run_input.get("maxResults") or self.run_input["count"]
+        return run_max_results(self.run_input)
 
     def hit_cap(self, items: list) -> bool:
-        """Whether the run returned as many results as it was allowed, so it probably left
-        jobs behind. A LinkedIn run caps each search URL, so one URL at its cap counts
-        (each result names its URL as inputUrl; without that, the run's total does)."""
-        if "urls" in self.run_input:
-            per_url = Counter(item.get("inputUrl") if isinstance(item, dict) else None
-                              for item in items)
-            if None not in per_url:
-                return any(count >= self.run_input["limitPerSource"]
-                           for count in per_url.values())
-        return len(items) >= self.max_results
+        return run_hit_cap(self.run_input, items)
+
+
+def run_max_results(run_input: dict) -> int:
+    """The most results a run can return, from the input the actor is actually sent
+    (LinkedIn caps each search URL; Seek caps maxResults below what a search may ask)."""
+    if "urls" in run_input:
+        return run_input["limitPerSource"] * len(run_input["urls"])
+    return run_input.get("maxResults") or run_input["count"]
+
+
+def run_hit_cap(run_input: dict, items: list) -> bool:
+    """Whether a run returned as many results as it was allowed, so it probably left jobs
+    behind. A LinkedIn run caps each search URL, so one URL at its cap counts (each result
+    names its URL as inputUrl; without that, the run's total does)."""
+    if "urls" in run_input:
+        per_url = Counter(item.get("inputUrl") if isinstance(item, dict) else None
+                          for item in items)
+        if None not in per_url:
+            return any(count >= run_input["limitPerSource"] for count in per_url.values())
+    return len(items) >= run_max_results(run_input)
 
 
 # Each site's {days: input value} for the windows it has, and its value for any time.

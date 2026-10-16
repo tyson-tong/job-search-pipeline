@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 from .. import db, settings
 from .dedupe import FUZZY_WINDOW_DAYS
+from .store import wait_for_imports
 
 # A filtered job this long past its posted date (or the date first seen, if later), or a job
 # this long after you marked it Not interested, is archived (see archive_old_jobs).
@@ -33,6 +34,8 @@ def archive_old_jobs(today: date | None = None) -> int:
     them in no tab. Returns how many were archived."""
     today = today or settings.today()
     with db.connect() as conn:
+        # jobflow web archives as it starts, perhaps while the daily import is saving a run.
+        wait_for_imports(conn)
         return conn.execute(
             """WITH moved AS (
                    UPDATE jobs j SET status='archived', status_updated_at=now()
@@ -70,6 +73,7 @@ def prune_archived_jobs() -> int:
     KEEP_ARCHIVED_RECORDS ago. The job itself stays: its sites' IDs, its fingerprint, and
     its title, so a repost is still recognised. Returns how many jobs were cleared."""
     with db.connect() as conn:
+        wait_for_imports(conn)   # a repost of one of these jobs may be being saved
         return conn.execute(
             """UPDATE jobs SET description = NULL, raw_json = NULL
                WHERE status = 'archived' AND status_updated_at < now() - %s

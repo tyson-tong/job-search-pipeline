@@ -159,9 +159,9 @@ def _print_published_searches(text: str | None) -> dict[str, list[str]]:
 
 def _print_recent_runs() -> None:
     """What your database says about the latest imports: when one last succeeded, each site
-    whose Apify runs failed lately, with the error (GitHub only says the job failed), and
-    each site whose runs hit max_results. Reads only; a database that can't be read is a
-    note, not a failed status."""
+    whose Apify runs failed lately, with the error (GitHub only says the job failed), runs
+    whose results are waiting to be imported again, and each site whose runs hit
+    max_results. Reads only; a database that can't be read is a note, not a failed status."""
     import psycopg
 
     from .db import connect
@@ -173,6 +173,9 @@ def _print_recent_runs() -> None:
             last = conn.execute("SELECT max(finished_at) FROM scraper_runs "
                                 "WHERE status = 'SUCCEEDED'").fetchone()[0]
             failed = recent_failed_runs(conn)
+            unsaved = conn.execute("""SELECT count(*) FROM scraper_runs
+                                      WHERE status = 'IMPORT_FAILED'
+                                        AND dataset_id IS NOT NULL""").fetchone()[0]
             try:
                 with conn.transaction():
                     capped = recent_capped_runs(conn)
@@ -188,6 +191,9 @@ def _print_recent_runs() -> None:
     for f in failed:
         print(f"  {f['site']:<9} {f['failed']} of {plural(f['total'], 'run')} failed in the last "
               f"{hours} hours: {f['error'] or 'no error recorded'}")
+    if unsaved:
+        print(f"  {plural(unsaved, 'run')} succeeded on Apify but couldn't be saved: run "
+              "`uv run jobflow ingest --retry-imports` to import their results")
     for c in capped:
         print(f"  {c['site']:<9} {c['capped']} of {plural(c['total'], 'run')} hit max_results in "
               f"the last {hours} hours, so probably left jobs behind: raise max_results, or "
