@@ -175,13 +175,18 @@ def migrate() -> None:
 
 
 def fetch_job(job_id: int) -> dict:
+    """The job, for LLM work on it (scoring, tailor-cv, cover-letter, interview-prep). One
+    whose ad was cleared, after it was archived, has nothing to work from, so it's refused
+    before anything is spent on it."""
     with connect() as conn:
         job = conn.cursor(row_factory=dict_row).execute(
             "SELECT id, canonical_url AS url, title, company, location, description, raw_json "
             "FROM jobs WHERE id=%s", (job_id,)).fetchone()
     if not job:
         raise RuntimeError(f"No job with database id {job_id}")
-    job["description"] = job["description"] or ""
+    if not (job["description"] or "").strip():
+        raise RuntimeError(f"Job {job_id} has no ad (it was cleared after the job was "
+                           "archived), so there's nothing to score it or write from")
     return job
 
 

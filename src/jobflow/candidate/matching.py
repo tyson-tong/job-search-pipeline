@@ -265,10 +265,12 @@ def match_job(job_id: int, rescore: bool = False) -> list[dict]:
     return _save_assessments(job_id, results, rescore, weights)
 
 
-# Jobs with one of %(statuses)s without a score against one of the CVs named
+# A job whose ad was cleared (after it was archived) can't be scored: fetch_job refuses it.
+HAS_AD = "coalesce(j.description, '') <> ''"
+# Jobs with one of %(statuses)s, and an ad, without a score against one of the CVs named
 # (%(variants)s), in the current format: each job is scored once against each CV.
 UNSCORED_SQL = f"""FROM jobs j
-    WHERE j.status = ANY(%(statuses)s)
+    WHERE j.status = ANY(%(statuses)s) AND {HAS_AD}
       AND EXISTS (SELECT 1 FROM unnest(%(variants)s::text[]) AS cv(variant)
                   WHERE NOT EXISTS (SELECT 1 FROM match_assessments m
                                     WHERE m.job_id = j.id AND m.cv_variant = cv.variant
@@ -295,17 +297,17 @@ def count_needing_match(variants: list[str]) -> int:
                             {"variants": variants, "statuses": list(PURSUING)}).fetchone()[0]
 
 
-# The latest score of each job you're pursuing (%(statuses)s) against each CV named whose
-# text has changed since: (job id, CV) pairs, the %(digests)s being each CV's digest now, in
-# %(variants)s' order. Only scores in the current format: an older one counts as none
-# (UNSCORED_SQL), as when the job is scored.
+# The latest score of each job you're pursuing (%(statuses)s), with an ad, against each CV
+# named whose text has changed since: (job id, CV) pairs, the %(digests)s being each CV's
+# digest now, in %(variants)s' order. Only scores in the current format: an older one counts
+# as none (UNSCORED_SQL), as when the job is scored.
 OUTDATED_SQL = f"""SELECT j.id, cv.variant FROM jobs j
     CROSS JOIN unnest(%(variants)s::text[], %(digests)s::text[]) AS cv(variant, digest)
     JOIN LATERAL (SELECT m.cv_sha256 FROM match_assessments m
                   WHERE m.job_id = j.id AND m.cv_variant = cv.variant
                     AND m.evidence->>'format' = '{ASSESSMENT_FORMAT}'
                   ORDER BY m.created_at DESC LIMIT 1) latest ON true
-    WHERE j.status = ANY(%(statuses)s) AND latest.cv_sha256 <> cv.digest
+    WHERE j.status = ANY(%(statuses)s) AND {HAS_AD} AND latest.cv_sha256 <> cv.digest
       AND (%(only)s::bigint[] IS NULL OR j.id = ANY(%(only)s))
     ORDER BY j.first_seen_at DESC"""
 

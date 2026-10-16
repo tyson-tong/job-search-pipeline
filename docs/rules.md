@@ -29,7 +29,7 @@ Imports apply the filters only to the jobs they bring in; a job found by several
 
 ## Archiving
 
-Jobs move to the tracker's Archived tab, status `archived`, when you're plainly done with them: a Filtered job 2 weeks past its posted date (or the date first seen, if later), a job 2 weeks after you marked it Not interested, and an Inbox job you haven't triaged once it was posted 30 days ago and has been in the Inbox that long (a job moved back to the Inbox starts again). The daily import and `jobflow web` do this. An archived job still matches as a duplicate, so a repost stays out of the Inbox; its ad is cleared 90 days later (see above), after which it can't be scored or tailored. From the Archived tab you can mark a job Interested or move it back to the Inbox, where it starts its 30 days again; `update-searches` then never filters it (see above).
+Jobs move to the tracker's Archived tab, status `archived`, when you're plainly done with them: a Filtered job 2 weeks past its posted date (or the date first seen, if later), a job 2 weeks after you marked it Not interested, and an Inbox job you haven't triaged once it was posted 30 days ago and has been in the Inbox that long (a job moved back to the Inbox starts again). The daily import and `jobflow web` do this. An archived job still matches as a duplicate, so a repost stays out of the Inbox; its ad is cleared 90 days later (see above), after which it can't be scored or worked on: if you bring it back, scoring and the commands skip it. From the Archived tab you can mark a job Interested or move it back to the Inbox, where it starts its 30 days again; `update-searches` then never filters it (see above).
 
 ## Match scores
 

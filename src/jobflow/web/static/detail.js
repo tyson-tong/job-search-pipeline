@@ -92,7 +92,8 @@ function matchSection(job) {
   const outdated = job.matches.filter((m) => m.outdated).map((m) => m.variant);
   const busy = Boolean(state.scoring && state.scoring.running);
   const pursuing = state.summary.pursuing.includes(job.status);
-  const scorable = job.status === "new" || pursuing;
+  // A job whose ad was cleared, after it was archived, has nothing to score.
+  const scorable = (job.status === "new" || pursuing) && Boolean(job.description);
   return [
     el("div", { className: "h3-row" }, el("h3", {}, "Match with your CVs"),
       scorable && unscored.length
@@ -108,7 +109,9 @@ function matchSection(job) {
     scorable && unscored.length
       ? el("p", { className: "meta" }, `Not scored yet against ${unscored.join(", ")}.`)
       : !job.matches.length
-      ? el("p", { className: "meta" }, "Not scored: only Inbox jobs and jobs you're pursuing are scored.")
+      ? el("p", { className: "meta" }, job.description
+        ? "Not scored: only Inbox jobs and jobs you're pursuing are scored."
+        : "Not scored: its ad was cleared after it was archived, so there's nothing to score.")
       : null];
 }
 // The commands for this job, by its saved status: tailor-cv and cover-letter work on any job

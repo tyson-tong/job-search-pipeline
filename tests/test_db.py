@@ -774,6 +774,34 @@ def test_jobs_archived_over_90_days_ago_lose_their_ad_but_are_still_recognised(d
                 LINKEDIN["id"])[0] == "archived"
 
 
+def test_a_job_whose_ad_was_cleared_is_never_scored_or_drafted(database, scoring, tmp_path,
+                                                               monkeypatch, capsys):
+    # Brought back from the Archived tab after its ad was cleared, it was scored (paying the
+    # LLM to read an empty ad) and drafted from nothing, failing every run of tailor-cv.
+    from jobflow import batch
+    from jobflow.candidate import matching, paths
+
+    save_run("linkedin:a", "r1", "d1", [LINKEDIN, {**LINKEDIN, "id": "2", "title": "Quant"}],
+             country="AU")
+    ids = dict(_rows("SELECT split_part(canonical_key, ':', 2), id FROM jobs"))
+    cleared = ids[LINKEDIN["id"]]
+    with connect() as conn:
+        conn.execute("UPDATE jobs SET status='archived', "
+                     "status_updated_at = now() - interval '91 days' WHERE id=%s", (cleared,))
+    assert prune_archived_jobs() == 1
+    with connect() as conn:
+        for job_id in ids.values():
+            set_job_state(conn, job_id, status="interested", via="web")
+    assert matching.jobs_needing_match(["dev"]) == [ids["2"]]
+    with pytest.raises(RuntimeError, match="has no ad"):
+        matching.match_job(cleared)
+    assert scoring.asked == []
+    monkeypatch.setattr(paths, "output_directory", lambda: tmp_path)
+    ran = []
+    batch._run_jobs(_tailor(ran.append, lambda folder: False))
+    assert ran == [ids["2"]] and "1 skipped: their ad was cleared" in capsys.readouterr().out
+
+
 def test_dates_are_in_your_timezone_in_python_and_the_database(database, monkeypatch):
     # The database's own dates were UTC: a day behind Sydney every morning, so the Posted
     # column, the posted-within filter, and archiving disagreed with today's date.

@@ -112,15 +112,16 @@ def for_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = Fa
 class Plan(NamedTuple):
     """What _plan_jobs found: how many jobs have the command's status, the (id, company,
     title) of those to do, the (name, folder) of those done, the (id, name, folder) of
-    those whose failed draft you fixed by hand (done too, once recorded), and how many of
+    those whose failed draft you fixed by hand (done too, once recorded), how many of
     those to do are drafted again (their last draft failed the fact check) or done again
-    (their output was deleted)."""
+    (their output was deleted), and how many were skipped for having no ad."""
     total: int
     todo: list[tuple[int, str | None, str]]
     done: list[tuple[str, Path]]
     fixed: list[tuple[int, str, Path]]
     redrafted: int
     lost: int
+    no_ad: int = 0
 
 
 def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> Plan:
@@ -137,7 +138,8 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
     PDF doesn't count. A job whose latest draft failed the fact check, or couldn't be
     rendered (NEEDS-FIX), is done again, for a fresh draft, unless
     command.fixed_by_hand(its folder) says you fixed that draft yourself: then it's kept
-    (Plan.fixed)."""
+    (Plan.fixed). A job whose ad was cleared, after it was archived, has nothing to work
+    from: skipped, unless `only` names it (then fetch_job says why it can't be done)."""
     from .candidate.paths import job_directory
     from .db import connect
 
@@ -159,15 +161,15 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
         rows = conn.execute(
             """SELECT j.id, j.company, j.title,
                       last.status IS NOT NULL AND last.status <> 'NEEDS-FIX',
-                      last.status IS NOT NULL
+                      last.status IS NOT NULL, coalesce(j.description, '') <> ''
                FROM jobs j
                LEFT JOIN LATERAL (SELECT r.status FROM workflow_runs r
                                   WHERE r.job_id = j.id AND r.kind = %s
                                   ORDER BY r.id DESC LIMIT 1) last ON true
                WHERE j.status = ANY(%s) AND (%s::bigint[] IS NULL OR j.id = ANY(%s))
                ORDER BY j.id""", (kind, statuses, only, only)).fetchall()
-        todo, done_jobs, fixed, redrafted, lost = [], [], [], 0, 0
-        for job_id, company, title, done, tried in rows:
+        todo, done_jobs, fixed, redrafted, lost, no_ad = [], [], [], 0, 0, 0
+        for job_id, company, title, done, tried, has_ad in rows:
             name = job_label(job_id, title, company)
             folder = job_directory(job_id, {"company": company, "title": title})
             if redo:
@@ -176,7 +178,10 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
             if done and command.output_exists(folder):
                 done_jobs.append((name, folder))
                 continue
-            elif done:
+            if not has_ad and not only:
+                no_ad += 1
+                continue
+            if done:
                 lost += 1
             elif tried and command.fixed_by_hand and command.fixed_by_hand(folder):
                 fixed.append((job_id, name, folder))
@@ -184,7 +189,7 @@ def _plan_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = 
             elif tried:
                 redrafted += 1
             todo.append((job_id, company, title))
-    return Plan(len(rows), todo, done_jobs, fixed, redrafted, lost)
+    return Plan(len(rows), todo, done_jobs, fixed, redrafted, lost, no_ad)
 
 
 def _in_terminal() -> bool:
@@ -226,8 +231,10 @@ def _report(command: JobCommand, plan: Plan, only: list[int] | None) -> None:
     again += [f"{plan.lost} done again: their output was deleted"] if plan.lost else []
     jobs = (f"{plural(plan.total, 'job')} named" if only
             else plural(plan.total, command.status.capitalize() + " job"))
-    print(f"{jobs}: {plan.total - len(plan.todo)} already have {command.what}, "
-          f"{len(plan.todo)} to do" + (f" ({'; '.join(again)})" if again else ""))
+    print(f"{jobs}: {plan.total - len(plan.todo) - plan.no_ad} already have {command.what}, "
+          f"{len(plan.todo)} to do" + (f" ({'; '.join(again)})" if again else "")
+          + (f", {plan.no_ad} skipped: their ad was cleared after they were archived"
+             if plan.no_ad else ""))
 
 
 def _keep_fixed(command: JobCommand, fixed: list[tuple[int, str, Path]]) -> None:

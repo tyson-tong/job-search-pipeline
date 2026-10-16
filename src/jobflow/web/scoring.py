@@ -48,8 +48,9 @@ def start(job_ids: list[int] | None = None, rescore: bool = False) -> dict:
             outdated = [job_id for job_id, _ in outdated_scores(current_digests(), job_ids)]
             ids = list(dict.fromkeys(outdated + ids))
         if job_ids and not ids:
-            raise ValueError("Only Inbox jobs and jobs you're pursuing with a CV they have no "
-                             "score against (or, to rescore, a CV edited since) can be scored")
+            raise ValueError("Only Inbox jobs and jobs you're pursuing, with their ad and a CV "
+                             "they have no score against (or, to rescore, a CV edited since), "
+                             "can be scored")
     except BaseException:
         with _lock:
             _state.update(running=False, finished_at=datetime.now(UTC))
