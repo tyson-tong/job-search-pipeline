@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from itertools import product
 from urllib.parse import parse_qs, urlencode, urlsplit
+from zoneinfo import ZoneInfo
 
+from .. import settings
 from . import options as opt
 from .searches import Search, SearchConfigError
 
@@ -116,17 +119,30 @@ def indeed_runs(search: Search) -> list[PlannedRun]:
     return runs
 
 
+def seek_day_starts_first(country: str) -> bool:
+    """Whether the country's clock is ahead of yours (settings.timezone()) now, so its
+    day, Seek's 1-day window there, starts before yours (see options.SEEK_TIMEZONES)."""
+    now = datetime.now(UTC)
+    theirs = now.astimezone(ZoneInfo(opt.SEEK_TIMEZONES[country])).utcoffset()
+    yours = now.astimezone(settings.timezone()).utcoffset()
+    return theirs is not None and yours is not None and theirs > yours
+
+
 def seek_runs(search: Search) -> list[PlannedRun]:
     window, window_note = site_window("seek", search.posted_within_days)
     runs, notes = [], _notes("seek", search, window_note)
     notes += [f"country {country} skipped (Seek covers {', '.join(opt.SEEK_COUNTRIES)})"
               for country in search.locations if country not in opt.SEEK_COUNTRIES]
+    ahead = {country for country in search.locations if search.posted_within_days == 1
+             and country in opt.SEEK_COUNTRIES and seek_day_starts_first(country)}
+    notes += [f"{country}: searching {opt.SEEK_AHEAD_DAYS} days, since Seek's 1 day is "
+              f"{country}'s today, which starts before yours" for country in sorted(ahead)]
     for term, (country, city) in product(search.terms, search.places()):
         if country not in opt.SEEK_COUNTRIES:
             continue
         run_input: dict = {
             "searchTerm": term, "country": opt.SEEK_COUNTRIES[country],
-            "dateRange": window,
+            "dateRange": opt.SEEK_AHEAD_DAYS if country in ahead else window,
             "maxResults": min(search.max_results, opt.SEEK_MAX_RESULTS),
             "sortBy": "ListedDate"}
         if city:

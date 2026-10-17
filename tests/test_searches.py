@@ -133,6 +133,16 @@ def test_seek_uses_native_filters_and_skips_countries_it_lacks():
     assert "location" not in runs[2].run_input  # NZ nationwide
 
 
+def test_seeks_one_day_is_two_where_that_countrys_day_starts_before_yours(monkeypatch):
+    # Seek's 1 day is the listing country's today. Started at 23:00 in Sydney, 01:00 in
+    # Auckland, the import saw an hour of New Zealand's jobs each day, and never the rest.
+    def windows():
+        return {r.country: r.run_input["dateRange"] for r in plan(searches(), "analyst", "seek")}
+    assert windows() == {"AU": 1, "NZ": 2, "SG": 1}
+    monkeypatch.setenv("JOBFLOW_TIMEZONE", "Asia/Singapore")
+    assert windows() == {"AU": 2, "NZ": 2, "SG": 1}
+
+
 # --- Local filters -----------------------------------------------------------------------
 
 def _linkedin(**fields):

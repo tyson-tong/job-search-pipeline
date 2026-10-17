@@ -128,6 +128,14 @@ SEEK_MAX_RESULTS = 550
 # (docs/setup.md, section 7).
 SEEK_POSTED_WITHIN = {1: 1, 7: 7, 14: 14, 30: 30}
 SEEK_POSTED_ANY_TIME = 365
+# Seek's "today" is the listing country's. Where that day starts before yours (23:00 in
+# Sydney is 01:00 in Auckland), a 1-day search started late in your evening would see only the
+# hour or so since that country's midnight, and never the rest of its day: there, the 1-day
+# search asks for SEEK_AHEAD_DAYS (yesterday and today) instead. Jobs seen twice merge by
+# their Seek ID. One timezone per country, its largest city's: Seek doesn't say which it uses.
+SEEK_TIMEZONES = {"AU": "Australia/Sydney", "NZ": "Pacific/Auckland", "SG": "Asia/Singapore",
+                  "HK": "Asia/Hong_Kong"}
+SEEK_AHEAD_DAYS = 2
 
 SEEK_JOB_TYPES = {"full-time": "fulltime", "part-time": "parttime", "contract": "contract",
                   "casual": "casual"}
