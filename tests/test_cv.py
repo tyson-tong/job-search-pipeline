@@ -599,9 +599,13 @@ def test_rendercv_renders_a_draft_where_tailor_cv_expects_it(tmp_path, monkeypat
     from jobflow.candidate import render
 
     # RenderCV runs in a subprocess, which no_network can't stop, and checks PyPI for a new
-    # version: its web requests go to a proxy that isn't there.
+    # version: its web requests go to a proxy that isn't there. Except Typst's packages:
+    # RenderCV's theme needs one (fontawesome), which Typst downloads the first time, so on
+    # a machine without it cached (every CI run) the render failed. Nothing of yours is sent.
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
         monkeypatch.setenv(name, "http://127.0.0.1:9")
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.setenv(name, "packages.typst.org")
 
     _, cut, pdf, warnings = render.fit(JOB, {"cv": SOURCE_CV}, copy.deepcopy(SOURCE_CV),
                                        "CV_dev_draft.yaml", max_pages=1, keep_pdf=tmp_path)
