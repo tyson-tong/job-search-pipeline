@@ -4,6 +4,7 @@ works in its own schema and drops it afterwards."""
 import json
 import os
 import secrets
+from types import SimpleNamespace
 
 import psycopg
 import pytest
@@ -56,7 +57,6 @@ def scoring(monkeypatch):
     rename or edit one); scoring.requirements(prompt): the requirements the LLM lists for a
     prompt (by default SQL, matched); scoring.weights; scoring.asked: the CV each LLM call
     was for."""
-    from types import SimpleNamespace
 
     from jobflow.candidate import matching
 
@@ -1017,13 +1017,16 @@ class _Datasets:
         return Dataset()
 
 
-def test_a_failed_import_that_keeps_failing_stops_failing_every_import(database, monkeypatch):
+@pytest.mark.parametrize("failing", ["saving", "reading"])
+def test_a_failed_import_that_keeps_failing_stops_failing_every_import(database, monkeypatch,
+                                                                       failing):
     # A failure that repeats (a bug, say) was retried by every import, failing the daily
-    # run, with GitHub's failure email, until Apify deleted the results.
+    # run, with GitHub's failure email, until Apify deleted the results. One reading the
+    # results from Apify (anything but deleted results) never even counted as a try.
     from jobflow.ingest import apify, retry
     from jobflow.ingest.searches import parse_config
 
-    monkeypatch.setattr(apify, "make_client", _Datasets({"d1": [LINKEDIN]}))
+    datasets = _Datasets({"d1": [LINKEDIN]})
     config = '[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
     monkeypatch.setenv("JOBFLOW_SEARCHES", config)
     searches = parse_config(config)
@@ -1033,13 +1036,18 @@ def test_a_failed_import_that_keeps_failing_stops_failing_every_import(database,
 
     def broken(*args, **kwargs):
         raise RuntimeError("value too long")
-    monkeypatch.setattr(store, "save_run", broken)
+    if failing == "saving":
+        monkeypatch.setattr(apify, "make_client", datasets)
+        monkeypatch.setattr(store, "save_run", broken)
+    else:
+        monkeypatch.setattr(apify, "make_client", lambda: SimpleNamespace(dataset=broken))
     tries = [retry.import_failed_runs(searches) for _ in range(store.MAX_IMPORT_ATTEMPTS)]
     # Failed on import and on each retry until the limit; then left alone.
     assert tries == [(1, 1)] * (store.MAX_IMPORT_ATTEMPTS - 1) + [(0, 0)]
     assert _one("SELECT status FROM scraper_runs")[0] == "GAVE_UP"
     # Its results are paid for: asked to, --retry-imports still imports them.
     monkeypatch.setattr(store, "save_run", real_save_run)
+    monkeypatch.setattr(apify, "make_client", datasets)
     retry.retry_imports()
     assert _one("SELECT status FROM scraper_runs")[0] == "SUCCEEDED"
     assert _one("SELECT count(*) FROM jobs")[0] == 1

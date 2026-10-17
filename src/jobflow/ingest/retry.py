@@ -49,23 +49,21 @@ def import_failed_runs(configured: list[Search],
         try:
             # failed_imports picks only runs with a dataset.
             items = list(client.dataset(record.dataset_id or "").iterate_items(clean=True))
-        except Exception as exc:
-            if isinstance(exc, ApifyApiError) and exc.status_code == 404:
-                gone = "its results are no longer on Apify, so they can't be imported"
-                store.record_failed_run(record, status="EXPIRED", error=gone)
-                print(f"{name}: {gone}", file=sys.stderr)
-            else:   # left as it is, to try again
-                print(f"{name}: couldn't read its results from Apify — {exc}", file=sys.stderr)
-            failed += 1
-            continue
-        ran_on = (record.finished_at.astimezone(settings.timezone()).date()
-                  if record.finished_at else None)
-        try:
+            ran_on = (record.finished_at.astimezone(settings.timezone()).date()
+                      if record.finished_at else None)
             added = store.save_run(
                 record, items, country=run_country(record.site, run_input),
                 hit_cap=bool(run_input) and run_hit_cap(run_input, items),
                 job_filter=search_filter(search, record.site, ran_on) if search else None)
         except Exception as exc:
+            failed += 1
+            if isinstance(exc, ApifyApiError) and exc.status_code == 404:
+                gone = "its results are no longer on Apify, so they can't be imported"
+                store.record_failed_run(record, status="EXPIRED", error=gone)
+                print(f"{name}: {gone}", file=sys.stderr)
+                continue
+            # Reading its results from Apify counts as importing them too: an error there
+            # that repeats would otherwise fail every import until Apify deleted them.
             give_up = attempts + 1 >= store.MAX_IMPORT_ATTEMPTS
             store.record_failed_run(record, status=store.GAVE_UP if give_up
                                     else store.IMPORT_FAILED, error=str(exc))
@@ -73,7 +71,6 @@ def import_failed_runs(configured: list[Search],
                   + (f"; it has now failed {store.MAX_IMPORT_ATTEMPTS} times, so imports no "
                      "longer try it: once you've fixed the cause, run `uv run jobflow ingest "
                      "--retry-imports`" if give_up else ""), file=sys.stderr)
-            failed += 1
             continue
         print(f"{name}: {len(items)} items, {added} new jobs")
         if not search:
