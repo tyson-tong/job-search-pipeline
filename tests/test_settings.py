@@ -70,6 +70,19 @@ def test_a_database_on_another_machine_is_only_reached_encrypted():
         assert "secret" not in str(caught.value)
 
 
+def test_neons_pooled_connection_is_refused(monkeypatch):
+    # Through Neon's pooler, the lock stopping a second tailor-cv can be lost (two runs then
+    # draft, and pay for, the same jobs) or stay held on a pooled connection, so every later
+    # run says one is already running.
+    from jobflow import db
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:secret@ep-x-pooler.ap-southeast-2"
+                                       ".aws.neon.tech/db?sslmode=require")
+    with pytest.raises(RuntimeError, match="pooled") as caught:
+        db.connect()
+    assert "secret" not in str(caught.value)
+
+
 def test_a_broken_profile_is_an_error_not_a_quiet_switch_to_utc(monkeypatch, tmp_path):
     # Every date (today, follow-ups, archiving) would silently move to UTC.
     from jobflow.settings import timezone

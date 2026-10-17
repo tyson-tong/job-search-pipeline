@@ -1,4 +1,4 @@
-"""The database: connections (encrypted unless on this machine, in your timezone),
+"""The database: connections (direct, encrypted unless on this machine, in your timezone),
 migrations, loading a job, and changing a job's status, which every status change goes
 through so status_history stays complete."""
 from __future__ import annotations
@@ -56,6 +56,18 @@ APPLIED_STATUSES = ("applied", "interviewing", "offered", "accepted", "declined"
 ENCRYPTED_SSLMODES = ("require", "verify-ca", "verify-full")
 
 
+def refuse_pooler(url: str) -> None:
+    """Refuse Neon's pooled connection (its host name has -pooler): its pooler hands each
+    transaction any server connection, so the session lock that stops two runs of tailor-cv
+    (or cover-letter, or interview-prep) working on the same jobs, held across many
+    transactions, could be lost, or stay held after the run ends."""
+    hosts = str(conninfo_to_dict(url).get("host") or os.environ.get("PGHOST") or "")
+    if any("-pooler." in host.casefold() for host in hosts.split(",")):
+        raise RuntimeError("DATABASE_URL is Neon's pooled connection (-pooler in its host "
+                           "name); use the direct one: the same host without -pooler (Neon's "
+                           "Connect panel, with connection pooling off)")
+
+
 def encrypted_url(url: str) -> str:
     """DATABASE_URL, made to require encryption for a database on another machine: the
     connection carries its password and your job data. With no sslmode, psycopg's default
@@ -106,6 +118,7 @@ def connect():
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL is required")
+    refuse_pooler(url)
     conninfo, zone = encrypted_url(url), timezone().key
     if not _pooling:
         conn = psycopg.connect(conninfo)
