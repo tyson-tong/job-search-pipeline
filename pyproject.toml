@@ -18,7 +18,7 @@ dependencies = [
 # Only the CV commands use these; the daily import installs without them.
 documents = ["pypdf>=5,<7", "python-docx>=1.1,<2", "PyYAML>=6.0,<7", "rendercv[full]==2.8"]
 # For working on jobflow itself: uv sync --group dev
-dev = ["pytest>=8", "ruff>=0.16,<0.17", "mypy>=1.13,<3", "types-PyYAML", "types-requests"]
+dev = ["pytest>=8", "ruff>=0.16,<0.18", "mypy>=1.13,<3", "types-PyYAML", "types-requests"]
 
 [tool.uv]
 default-groups = ["documents"]
