@@ -22,8 +22,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # A scheduled run imports nothing when a run started on time succeeded in the last 20 hours:
-  # it would pay Apify again for the same jobs. Concurrency makes it wait for one still going.
+  # A scheduled run imports nothing when a run started on time finished in the last 20 hours,
+  # even one that failed: it would pay Apify again for the same jobs, every run that worked
+  # included, when one run failing (or stopped early) fails the whole import. A failed run
+  # is recorded, shown in the tracker, and its results imported by the next import. Only a
+  # run that never got going (cancelled, or failing to start) leaves the night to this one.
+  # Concurrency makes it wait for one still going.
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -39,9 +43,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           last=$(gh run list --workflow daily-ingest.yml --event workflow_dispatch \
-            --status success --limit 1 --json createdAt --jq '.[0].createdAt // ""')
+            --status completed --limit 10 --json createdAt,conclusion \
+            --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")]
+                  | .[0].createdAt // ""')
           if [ -n "$last" ] && [ $(( $(date +%s) - $(date -d "$last" +%s) )) -lt 72000 ]; then
-            echo "A run started on time succeeded at $last, so this scheduled run imports nothing."
+            echo "A run started on time finished at $last, so this scheduled run imports nothing."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
