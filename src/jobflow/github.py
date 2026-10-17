@@ -221,19 +221,29 @@ def status() -> None:
     """Show what the daily GitHub import uses, reading it from GitHub: whether it's on, its
     last run started on time and its last scheduled one, its secrets, its searches (and
     whether they match config/searches.toml), and which job sites (Apify scrapers) it calls;
-    and from your database, why recent Apify runs failed. Changes nothing."""
+    and from your database, why recent Apify runs failed. Changes nothing. Without the
+    GitHub CLI (or logged out), it says so and shows the database's part alone: why the
+    import failed is only there, as GitHub's email just says that it did."""
     from .ingest.options import ACTORS, SITES
     from .settings import timezone
 
-    state = _gh(["api", f"repos/{{owner}}/{{repo}}/actions/workflows/{WORKFLOW}", "--jq", ".state"],
-                "Reading the daily import's workflow").strip()
-    runs = json.loads(_gh(["run", "list", "--workflow", WORKFLOW, "-L", "20", "--json",
-                           "status,conclusion,createdAt,event"], "Reading the daily import's runs"))
-    secrets = {s["name"]: s["updatedAt"][:10] for s in json.loads(_gh(
-        ["secret", "list", "--json", "name,updatedAt"], "Reading the repository's secret names"))}
-    variables = {v["name"]: v["value"] for v in json.loads(_gh(
-        ["variable", "list", "--json", "name,value"],
-        "Reading the repository's Actions variables"))}
+    try:
+        state = _gh(["api", f"repos/{{owner}}/{{repo}}/actions/workflows/{WORKFLOW}", "--jq",
+                     ".state"], "Reading the daily import's workflow").strip()
+        runs = json.loads(_gh(["run", "list", "--workflow", WORKFLOW, "-L", "20", "--json",
+                               "status,conclusion,createdAt,event"],
+                              "Reading the daily import's runs"))
+        secrets = {s["name"]: s["updatedAt"][:10] for s in json.loads(_gh(
+            ["secret", "list", "--json", "name,updatedAt"],
+            "Reading the repository's secret names"))}
+        variables = {v["name"]: v["value"] for v in json.loads(_gh(
+            ["variable", "list", "--json", "name,value"],
+            "Reading the repository's Actions variables"))}
+    except RuntimeError as exc:
+        print(f"Daily import: couldn't read GitHub ({exc}); showing only what your database "
+              "says")
+        _print_recent_runs()
+        return
     print(f"Daily import (.github/workflows/{WORKFLOW}): {WORKFLOW_STATES.get(state, state)}")
     latest: dict[str, dict] = {}   # the newest run of each way of starting, newest first
     for run in runs:
