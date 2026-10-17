@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import html
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -16,7 +17,7 @@ from ..settings import now
 from .cvs import CV_CHAR_LIMIT, chosen_sources, job_prompt
 from .pages import html_page
 from .paths import job_directory
-from .research import NO_EMPLOYER, web_search
+from .research import research, web_search
 
 AGENTS = {
     "company": "Company research analyst: summarise the employer's business, products, strategy, "
@@ -117,15 +118,19 @@ li{margin:.55rem 0}footer{color:#52606d;font-size:.9rem}
 header,main section{box-shadow:none;border:1px solid #ddd;break-inside:avoid}}"""
 
 
-def _briefing_page(job: dict, brief: str, sources: list[dict], model: str) -> str:
+def _briefing_page(job: dict, brief: str, sources: list[dict], notes: list[str],
+                   model: str) -> str:
     """The briefing as a whole HTML page: the editor's brief (Markdown, made safe), the
-    research sources, and links only to http(s) addresses."""
+    research sources (or notes on why there are none), and links only to http(s)
+    addresses."""
     source_items = "\n".join(
         (f'<li><a href="{html.escape(_web_url(s["url"]), quote=True)}" rel="noreferrer">'
          f'{html.escape(s["title"] or s["url"])}</a>' if _web_url(s["url"])
          else f'<li>{html.escape(s["title"] or s["url"])}')
         + f'<p>{html.escape(s["content"])}</p></li>'
         for s in sources)
+    research = "".join(f"<p>{html.escape(note)}</p>" for note in notes) \
+        + (f"<ul>{source_items}</ul>" if sources else "")
     posting_link = (f'<p><a href="{html.escape(_web_url(job["url"]), quote=True)}" '
                     'rel="noreferrer">Open job posting</a></p>' if _web_url(job["url"]) else "")
     generated = now().strftime("%Y-%m-%d %H:%M %Z")
@@ -135,7 +140,7 @@ def _briefing_page(job: dict, brief: str, sources: list[dict], model: str) -> st
 <h1>{html.escape(job['company'] or 'Company')} — {html.escape(job['title'])}</h1>
 <p>{html.escape(job['location'] or '')}</p>{posting_link}</header>
 <main><section><h2>Preparation brief</h2>{_safe_markup(brief)}</section>
-<section><h2>Research sources</h2><ul>{source_items}</ul></section></main>
+<section><h2>Research sources</h2>{research}</section></main>
 <footer><p>Generated with model {html.escape(model)}. Verify current facts and review every
 suggested answer against your own experience.</p></footer>""",
         BRIEFING_STYLE)
@@ -143,11 +148,15 @@ suggested answer against your own experience.</p></footer>""",
 
 def prepare(job_id: int) -> Path:
     job = fetch_job(job_id)
-    if job["company"]:
-        sources = web_search(job["company"], job["title"])
+    notes: list[str]
+    if job["company"] and os.environ.get("WEB_SEARCH_API_KEY"):
+        # Set up but failing (Tavily down, or out of credit): the job fails, to be briefed
+        # with research next time, rather than without it for good.
+        sources, notes = web_search(job["company"], job["title"]), []
     else:
-        sources = []
-        print(f"warning: {NO_EMPLOYER}", file=sys.stderr)
+        sources, notes = research(job)   # none, and a note saying why
+    for note in notes:
+        print(f"warning: {note}", file=sys.stderr)
     # Each CV is cut to the limit on its own, so a long first CV can't crowd out the second.
     cvs = chosen_sources()
     for name, text in cvs.items():
@@ -176,7 +185,7 @@ def prepare(job_id: int) -> Path:
                             json.dumps(synth_input, ensure_ascii=False))
     target = job_directory(job_id, job) / "interview-prep.html"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(_briefing_page(job, brief, sources, model))
+    target.write_text(_briefing_page(job, brief, sources, notes, model))
     with db.connect() as conn:
         db.record_workflow_run(conn, job_id, "interview-prep", "SUCCEEDED", model)
     return target

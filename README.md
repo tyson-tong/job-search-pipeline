@@ -44,7 +44,7 @@ Run commands from this folder with `uv run` (or activate `.venv` once with `. .v
 
    **Cover letters are optional:** `uv run jobflow cover-letter` (also with `--cv`) writes `cover-letter.docx` and `COVER_LETTER_REVIEW.md` to the same folder. See [rules](docs/rules.md#cover-letters-and-the-review).
 
-6. **Prepare for an interview**, once a job is **Interviewing**: `uv run jobflow interview-prep` writes `interview-prep.html` to the same folder: the company (with web sources), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps, questions to ask, and a 30-minute checklist.
+6. **Prepare for an interview**, once a job is **Interviewing**: `uv run jobflow interview-prep` writes `interview-prep.html` to the same folder: the company (with web sources, if Tavily is set up), the role's priorities, evidence from your CVs, likely questions with answer outlines, gaps, questions to ask, and a 30-minute checklist.
 
    Run these commands whenever jobs move along: each does only the jobs not done yet, and `--job ID --redo` does one again. Which jobs count as done: [rules](docs/rules.md#which-jobs-the-commands-do).
 
@@ -92,7 +92,7 @@ It checks the file, brings the jobs you already have in line with it, and update
 
 - `config/.env`, `config/profile.toml`, `config/searches.toml`, `output/`, and `cv/` are ignored by Git. Never commit them.
 - The database holds job postings, scraper history, and match results, which include short quotes from your CVs: keep it private.
-- Scoring, tailoring, cover letters, and interview prep send CV and job text to your LLM provider, and skill gaps sends the job requirements your CVs didn't show; tailoring, cover letters, and interview prep send the company name and job title to Tavily. Choose providers whose data handling you accept.
+- Scoring, tailoring, cover letters, and interview prep send CV and job text to your LLM provider, and skill gaps sends the job requirements your CVs didn't show; tailoring, cover letters, and interview prep send the company name and job title to Tavily, if set up. Choose providers whose data handling you accept.
 
 ## Development
 

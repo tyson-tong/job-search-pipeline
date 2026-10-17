@@ -89,7 +89,16 @@ def chosen_sources() -> dict[str, str]:
 def cv_text(path: Path, mtime_ns: int = 0, size: int = 0) -> str:
     """A CV file's text: a RenderCV YAML CV's cv section, the body of a .tex without its
     commands, and the text of a .docx or .pdf. Cached until the file changes (mtime_ns and
-    size)."""
+    size). A file that can't be read (a damaged .docx or .pdf, say) is a RuntimeError naming
+    it, not the reading library's own error."""
+    try:
+        return _read_cv(path)
+    except Exception as exc:
+        raise RuntimeError(f"{path.name} couldn't be read ({type(exc).__name__}: {exc}); save "
+                           "it again, or name another CV in cvs in config/profile.toml") from None
+
+
+def _read_cv(path: Path) -> str:
     suffix = path.suffix.casefold()
     if suffix in YAML_FORMATS:
         text = path.read_text()

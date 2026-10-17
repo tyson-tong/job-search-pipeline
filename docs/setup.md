@@ -25,7 +25,7 @@ Sign-up screens and prices change, so the steps below describe what to look for 
 | [PostgreSQL on Neon](#1-database-neon) | everything | `DATABASE_URL` in `config/.env`, and a GitHub secret |
 | [Apify](#2-apify-job-scrapers) | the daily import | `APIFY_TOKEN` in `config/.env`, and a GitHub secret |
 | [An LLM provider](#3-llm-provider) | scoring, tailor-cv, cover-letter, interview-prep, skill-gaps | `LLM_API_KEY`, `LLM_MODEL` (and `LLM_BASE_URL`) in `config/.env` |
-| [Tavily](#4-tavily-web-search) | interview-prep; optional for tailor-cv and cover-letter | `WEB_SEARCH_API_KEY` in `config/.env` |
+| [Tavily](#4-tavily-web-search) | optional: company research for interview-prep, tailor-cv, and cover-letter | `WEB_SEARCH_API_KEY` in `config/.env` |
 | [GitHub CLI](#5-github-cli) | `jobflow update-searches`, setting GitHub secrets | logged in on your machine |
 | [A cron service](#7-start-the-daily-import-on-time) | starting the daily import on time | a GitHub token that can only start this repository's workflows, stored there |
 
@@ -103,7 +103,7 @@ Check it: mark a job Interested, save, and click **Score all jobs** in the track
 
 ## 4. Tavily (web search)
 
-`jobflow interview-prep` uses [Tavily](https://tavily.com) to research the company, and `jobflow tailor-cv` and `jobflow cover-letter` use it, if set, for their reviews and letters. Interview briefings need it; the other two work without it, from the job ad alone.
+`jobflow interview-prep` uses [Tavily](https://tavily.com) to research the company, and `jobflow tailor-cv` and `jobflow cover-letter` use it, if set, for their reviews and letters. It's optional: without it, all three work from the job ad alone, and an interview briefing has no company research.
 
 1. Sign up at [tavily.com](https://tavily.com); there is a free monthly allowance, and each briefing, tailored CV, or cover letter makes two searches.
 2. Copy your API key from the Tavily dashboard (Tavily's docs: [Quickstart](https://docs.tavily.com)).

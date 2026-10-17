@@ -4,7 +4,6 @@ one-line error and exit status 1."""
 from __future__ import annotations
 
 import argparse
-import os
 import pydoc
 import re
 import sys
@@ -46,7 +45,7 @@ def check_variant(variant: str | None, yaml_only: bool) -> str | None:
     return by_file.get(variant, variant)
 
 
-def check_keys(reviewer: bool = False, web_search: bool = False) -> None:
+def check_keys(reviewer: bool = False) -> None:
     """Stop before any job is tried if a key it needs is missing: otherwise every job
     fails in turn with the same message (after spending its web searches)."""
     from .llm import credentials
@@ -54,9 +53,6 @@ def check_keys(reviewer: bool = False, web_search: bool = False) -> None:
     credentials()
     if reviewer:
         credentials(reviewer=True)
-    if web_search and not os.environ.get("WEB_SEARCH_API_KEY"):
-        raise RuntimeError("Set WEB_SEARCH_API_KEY in config/.env: interview briefings need "
-                           "Tavily company research")
 
 
 DESCRIPTION = ("First time: init. Every day: web, tailor-cv, cover-letter (optional), and "
@@ -345,7 +341,7 @@ def run_interview_prep(args: argparse.Namespace) -> None:
     from .db import migrate
     check_redo(args)
     chosen_sources()  # a problem with cvs in config/profile.toml stops it now
-    check_keys(web_search=True)
+    check_keys()
     migrate()
     for_jobs(JobCommand(command="interview-prep", status="interviewing", kind="interview-prep",
                         what="a briefing", run_one=lambda job_id: print(prepare(job_id)),

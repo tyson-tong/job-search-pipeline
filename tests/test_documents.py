@@ -6,7 +6,7 @@ from datetime import date
 from docx import Document
 
 from jobflow.candidate.documents import write_docx, write_latex, write_letter_docx
-from jobflow.candidate.interview import _safe_markup
+from jobflow.candidate.interview import _briefing_page, _safe_markup
 
 CV = {
     "name": "José Example", "headline": "Data analyst", "email": "jose@example.com",
@@ -89,3 +89,11 @@ def test_briefing_markup_cannot_inject_html():
                        '[click](javascript:alert(1)) [x](https://ok.example/" onmouseover="bad)')
     assert "<script>" not in out
     assert 'href="javascript' not in out and 'onmouseover="bad' not in out
+    # The research sources are web results too, listed apart from the brief.
+    job = {"company": "Acme", "title": "Analyst", "location": "Sydney", "url": "javascript:x"}
+    page = _briefing_page(job, "Brief", [
+        {"title": "<img src=x onerror=alert(1)>", "url": "javascript:alert(1)", "content": ""},
+        {"title": "News", "url": 'https://ok.example/" onclick="bad', "content": "<b>x</b>"}],
+        [], "m")
+    assert "<img" not in page and "<b>" not in page and 'onclick="bad' not in page
+    assert 'href="javascript' not in page
