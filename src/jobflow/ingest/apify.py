@@ -8,10 +8,10 @@ import math
 import os
 import sys
 import threading
-import time
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from decimal import Decimal
+from time import monotonic
 
 from apify_client import ApifyClient
 
@@ -170,7 +170,7 @@ def _run_site(client: ApifyClient, site_runs: list[PlannedRun], max_wait: timede
         if outcome.stop.is_set():
             outcome.skipped.append(run_name)
             continue
-        if time.monotonic() + max_wait.total_seconds() > deadline:
+        if monotonic() + max_wait.total_seconds() > deadline:
             outcome.late.append(run_name)
             try:   # recorded, so the tracker's header and jobflow status show it
                 store.record_failed_run(run_record(planned), status="NOT_STARTED",
@@ -221,7 +221,7 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
     for planned in runs:
         by_site.setdefault(planned.site, []).append(planned)
     outcome = _Outcome()
-    deadline = time.monotonic() + INGEST_MINUTES * 60
+    deadline = monotonic() + INGEST_MINUTES * 60
     # Earlier runs whose results couldn't be saved are paid for, and their results are on
     # Apify only for a while: imported first, judged by the searches as configured.
     not_imported, _ = import_failed_runs(configured)

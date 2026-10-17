@@ -35,7 +35,7 @@ def provider(monkeypatch):
             raise reply
         return reply
     monkeypatch.setattr(requests, "post", post)
-    monkeypatch.setattr(llm.time, "sleep", fake.waits.append)
+    monkeypatch.setattr(llm, "sleep", fake.waits.append)
     monkeypatch.setenv("LLM_API_KEY", "key")
     monkeypatch.setenv("LLM_MODEL", "model")
     return fake

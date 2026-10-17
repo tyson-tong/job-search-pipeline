@@ -506,7 +506,7 @@ def test_runs_that_could_outlast_the_daily_job_are_not_started(monkeypatch):
     monkeypatch.setenv("APIFY_TOKEN", "t")
     monkeypatch.setenv("JOBFLOW_SEARCHES", CONFIG)
     clock = [0.0]
-    monkeypatch.setattr(apify.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(apify, "monotonic", lambda: clock[0])
     seen, recorded = [], []
 
     def slow_run(client, planned, max_wait):

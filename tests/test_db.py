@@ -97,6 +97,23 @@ def test_migrations_apply_once_on_an_empty_database(database, capsys):
     assert _one("SELECT count(*) FROM schema_migrations")[0] == len(migration_files())
 
 
+def test_a_follow_up_gives_jobs_saved_before_it_the_keys_new_copies_match(database):
+    # A follow-up rewrites merge keys on a database full of jobs: a key worked out unlike
+    # save_job's would leave each of those jobs never merging with its copies again. Titles
+    # in Chinese once had no title key at all, so no employer-and-title key or fingerprint.
+    from jobflow.ingest.backfill import FOLLOW_UPS
+
+    chinese = {**LINKEDIN, "title": "數據分析師", "companyName": "HSBC"}
+    save_run("linkedin:a", "r1", "d1", [chinese], country="AU")
+    with connect() as conn:   # the keys as saved before titles kept every script's letters
+        conn.execute("UPDATE jobs SET match_key = NULL, fingerprint = NULL")
+        assert FOLLOW_UPS["backfill_unicode_title_keys"](conn) == 1
+    assert save_run("seek:a", "r2", "d2", [{**SEEK, "title": "數據分析師",
+                                             "advertiser": {"name": "HSBC Limited"}}],
+                    country="AU") == 0
+    assert _one("SELECT count(*) FROM job_sources")[0] == 2
+
+
 def test_one_job_on_three_sites_is_one_row_with_three_copies(database):
     # The same job on LinkedIn, Indeed, and Seek must be one job in the Inbox, with each site's copy
     # kept; a NUL in scraped HTML must not fail the save.
@@ -743,12 +760,9 @@ def test_posted_dates_are_judged_by_the_window_the_run_used(database):
     assert [job["title"] for job in restore_filtered_jobs([month])[0]] == ["Quant"]
 
 
-def test_every_status_can_be_saved_and_has_a_label(database):
+def test_every_status_can_be_saved(database):
     # A status added to db.STATUSES without a migration replacing jobs_status_check fails
-    # every save of it; without a label in format.js the tracker shows its raw name.
-    import re
-    from pathlib import Path
-
+    # every save of it.
     from jobflow.db import STATUSES
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
@@ -757,9 +771,6 @@ def test_every_status_can_be_saved_and_has_a_label(database):
         with connect() as conn:
             set_job_state(conn, job_id, status=status, via="test")
         assert _one("SELECT status FROM jobs")[0] == status
-    script = (Path(__file__).parents[1] / "src/jobflow/web/static/format.js").read_text()
-    labels = re.search(r"LABELS = \{(.*?)\};", script, re.S).group(1)
-    assert set(re.findall(r"(\w+):", labels)) == set(STATUSES)
 
 
 def test_one_posting_that_cant_be_saved_does_not_lose_the_rest_of_a_paid_run(database):

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import os
-import time
+from time import sleep
 from urllib.parse import urlsplit
 
 import requests
@@ -86,7 +86,7 @@ def complete(system: str, user: str, *, json_mode: bool = False, reviewer: bool 
             timeouts += isinstance(exc, requests.ReadTimeout)
             if attempt == RETRIES or timeouts > 1:
                 raise
-            time.sleep(2.0 ** (attempt + 1))
+            sleep(2.0 ** (attempt + 1))
             attempt += 1
             continue
         if response.ok:
@@ -106,7 +106,7 @@ def complete(system: str, user: str, *, json_mode: bool = False, reviewer: bool 
         retry = (response.status_code == 429 and not quota) or response.status_code >= 500
         if not retry or attempt == RETRIES:
             break
-        time.sleep(_wait(response, attempt))
+        sleep(_wait(response, attempt))
         attempt += 1
     message = error.get("message") or response.reason or "request failed"
     # 402 is how some providers (OpenRouter, say) report credit run out.

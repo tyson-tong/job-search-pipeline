@@ -586,10 +586,15 @@ def test_a_render_stopped_by_ctrl_c_fails_the_job(tmp_path, monkeypatch):
         assert not isinstance(caught.value, render.RenderFailed)
 
 
-def test_rendercv_renders_a_draft_where_tailor_cv_expects_it(tmp_path):
+def test_rendercv_renders_a_draft_where_tailor_cv_expects_it(tmp_path, monkeypatch):
     # Every other test fakes RenderCV. An upgrade that changed its command line (--pdf-path,
     # -nomd) would leave every tailored CV "couldn't render", with no test failing.
     from jobflow.candidate import render
+
+    # RenderCV runs in a subprocess, which no_network can't stop, and checks PyPI for a new
+    # version: its web requests go to a proxy that isn't there.
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        monkeypatch.setenv(name, "http://127.0.0.1:9")
 
     _, cut, pdf, warnings = render.fit(JOB, {"cv": SOURCE_CV}, copy.deepcopy(SOURCE_CV),
                                        "CV_dev_draft.yaml", max_pages=1, keep_pdf=tmp_path)
