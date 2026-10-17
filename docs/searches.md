@@ -69,7 +69,7 @@ A site without your window searches the next wider one, so no jobs are missed, a
 
 Seek's 24 hours is the jobs listed today, since midnight (in a country whose day starts before yours, its last 2 days), so the daily import should start late in the evening, on time: [setup](setup.md#7-start-the-daily-import-on-time) has it started at a time you choose, and [rules](rules.md#when-the-daily-import-runs) say when GitHub's own, later, schedule runs instead. A run starts at a slightly different time each day, so when it starts later than the day before's, the minutes between are outside both runs' 24-hour window. LinkedIn's 24 hours is therefore searched as 25, which covers up to an hour of difference; you pay for the jobs seen twice, which are merged. A scheduled run, hours late, covers less: the hours between its start and the last run's, less one, are missed on LinkedIn. Indeed searches its last day, so jobs posted only there in such hours can be missed.
 
-For a one-off manual import, `jobflow ingest --posted-within-days 14` overrides the window for every search in that run only. Use `1`, `7`, `14`, or `30`; this does not change the searches file or the copy published to GitHub Actions. Jobs it filters for their posted date stay filtered ([rules](rules.md#changing-your-searches)).
+For a one-off manual import, `jobflow ingest --posted-within-days 14` overrides the window for every search in that run only. Use `1`, `7`, `14`, or `30`; this does not change the searches file or the copy published to GitHub Actions. Jobs it filters for their posted date stay filtered, and `update-searches` doesn't filter the older jobs it brings in ([rules](rules.md#changing-your-searches)).
 
 ## Which site applies which filter
 

@@ -698,15 +698,49 @@ def test_a_job_filtered_for_its_posted_date_stays_filtered(database):
     search = parse_config('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
                           'sites = ["linkedin"]\n')[0]
     one_off = replace(search, posted_within_days=14)
-    save_run("linkedin:a", "r1", "d1", [{**LINKEDIN, "postedAt": "2026-09-01"}],
-             search_name="s", country="AU",
-             job_filter=partial(filter_reason, search=one_off, site="linkedin",
-                                today=date(2026, 9, 26)))
+    store.save_run(RunRecord(actor_id="linkedin:a", run_id="r1", dataset_id="d1",
+                             search_name="s", posted_within_days=14),
+                   [{**LINKEDIN, "postedAt": "2026-09-01"}], country="AU",
+                   job_filter=partial(filter_reason, search=one_off, site="linkedin",
+                                      today=date(2026, 9, 26)))
     with connect() as conn:
         conn.execute("UPDATE jobs SET first_seen_at = '2026-09-26'")
     assert _one("SELECT status FROM jobs")[0] == "filtered"
     assert restore_filtered_jobs([search]) == ([], 1)
     assert _one("SELECT status FROM jobs")[0] == "filtered"
+
+
+def test_posted_dates_are_judged_by_the_window_the_run_used(database):
+    # A catch-up with ingest --posted-within-days 30 brought in jobs posted weeks ago; the next
+    # update-searches judged them by the search's own 2 weeks and filtered every one of them.
+    from datetime import date
+    from functools import partial
+
+    from jobflow.ingest.filters import filter_reason
+    from jobflow.ingest.refilter import filter_inbox_jobs, restore_filtered_jobs
+    from jobflow.ingest.searches import parse_config
+
+    text = ('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
+            'sites = ["linkedin"]\n')
+    two_weeks, month = (parse_config(text + f"posted_within_days = {days}\n")[0]
+                        for days in (14, 30))
+    for run, window, search, job in (
+            ("r1", 30, month, LINKEDIN),   # the catch-up
+            ("r2", 14, two_weeks, {**LINKEDIN, "id": "2", "title": "Quant",
+                                   "descriptionText": "Price options."})):
+        store.save_run(RunRecord(actor_id="linkedin:a", run_id=run, dataset_id=run,
+                                 search_name="s", posted_within_days=window),
+                       [{**job, "postedAt": "2026-09-06"}], country="AU",
+                       job_filter=partial(filter_reason, search=search, site="linkedin",
+                                          today=date(2026, 9, 26)))
+    with connect() as conn:
+        conn.execute("UPDATE jobs SET first_seen_at = '2026-09-26'")
+    assert dict(_rows("SELECT title, status FROM jobs")) == {"Data Analyst": "new",
+                                                             "Quant": "filtered"}
+    assert filter_inbox_jobs([two_weeks]) == ([], 1)
+    assert restore_filtered_jobs([two_weeks]) == ([], 1)
+    # Widened to a month, the search would keep the job its 2 weeks filtered.
+    assert [job["title"] for job in restore_filtered_jobs([month])[0]] == ["Quant"]
 
 
 def test_every_status_can_be_saved_and_has_a_label(database):
