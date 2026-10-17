@@ -310,14 +310,14 @@ def test_a_revision_adding_unsupported_terms_is_discarded():
     # Kept on error count alone, a revision with as many errors could add any number of
     # terms the CV doesn't support.
     from jobflow.candidate.factcheck import Checked
-    from jobflow.candidate.review import revise
+    from jobflow.candidate.review import Reviewer, revise
 
     def run(revision_warnings):
-        notes: list[str] = []
         kept = revise("draft", Checked([], ["New term: Python."]),
-                      lambda draft: ({"critique": []}, "m"), lambda answer: "revision",
-                      lambda revision: Checked([], revision_warnings), notes)
-        return kept.draft, notes
+                      Reviewer(review=lambda draft: ({"critique": []}, "m"),
+                               revision_of=lambda answer: "revision",
+                               check=lambda revision: Checked([], revision_warnings)))
+        return kept.draft, kept.notes
     assert run(["New term: Python.", "New term: Kubernetes."]) == (
         "draft", ["Reviewed by model m.", "The reviewer's revision added terms not in the "
                   "source (more warnings than the first draft), so the first draft is kept."])
@@ -395,8 +395,7 @@ def test_cutting_to_fit_cuts_the_fewest_least_relevant_bullets(tmp_path, monkeyp
         yaml.safe_load(source.read_text())["cv"])) > 4))
     monkeypatch.setattr(render, "rank_bullets", lambda job, found: [4, 3, 2, 1, 0, 5])
     monkeypatch.setattr(render, "page_gaps", lambda pdf: [])
-    warnings = []
-    fitted, cut, _ = render.fit(JOB, {"cv": cv}, cv, "CV_dev_draft.yaml", 1, warnings)
+    fitted, cut, _, warnings = render.fit(JOB, {"cv": cv}, cv, "CV_dev_draft.yaml", max_pages=1)
     assert [b["text"] for b in cut] == ["Fifth", "Fourth"] and not warnings
     assert fitted["sections"]["experiences"][1]["highlights"] == ["Only bullet"]
 
@@ -592,9 +591,8 @@ def test_rendercv_renders_a_draft_where_tailor_cv_expects_it(tmp_path):
     # -nomd) would leave every tailored CV "couldn't render", with no test failing.
     from jobflow.candidate import render
 
-    warnings: list[str] = []
-    _, cut, pdf = render.fit(JOB, {"cv": SOURCE_CV}, copy.deepcopy(SOURCE_CV),
-                             "CV_dev_draft.yaml", 1, warnings, keep_pdf=tmp_path)
+    _, cut, pdf, warnings = render.fit(JOB, {"cv": SOURCE_CV}, copy.deepcopy(SOURCE_CV),
+                                       "CV_dev_draft.yaml", max_pages=1, keep_pdf=tmp_path)
     assert pdf == tmp_path / "CV_dev_draft.pdf" and render.pdf_pages(pdf) == 1
     assert not cut and not warnings
 

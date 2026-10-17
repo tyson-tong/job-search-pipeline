@@ -44,11 +44,13 @@ CLEAN_UP_STATUSES = ("not_interested", "withdrawn", "archived")
 # update-searches, when a job fails a search's local filters (see jobs.filter_reason);
 # "archived" when a filtered, not interested, or untriaged Inbox job is old enough (see
 # archive_old_jobs in ingest/upkeep.py).
-CLOSED_STATUSES = ["not_interested", "accepted", "declined", "rejected", "withdrawn", "filtered",
-                   "archived"]
+CLOSED_STATUSES = ("not_interested", "accepted", "declined", "rejected", "withdrawn", "filtered",
+                   "archived")
 # Statuses meaning you've applied; the first time a job reaches one sets applied_at. Rejected
 # too: a job can go straight from Interested to Rejected if you never marked it Applied.
-APPLIED_STATUSES = ["applied", "interviewing", "offered", "accepted", "declined", "rejected"]
+APPLIED_STATUSES = ("applied", "interviewing", "offered", "accepted", "declined", "rejected")
+# Each group is a tuple, so none can be changed by accident; a query takes one as list(...),
+# which psycopg sends as an array for = ANY(%s), as it doesn't a tuple.
 
 # The sslmode values that never fall back to an unencrypted connection.
 ENCRYPTED_SSLMODES = ("require", "verify-ca", "verify-full")
@@ -256,7 +258,7 @@ def set_job_state(conn, job_id: int, *, status: str | None = None, note: str | N
                follow_up_on=CASE WHEN %s THEN EXCLUDED.follow_up_on
                                  ELSE applications.follow_up_on END,
                updated_at=now()""",
-        (note_line, APPLIED_STATUSES, follow_up_on if set_follow_up else None, job_id,
+        (note_line, list(APPLIED_STATUSES), follow_up_on if set_follow_up else None, job_id,
          set_follow_up))
 
 

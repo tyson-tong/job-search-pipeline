@@ -1,6 +1,6 @@
 from datetime import date
 
-from jobflow.ingest.dedupe import canonical_url, is_same_ad, same_place
+from jobflow.ingest.dedupe import Ad, canonical_url, is_same_ad, same_place
 from jobflow.ingest.sources import normalise, to_date
 
 DESCRIPTION = ("We are hiring a Data Analyst to build dashboards, write SQL, and automate "
@@ -72,16 +72,17 @@ LONG_AD = " ".join(f"duty{i}" for i in range(60))
 def test_identical_ad_under_the_same_title_merges_whoever_posts_it():
     # Seen live: LinkedIn and Seek spelled the employer and district differently, so the
     # employer-and-city step missed one ad posted on both.
-    assert is_same_ad("VP-Director, Portfolio Management (Equity)", LONG_AD,
-                      "VP Director Portfolio Management Equity", LONG_AD + " apply")
+    assert is_same_ad(Ad("VP-Director, Portfolio Management (Equity)", LONG_AD),
+                      Ad("VP Director Portfolio Management Equity", LONG_AD + " apply"))
     # Susquehanna reused one ad for two different internships: never merged.
-    assert not is_same_ad("Quantitative Research Internship", LONG_AD,
-                          "Quantitative Systematic Trading Internship", LONG_AD)
+    assert not is_same_ad(Ad("Quantitative Research Internship", LONG_AD),
+                          Ad("Quantitative Systematic Trading Internship", LONG_AD))
     # A short boilerplate ad is not enough, nor is an ad that is only mostly the same.
-    assert not is_same_ad("Analyst", "Apply on our website today", "Analyst",
-                          "Apply on our website today")
+    assert not is_same_ad(Ad("Analyst", "Apply on our website today"),
+                          Ad("Analyst", "Apply on our website today"))
     edited = " ".join(f"duty{i}" for i in range(54)) + " " + " ".join(f"other{i}" for i in range(6))
-    assert not is_same_ad("Analyst", LONG_AD, "Analyst", edited)
+    assert not is_same_ad(Ad("Analyst", LONG_AD), Ad("Analyst", edited))
     # CPP Investments posted one ad for Sydney and Hong Kong: two jobs, one per country.
-    assert not is_same_ad("Analyst", LONG_AD, "Analyst", LONG_AD, "AU", "HK")
-    assert is_same_ad("Analyst", LONG_AD, "Analyst", LONG_AD, "HK", None)
+    assert not is_same_ad(Ad("Analyst", LONG_AD, country="AU"),
+                          Ad("Analyst", LONG_AD, country="HK"))
+    assert is_same_ad(Ad("Analyst", LONG_AD, country="HK"), Ad("Analyst", LONG_AD))

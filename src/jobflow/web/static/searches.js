@@ -1,7 +1,7 @@
 // The Searches tab: your config/searches.toml, the Apify runs it plans, and the allowed
 // values. app.js's refresh calls renderSearches.
 import { copyCommand, el, fill, page, state, toast } from "./common.js";
-import { SITE_NAMES } from "./format.js";
+import { plural, SITE_NAMES } from "./format.js";
 
 const siteName = (s) => SITE_NAMES[s] || s;
 export function renderSearches() {
@@ -12,7 +12,7 @@ export function renderSearches() {
       el("span", { className: "meta" }, `  ·  from ${data.source || "(no config/profile.toml)"}`), "  ",
       el("button", { className: "btn small", onclick: () => page.refresh().then(() => toast("Searches reloaded")) }, "Reload")),
     data.ok ? el("p", { className: "meta", style: "margin:8px 0 0" },
-      `${data.total_runs} Apify run${data.total_runs === 1 ? "" : "s"} per import, at most ${data.total_max_results} results. `
+      `${plural(data.total_runs, "Apify run")} per import, at most ${data.total_max_results} results. `
       + "Actors charge per result. Nothing runs from this page.") : null,
     data.error ? el("div", { className: "err-box" }, data.error) : null,
     el("div", { className: "next" }, el("strong", {}, "To change your searches"),
@@ -77,7 +77,7 @@ function renderSearchCard(search, index) {
         ? search.exclude_companies.map((t) => el("span", { className: "pill" }, t)) : "none")),
     search.sites.map((site) => el("div", { className: "site-block" },
       el("strong", {}, siteName(site.site)),
-      el("span", { className: "meta" }, ` · ${site.runs.length} run${site.runs.length === 1 ? "" : "s"}, up to ${site.max_results_per_run} results each`
+      el("span", { className: "meta" }, ` · ${plural(site.runs.length, "run")}, up to ${site.max_results_per_run} results each`
         + (site.local_filters.length ? ` · filtered after import by ${site.local_filters.join(", ").replace(/_/g, " ")}` : "")),
       site.notes.map((note) => el("div", { className: "flags" }, el("span", { className: "flag warn" }, note))),
       el("details", {}, el("summary", { className: "meta" }, `Show the exact input sent to ${site.actor}`),

@@ -7,7 +7,7 @@ import {
   TAB_STATUS, toast, TOKEN,
 } from "./common.js";
 import { closeDetail, openDetail, renderDetail } from "./detail.js";
-import { fmtDate, fmtSalary, label, SITE_NAMES } from "./format.js";
+import { fmtDate, fmtSalary, label, plural, SITE_NAMES } from "./format.js";
 import { pollScoring, renderScoring } from "./scoring.js";
 import { renderSearches } from "./searches.js";
 import { pick, renderBulk } from "./selection.js";
@@ -120,13 +120,13 @@ function renderPipeline() {
     failedRuns.map((f) => el("span", { className: "chip alert",
       title: `Latest error: ${f.error || "unknown"}. Run \`uv run jobflow status\`, or see the `
         + "scraper_runs table, for details." },
-      `${SITE_NAMES[f.site] || f.site}: ${f.failed} of ${f.total} run${f.total === 1 ? "" : "s"} failed`)),
+      `${SITE_NAMES[f.site] || f.site}: ${f.failed} of ${plural(f.total, "run")} failed`)),
     // A run that returned all the results max_results allows probably left jobs behind.
     cappedRuns.map((c) => el("span", { className: "chip alert",
       title: `These runs returned as many results as max_results allows, so more jobs were probably `
         + `posted than were imported. Raise max_results in config/searches.toml, or narrow the search`
         + (c.searches.length ? `: ${c.searches.join(", ")}` : "") + ". Then run `uv run jobflow update-searches`." },
-      `${SITE_NAMES[c.site] || c.site}: ${c.capped} of ${c.total} run${c.total === 1 ? "" : "s"} hit max_results`))]);
+      `${SITE_NAMES[c.site] || c.site}: ${c.capped} of ${plural(c.total, "run")} hit max_results`))]);
 }
 function renderTabs() {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("on", tab.dataset.view === state.view));
@@ -235,7 +235,7 @@ function renderRows() {
   const n = state.jobs.length, total = tabTotal(state.view);
   document.getElementById("shown").textContent = n >= state.summary.max_rows
     ? `The first ${n} jobs: narrow the filters to see the rest`
-    : n < total ? `${n} of ${total} jobs` : `${n} job${n === 1 ? "" : "s"}`;
+    : n < total ? `${n} of ${total} jobs` : plural(n, "job");
   const selectable = state.view === "inbox" || RETURN_TABS.includes(state.view);
   const loaded = new Set(state.jobs.map((job) => job.id));
   state.selected.forEach((id) => { if (!selectable || !loaded.has(id)) state.selected.delete(id); });

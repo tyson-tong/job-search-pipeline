@@ -1,6 +1,7 @@
 """Small text helpers shared across jobflow."""
 from __future__ import annotations
 
+import hashlib
 import re
 
 # Chinese characters and Japanese kana: written without spaces between words, so each is
@@ -21,6 +22,22 @@ def words(text: object) -> str:
 def plural(count: int, word: str, suffix: str = "s") -> str:
     """"1 job", "2 jobs"; `suffix` for other plurals ("search", suffix="es")."""
     return f"{count} {word}{'' if count == 1 else suffix}"
+
+
+def sha256(content: str | bytes) -> str:
+    """The hex SHA-256 of text (as UTF-8) or bytes: how fingerprints, CVs, and drafts are
+    told apart by content."""
+    return hashlib.sha256(content.encode() if isinstance(content, str) else content).hexdigest()
+
+
+def confirmed(question: str) -> bool:
+    """Whether you answer yes to `question`, asked in the terminal with " (Y/N) " after it;
+    no answer (input closed) is no."""
+    try:
+        answer = input(f"{question} (Y/N) ")
+    except EOFError:
+        answer = ""
+    return answer.strip().casefold() in ("y", "yes")
 
 
 def whole_number(value: object) -> int | None:

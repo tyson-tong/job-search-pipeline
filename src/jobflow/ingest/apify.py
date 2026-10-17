@@ -71,7 +71,7 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
     max_wait is stopped; what it found is imported, recorded as PARTIAL, and StoppedEarly
     raised.
     """
-    name = f"{planned.search.name}/{planned.site} {planned.label}"
+    name = planned.name
     cap = planned.search.max_cost_usd
     run = None
     try:
@@ -166,7 +166,7 @@ def _run_site(client: ApifyClient, site_runs: list[PlannedRun], max_wait: timede
               deadline: float, outcome: _Outcome) -> None:
     """One site's runs, one after another, so at most one Apify run per site at a time."""
     for planned in site_runs:
-        run_name = f"{planned.search.name}/{planned.site} {planned.label}"
+        run_name = planned.name
         if outcome.stop.is_set():
             outcome.skipped.append(run_name)
             continue

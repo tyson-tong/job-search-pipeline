@@ -1,6 +1,7 @@
 // Scoring: LLM match scores, run by the tracker on this machine in the background, with
 // the page polling their progress.
 import { api, el, fill, page, state, toast } from "./common.js";
+import { plural } from "./format.js";
 
 export function renderScoring() {
   const button = document.getElementById("score-btn"), chip = document.getElementById("scoring");
@@ -38,7 +39,7 @@ export async function pollScoring() {
   renderScoring();
   if (state.scoring.running) { setTimeout(pollScoring, 2000); return; }
   const { scored, errors, done, total } = state.scoring;
-  toast(`Scored ${scored.length} job${scored.length === 1 ? "" : "s"}` + (errors.length
+  toast(`Scored ${plural(scored.length, "job")}` + (errors.length
     ? `; ${errors.length} failed (${errors[0].error})` : "")
     + (done < total ? `. Stopped: the other ${total - done} would fail the same way` : ""), errors.length > 0);
   await page.refresh();  // unsaved drafts are kept; rows just gain their new scores
@@ -49,19 +50,19 @@ export async function pollScoring() {
 export function scoreSelected() {
   const ids = state.jobs.filter((job) => state.selected.has(job.id)).map((job) => job.id);
   const cvs = state.summary.cv_variants.length;
-  startScoring({ job_ids: ids }, `Score ${ids.length} selected job${ids.length === 1 ? "" : "s"} against each of `
-    + `your CVs it has no score for?\n\nThis makes at most ${ids.length * cvs} LLM call${ids.length * cvs === 1 ? "" : "s"}. `
+  startScoring({ job_ids: ids }, `Score ${plural(ids.length, "selected job")} against each of `
+    + `your CVs it has no score for?\n\nThis makes at most ${plural(ids.length * cvs, "LLM call")}. `
     + "You can keep working while it runs.");
 }
 document.getElementById("score-btn").addEventListener("click", () => {
   const jobs = state.summary.unscored, cvs = state.summary.cv_variants.length;
-  startScoring({}, `Score ${jobs} job${jobs === 1 ? "" : "s"} you're pursuing against each of your CVs it has no score for?`
-    + `\n\nThis makes at most ${jobs * cvs} LLM call${jobs * cvs === 1 ? "" : "s"}, newest jobs first. You can keep working while it runs.`);
+  startScoring({}, `Score ${plural(jobs, "job")} you're pursuing against each of your CVs it has no score for?`
+    + `\n\nThis makes at most ${plural(jobs * cvs, "LLM call")}, newest jobs first. You can keep working while it runs.`);
 });
 document.getElementById("rescore-btn").addEventListener("click", () => {
   const { jobs, calls } = state.summary.outdated;
-  startScoring({ rescore: true }, `Rescore ${jobs} job${jobs === 1 ? "" : "s"} you're pursuing against the CVs you've edited `
-    + `since ${jobs === 1 ? "it was" : "they were"} scored?\n\nThis makes ${calls} LLM call${calls === 1 ? "" : "s"}`
+  startScoring({ rescore: true }, `Rescore ${plural(jobs, "job")} you're pursuing against the CVs you've edited `
+    + `since ${jobs === 1 ? "it was" : "they were"} scored?\n\nThis makes ${plural(calls, "LLM call")}`
     + " (and scores any CV a job has no score against yet). Scores against CVs you haven't edited are kept.");
 });
 

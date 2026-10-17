@@ -23,6 +23,11 @@ class PlannedRun:
     notes: list[str] = field(default_factory=list)
 
     @property
+    def name(self) -> str:
+        """The run as messages name it: "analyst/seek 'data analyst' in Sydney"."""
+        return f"{self.search.name}/{self.site} {self.label}"
+
+    @property
     def country(self) -> str | None:
         return run_country(self.site, self.run_input)
 

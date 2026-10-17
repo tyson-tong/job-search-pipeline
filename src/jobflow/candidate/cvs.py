@@ -1,7 +1,6 @@
 """Loading your CV files, and helpers shared by matching and tailoring."""
 from __future__ import annotations
 
-import hashlib
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -140,7 +139,3 @@ def check_cv_length(name: str, text: str) -> None:
         raise RuntimeError(f"{name} is {len(text):,} characters; over {CV_CHAR_LIMIT:,} the LLM "
                            "would see only its start, and everything after it would be lost "
                            "or count as missing")
-
-
-def cv_digest(source: str) -> str:
-    return hashlib.sha256(source.encode()).hexdigest()

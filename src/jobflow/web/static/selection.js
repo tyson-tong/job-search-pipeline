@@ -1,7 +1,7 @@
 // Ticking rows in the Inbox, Filtered, Not interested, and Archived tabs for a bulk change.
 import { el, fill, page, pageStarts, RETURN_TABS, renderSaveBar, stagePending, state, toast } from "./common.js";
 import { renderDetail } from "./detail.js";
-import { label } from "./format.js";
+import { label, plural } from "./format.js";
 import { scoreSelected } from "./scoring.js";
 
 export function pick(id, index, event) {
@@ -24,7 +24,7 @@ function markSelected(status, done = `marked ${label(status).toLowerCase()}`) {
   renderSaveBar();
   page.renderRows();
   if (state.detail && jobs.some((job) => job.id === state.detail.id)) renderDetail();
-  toast(`${jobs.length} job${jobs.length === 1 ? "" : "s"} ${done}: click Save to keep`);
+  toast(`${plural(jobs.length, "job")} ${done}: click Save to keep`);
 }
 function pageJobs() {
   const starts = pageStarts();

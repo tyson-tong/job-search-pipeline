@@ -2,7 +2,6 @@
 draft against its source."""
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from pathlib import Path
@@ -13,15 +12,15 @@ import yaml
 from ..db import fetch_job
 from ..llm import complete, parse_json
 from ..settings import cv_directory
-from ..text import plural
+from ..text import plural, sha256
 from . import documents
 from .cvs import check_cv_length, chosen_files, cv_section_yaml, is_yaml, job_prompt
-from .factcheck import fact_check
+from .factcheck import Checked, fact_check
 from .matching import best_variant, match_job
 from .paths import job_directory
 from .render import RenderFailed, copy_photo, fit, write_cv
 from .research import research_soon
-from .review import record_run, revise, write_review
+from .review import Reviewer, record_run, revise, write_review
 
 # A rendered CV longer than this (unless tailor-cv --max-pages says otherwise) is
 # shortened by cutting its least relevant bullets.
@@ -122,7 +121,7 @@ def cv_written(directory: Path) -> bool:
 
 
 def _digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return sha256(path.read_bytes())
 
 
 def _written(directory: Path) -> dict:
@@ -226,23 +225,32 @@ def _render_command(target: Path) -> str:
     return f"`uv run rendercv render {target.name} --pdf-path {pdf}` in its folder"
 
 
-def _write_checked(job: dict, source_doc: dict, draft_cv: dict, target: Path, max_pages: int,
-                   fmt: str, warnings: list[str]) -> tuple[dict, list[dict], str, str]:
+class Written(NamedTuple):
+    """What _write_checked wrote: the CV as written, the bullets cut, what was rendered and
+    what to read before sending it (for the review), and warnings about its length."""
+    cv: dict
+    cut: list[dict]
+    rendered: str
+    read_it: str
+    warnings: list[str]
+
+
+def _write_checked(job: dict, source_doc: dict, draft_cv: dict, target: Path, *,
+                   max_pages: int, fmt: str) -> Written:
     """For a draft that passed the fact check: fit it to max_pages as RenderCV lays it out,
-    write the YAML, RenderCV's PDF, and fmt's .docx or .tex beside it. Adds any warnings to
-    `warnings`. Returns the CV as written, the bullets cut, what was rendered, and what to
-    read before sending it, for the review. A draft RenderCV can't render gets no PDF and no
-    fmt file, as it was never fitted to the page limit (tailor_cv then records it to be
-    drafted again; once you fix it, the next tailor-cv adds the fmt file)."""
+    write the YAML, RenderCV's PDF, and fmt's .docx or .tex beside it. A draft RenderCV
+    can't render gets no PDF and no fmt file, as it was never fitted to the page limit
+    (tailor_cv then records it to be drafted again; once you fix it, the next tailor-cv
+    adds the fmt file)."""
     pages = plural(max_pages, "page")
     cut: list[dict] = []
     try:
-        draft_cv, cut, pdf = fit(job, source_doc, draft_cv, target.name, max_pages,
-                                  warnings, keep_pdf=target.parent, cv_folder=cv_directory())
+        draft_cv, cut, pdf, warnings = fit(job, source_doc, draft_cv, target.name,
+                                           max_pages=max_pages, keep_pdf=target.parent,
+                                           cv_folder=cv_directory())
     except RenderFailed as exc:
         pdf = None
-        warnings.append(f"RenderCV couldn't render the draft, so its length wasn't checked: "
-                        f"{exc}")
+        warnings = [f"RenderCV couldn't render the draft, so its length wasn't checked: {exc}"]
     write_cv(target, source_doc, draft_cv)
     rendered = (f"Rendered by RenderCV as {pdf.name}." if pdf
                 else "Not rendered as a PDF" + ("" if fmt == "pdf" else f" or written as {fmt}")
@@ -266,7 +274,7 @@ def _write_checked(job: dict, source_doc: dict, draft_cv: dict, target: Path, ma
                    f"{_render_command(target)}, then read the PDF line by line against your "
                    "source CV. Once you've edited it, tailor-cv keeps your version; if you leave "
                    "it, the next tailor-cv drafts this job again, replacing this draft.")
-    return draft_cv, cut, rendered, read_it
+    return Written(draft_cv, cut, rendered, read_it, warnings)
 
 
 def _fresh_target(target_dir: Path, variant: str) -> Path:
@@ -312,13 +320,12 @@ def tailor_cv(job_id: int, variant: str | None = None,
     first = fact_check(source_doc["cv"], draft_cv, job_text)
 
     sources, notes = researching.result()
-    revised = revise(
-        draft_cv, first,
-        lambda cv: _review(job, source_yaml, cv_section_yaml({"cv": cv}), sources),
-        lambda answer: _parse_draft(str(answer.get("cv_yaml") or "")),
-        lambda cv: fact_check(source_doc["cv"], cv, job_text), notes)
+    revised = revise(draft_cv, first, Reviewer(
+        review=lambda cv: _review(job, source_yaml, cv_section_yaml({"cv": cv}), sources),
+        revision_of=lambda answer: _parse_draft(str(answer.get("cv_yaml") or "")),
+        check=lambda cv: fact_check(source_doc["cv"], cv, job_text)))
 
-    draft_cv, (errors, warnings) = revised.draft, revised.checked
+    draft_cv, (errors, warnings), notes = revised.draft, revised.checked, notes + revised.notes
 
     target = _fresh_target(output_dir or job_directory(job_id, job), variant)
     write_cv(target, source_doc, draft_cv)
@@ -327,8 +334,9 @@ def tailor_cv(job_id: int, variant: str | None = None,
     if errors:
         rendered, read_it = _needs_fix(target, fmt)
     else:
-        draft_cv, cut, rendered, read_it = _write_checked(job, source_doc, draft_cv, target,
-                                                          max_pages, fmt, warnings)
+        draft_cv, cut, rendered, read_it, fitting = _write_checked(
+            job, source_doc, draft_cv, target, max_pages=max_pages, fmt=fmt)
+        warnings = warnings + fitting
     pages = plural(max_pages, "page")
     cuts = (["", f"## Bullets cut to fit {pages} ({len(cut)})", "",
              "The least relevant to this job, cut in this order. Copy one back from your "
@@ -340,12 +348,13 @@ def tailor_cv(job_id: int, variant: str | None = None,
         written[".docx" if fmt == "docx" else ".tex"] = written["draft"]
     _record_written(target.parent, **written)
     write_review(target.parent / "CV_REVIEW.md",
-                 f"CV review: {job['company'] or 'Unknown employer'} — {job['title']} "
+                 title=f"CV review: {job['company'] or 'Unknown employer'} — {job['title']} "
                  f"(job id {job_id})",
-                 [reason, f"Draft: {target.name}. {rendered}", "",
-                  read_it + " The automated check below catches common factual changes but is "
-                  "not exhaustive."],
-                 notes, errors, warnings, revised.critique, "CV", cuts)
+                 intro=[reason, f"Draft: {target.name}. {rendered}", "",
+                        read_it + " The automated check below catches common factual changes "
+                        "but is not exhaustive."],
+                 notes=notes, checked=Checked(errors, warnings), critique=revised.critique,
+                 what="CV", extra=cuts)
     # A draft RenderCV couldn't render has no PDF and was never fitted to the page limit:
     # drafted again next time, like one that failed the fact check, unless you fix it.
     record_run(job_id, "tailor", not rendered_pdf, model)

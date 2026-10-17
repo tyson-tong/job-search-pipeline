@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import NamedTuple, TextIO
 
 from .llm import LLMError
-from .text import job_label, plural
+from .text import confirmed, job_label, plural
 
 # Jobs worked on at once. More would be faster, but each job makes several LLM calls
 # sending whole CVs and ads, and providers cap tokens per minute (rate-limited calls are
@@ -196,16 +196,6 @@ def _in_terminal() -> bool:
     return sys.stdin is not None and sys.stdin.isatty()
 
 
-def _confirmed(command: JobCommand, count: int) -> bool:
-    """Whether you answer yes to starting the command on `count` jobs."""
-    try:
-        answer = input(f"Start {command.command} on {count} jobs? Each makes several LLM calls "
-                       "(and web searches, if set up). (Y/N) ")
-    except EOFError:
-        answer = ""
-    return answer.strip().casefold() in ("y", "yes")
-
-
 def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = False) -> None:
     """Run command.run_one(job_id) for each job not yet done (see _plan_jobs), JOBS_AT_ONCE
     at a time, printing each job's output in one piece when it finishes, and
@@ -215,7 +205,8 @@ def _run_jobs(command: JobCommand, only: list[int] | None = None, redo: bool = F
     plan = _plan_jobs(command, only, redo)
     _report(command, plan, only)
     if not only and len(plan.todo) > CONFIRM_ABOVE and _in_terminal() \
-            and not _confirmed(command, len(plan.todo)):
+            and not confirmed(f"Start {command.command} on {len(plan.todo)} jobs? Each makes "
+                              "several LLM calls (and web searches, if set up)."):
         print("Nothing done")
         return
     _keep_fixed(command, plan.fixed)

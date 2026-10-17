@@ -4,7 +4,7 @@ from __future__ import annotations
 import shutil
 
 from . import db, settings
-from .text import plural
+from .text import confirmed, plural
 
 # Of the statuses whose jobs' folders clean-up deletes (db.CLEAN_UP_STATUSES), only a job
 # moved to Not interested from My jobs has a folder: Inbox jobs are never worked on. Such a
@@ -29,21 +29,20 @@ def clean_up() -> None:
                 (list(db.CLEAN_UP_STATUSES), ids, ids)).fetchall()
 
     # A job's folder is output/<company>/<role>-<job id>, found by its id, so a folder is
-    # still found if the company or title has changed since it was written.
-    folders = [(folder, job_id, status) for job_id, status in closed_jobs()
-               for folder in sorted(root.glob(f"*/*-{job_id}")) if folder.is_dir()]
+    # still found if the company or title has changed since it was written. The output
+    # folder is read once: closed jobs only accumulate, so one search per job would slow
+    # every clean-up down.
+    closed = dict(closed_jobs())
+    folders = [(folder, job_id, closed[job_id]) for folder in sorted(root.glob("*/*-*"))
+               if (job_id := _job_id(folder)) in closed and folder.is_dir()]
     if not folders:
         print("Nothing to clean up: no Not interested, Withdrawn, or Archived job you never "
               f"applied for has a folder in {root}")
         return
     for folder, _, status in folders:
         print(f"  {status.replace('_', ' ').capitalize():<14}  {folder.relative_to(root)}")
-    try:
-        answer = input(f"Delete these {plural(len(folders), 'folder')} "
-                       "and everything in them? This can't be undone. (Y/N) ")
-    except EOFError:
-        answer = ""
-    if answer.strip().casefold() not in ("y", "yes"):
+    if not confirmed(f"Delete these {plural(len(folders), 'folder')} and everything in them? "
+                     "This can't be undone."):
         print("Nothing deleted")
         return
     # A job may have moved on (in the tracker, say) while you were deciding: keep its folder.
@@ -58,3 +57,9 @@ def clean_up() -> None:
         if not any(folder.parent.iterdir()):
             folder.parent.rmdir()   # the company's folder, now empty
     print(f"Deleted {plural(deleted, 'folder')}")
+
+
+def _job_id(folder) -> int | None:
+    """The job id a job folder's name ends with ("data-analyst-42"), or None."""
+    tail = folder.name.rpartition("-")[2]
+    return int(tail) if tail.isascii() and tail.isdecimal() else None

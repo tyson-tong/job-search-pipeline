@@ -8,8 +8,8 @@ from .. import db
 from ..db import PURSUING, SCORABLE, fetch_job
 from ..llm import complete, parse_json
 from ..settings import matching_weights
-from ..text import words
-from .cvs import check_cv_length, chosen_sources, cv_digest, job_prompt
+from ..text import sha256, words
+from .cvs import check_cv_length, chosen_sources, job_prompt
 
 # Bump when the stored assessment shape changes.
 ASSESSMENT_FORMAT = 2
@@ -151,7 +151,7 @@ def score_weights() -> dict[str, float]:
 def current_digests() -> dict[str, str]:
     """{CV: the digest of its text now}, for the CVs cvs in config/profile.toml names: a
     score whose cv_sha256 differs was made against an earlier version of that CV."""
-    return {variant: cv_digest(source) for variant, source in chosen_sources().items()}
+    return {variant: sha256(source) for variant, source in chosen_sources().items()}
 
 
 def stored_assessments(conn, job_id: int, weights: tuple[float, float]) -> list[dict]:
@@ -171,7 +171,7 @@ def _cvs_to_score(job_id: int, rescore: bool) -> dict[str, str]:
         raise RuntimeError(f"No job with database id {job_id}")
     sources = {variant: source for variant, source in chosen_sources().items()
                if variant not in assessed
-               or (rescore and assessed[variant] != cv_digest(source))}
+               or (rescore and assessed[variant] != sha256(source))}
     if sources and status[0] not in SCORABLE:
         if assessed:   # scored before it was closed: it keeps what it has
             return {}
@@ -196,7 +196,7 @@ def _assess(job: dict, variant: str, source: str, weights: tuple[float, float]) 
         # A score stands until the CV changes, so saving this would fix it at 0.
         raise RuntimeError(f"The LLM listed no requirements for CV {variant!r}; nothing "
                            "was saved, so the job can be scored again")
-    return _record(variant, cv_digest(source), items, str(result.get("rationale") or ""),
+    return _record(variant, sha256(source), items, str(result.get("rationale") or ""),
                    model, weights)
 
 

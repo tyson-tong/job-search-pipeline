@@ -13,7 +13,7 @@ from .factcheck import check_letter
 from .matching import best_variant, match_job
 from .paths import job_directory
 from .research import research
-from .review import record_run, revise, write_review
+from .review import Reviewer, record_run, revise, write_review
 from .tailoring import load_source
 
 # Higher than the other LLM calls': at the default, letters read flat and alike. The fact
@@ -112,10 +112,10 @@ def write_letter(job_id: int, variant: str | None = None,
     letter, model = _draft(job, cv_for_llm, sources)
     first = check_letter(letter, source_cv, job, sources)
 
-    revised = revise(
-        letter, first, lambda draft: _review(job, cv_for_llm, draft, sources),
-        lambda answer: str(answer.get("cover_letter") or "").strip() or None,
-        lambda revision: check_letter(revision, source_cv, job, sources), notes)
+    revised = revise(letter, first, Reviewer(
+        review=lambda draft: _review(job, cv_for_llm, draft, sources),
+        revision_of=lambda answer: str(answer.get("cover_letter") or "").strip() or None,
+        check=lambda revision: check_letter(revision, source_cv, job, sources)))
 
     letter, (errors, warnings) = revised.draft, revised.checked
     target_dir = output_dir or job_directory(job_id, job)
@@ -138,11 +138,12 @@ def write_letter(job_id: int, variant: str | None = None,
     unwritten = (["", "## The letter (not written as cover-letter.docx until the errors are "
                   "fixed)", "", letter] if errors else [])
     write_review(target_dir / "COVER_LETTER_REVIEW.md",
-                 f"Cover letter review: {job['company'] or 'Unknown employer'} — {job['title']} "
-                 f"(job id {job_id})",
-                 [reason.replace("CV variant", "Written from CV variant"), "",
-                  read_it + " The automated check below catches invented numbers and names but "
-                  "is not exhaustive."],
-                 notes, errors, warnings, revised.critique, "letter", unwritten)
+                 title=f"Cover letter review: {job['company'] or 'Unknown employer'} — "
+                 f"{job['title']} (job id {job_id})",
+                 intro=[reason.replace("CV variant", "Written from CV variant"), "",
+                        read_it + " The automated check below catches invented numbers and "
+                        "names but is not exhaustive."],
+                 notes=notes + revised.notes, checked=revised.checked,
+                 critique=revised.critique, what="letter", extra=unwritten)
     record_run(job_id, "cover-letter", bool(errors), model)
     return target, errors, warnings

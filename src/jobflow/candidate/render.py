@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 import yaml
 from pypdf import PdfReader
@@ -192,14 +193,23 @@ class _Renderer:
         return self._last[1]
 
 
-def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
-        warnings: list[str], keep_pdf: Path | None = None,
-        cv_folder: Path | None = None) -> tuple[dict, list[dict], Path | None]:
+class Fitted(NamedTuple):
+    """What fit made: the CV, the bullets cut, the final PDF (if it was kept), and warnings
+    about its length or layout."""
+    cv: dict
+    cut: list[dict]
+    pdf: Path | None
+    warnings: list[str]
+
+
+def fit(job: dict, source_doc: dict, cv: dict, name: str, *, max_pages: int,
+        keep_pdf: Path | None = None, cv_folder: Path | None = None) -> Fitted:
     """Render the CV with RenderCV and, if it runs past max_pages, cut the fewest of its
     least relevant bullets that makes it fit. Only removal, so the fact check still holds.
-    Returns the CV, the bullets cut, and the final PDF, copied to keep_pdf if given.
-    cv_folder, your CV's, is where a photo it names is found."""
+    The final PDF is copied to keep_pdf if given. cv_folder, your CV's, is where a photo it
+    names is found."""
     pages_text = plural(max_pages, "page")
+    warnings: list[str] = []
     with tempfile.TemporaryDirectory() as scratch:
         renderer = _Renderer(Path(scratch) / name, source_doc)
         if cv_folder:
@@ -234,4 +244,4 @@ def fit(job: dict, source_doc: dict, cv: dict, name: str, max_pages: int,
                             "whole to the next page. Cutting a few of its bullets would pull "
                             "it up.")
         kept = shutil.copy(pdf, keep_pdf / pdf.name) if keep_pdf else None
-    return cv, cut, Path(kept) if kept else None
+    return Fitted(cv, cut, Path(kept) if kept else None, warnings)

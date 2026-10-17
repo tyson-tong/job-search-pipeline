@@ -3,11 +3,11 @@ parameters, employer and title keys, fingerprints, and how alike two ads are.
 Pure functions, used when saving postings (store.py) and finding similar jobs (similar.py)."""
 from __future__ import annotations
 
-import hashlib
 import re
+from typing import NamedTuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from ..text import words
+from ..text import sha256, words
 from .options import LINKEDIN_COUNTRIES
 from .sources import Posting
 
@@ -101,10 +101,6 @@ def title_key(title: object) -> str:
     return words(title)
 
 
-def _digest(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
-
-
 def company_key(company: str | None) -> str:
     return " ".join(w for w in simplify(company).split() if w not in COMPANY_NOISE)
 
@@ -123,7 +119,7 @@ def fingerprint(posting: Posting) -> str | None:
     description = simplify(posting.description)[:1500]
     if not (company and title and description):
         return None
-    return _digest("|".join((company, title, simplify(posting.location), description)))
+    return sha256("|".join((company, title, simplify(posting.location), description)))
 
 
 def description_words(text: str | None) -> set[str]:
@@ -171,21 +167,27 @@ def same_country(a: str | None, b: str | None) -> bool:
     return not (a and b and a != b)
 
 
-def is_same_ad(title_a: str | None, description_a: str | None,
-               title_b: str | None, description_b: str | None,
-               country_a: str | None = None, country_b: str | None = None,
-               location_a: str | None = None, location_b: str | None = None) -> bool:
+class Ad(NamedTuple):
+    """What the merge rules compare of a posting besides its keys, passed whole: written out
+    one by one, a swapped location and country would quietly change which jobs merge."""
+    title: str | None
+    description: str | None
+    location: str | None = None
+    country: str | None = None
+
+
+def is_same_ad(a: Ad, b: Ad) -> bool:
     """True when two postings carry the same ad under the same title (ignoring case and
     punctuation), whoever posted it, in the same city of the same country. An unknown
     country, or a location naming no city, doesn't block a match."""
-    if not same_country(country_a, country_b) or not same_place(location_a, location_b):
+    if not same_country(a.country, b.country) or not same_place(a.location, b.location):
         return False
-    if not title_key(title_a) or title_key(title_a) != title_key(title_b):
+    if not title_key(a.title) or title_key(a.title) != title_key(b.title):
         return False
-    if min(len(description_words(description_a)),
-           len(description_words(description_b))) < SAME_AD_MIN_WORDS:
+    if min(len(description_words(a.description)),
+           len(description_words(b.description))) < SAME_AD_MIN_WORDS:
         return False
-    return description_similarity(description_a, description_b) >= SAME_AD
+    return description_similarity(a.description, b.description) >= SAME_AD
 
 
 def similarity_level(title: float, description: float) -> str:
@@ -224,7 +226,7 @@ def identity(posting: Posting) -> tuple[str, str | None]:
     if posting.source_id:
         return f"{posting.source}:{posting.source_id}", url
     if url:
-        return f"url:{_digest(url)}", url
+        return f"url:{sha256(url)}", url
     parts = "|".join((simplify(posting.company), title_key(posting.title),
                       simplify(posting.location)))
-    return f"fingerprint:{_digest(parts + '|' + simplify(posting.description)[:1500])}", None
+    return f"fingerprint:{sha256(parts + '|' + simplify(posting.description)[:1500])}", None

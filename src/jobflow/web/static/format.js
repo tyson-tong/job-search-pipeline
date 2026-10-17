@@ -8,6 +8,8 @@ export const SITE_NAMES = { linkedin: "LinkedIn", indeed: "Indeed", seek: "Seek"
 export const safeUrl = (url) => /^https?:\/\//i.test(url || "") ? url : null;
 export const label = (status) => LABELS[status] || status;
 export const fmtDate = (value) => value ? String(value).slice(0, 10) : "";
+// "1 job", "2 jobs".
+export const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 // estimated: the ad gave no pay period, so it was guessed from the amount ("~").
 export function fmtSalary(min, max, currency, estimated = false) {
   if (min == null) return "";
