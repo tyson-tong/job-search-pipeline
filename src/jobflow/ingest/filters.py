@@ -2,6 +2,7 @@
 title terms and employers, salary, job type, work arrangement, and a widened date window."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, timedelta
 from typing import NamedTuple
 
@@ -95,6 +96,12 @@ def local_filters(site: str, search: Search) -> list[str]:
     if site in POSTED_WITHIN and site_window(site, search.posted_within_days)[1]:
         active.append("posted_date")
     return active
+
+
+def search_filter(search: Search, site: str,
+                  today: date | None = None) -> Callable[[Posting], Filtered | None]:
+    """filter_reason for one search's postings from one site, as save_run takes it."""
+    return lambda posting: filter_reason(posting, search, site, today)
 
 
 def filter_reason(posting: Posting, search: Search, site: str,

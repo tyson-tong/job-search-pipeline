@@ -16,8 +16,10 @@ export const AUTO_REFRESH_MS = 3 * 60 * 1000;
 // Save so changes made elsewhere in the meantime are caught instead of overwritten.
 // statuses: My jobs' chosen statuses; null until recalled, or set to the server's defaults.
 export const state = { view: "jobs", statuses: null, jobs: [], summary: null,
-  pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null, saving: false,
-  // Rows ticked for a bulk change (Inbox triage; Filtered, Not interested, and Archived back to the Inbox); lastPicked anchors shift-click ranges.
+  pending: new Map(), versions: new Map(), detail: null, loadedAt: null, scoring: null,
+  saving: false,
+  // Rows ticked for a bulk change (Inbox triage; Filtered, Not interested, and Archived back
+  // to the Inbox); lastPicked anchors shift-click ranges.
   selected: new Set(), lastPicked: null,
   // Country and site filters: null for all, else the ticked ones (none ticked: no jobs); and
   // the countries and sites among this tab's jobs, with counts.
@@ -25,12 +27,8 @@ export const state = { view: "jobs", statuses: null, jobs: [], summary: null,
   // Paging splits the rows the filters returned (the filters themselves cover every job);
   // pageKey is the query they came from, so a new query starts again at page 1.
   page: 0, pageSize: 50, pageKey: null };
-// A job still in the Inbox can only be triaged; the other statuses come after Interested.
-export const TRIAGE_STATUSES = ["new", "interested", "not_interested"];
-// Jobs at these statuses can only be triaged, or go back to the Inbox.
-const UNTRIAGED_STATUSES = ["new", "not_interested", "filtered", "archived"];
-// My jobs holds only jobs you picked as Interested and what followed; these never show there.
-export const NOT_MY_JOBS = ["new", "not_interested", "filtered", "archived"];
+// The status groups (which statuses My jobs shows, which a job can move to) come from the
+// server, with the summary (state.summary: untriaged, triage_choices, pursuing, ...; db.py).
 const PAGE_SIZES = [5, 10, 20, 50, 100];
 // The sort menu, which the remembered filters include.
 export const sortInput = document.getElementById("sort");
@@ -40,8 +38,9 @@ export const TAB_STATUS = { inbox: "new", filtered: "filtered", not_interested: 
 // Tabs whose jobs you can send back to the Inbox by ticking several at once.
 export const RETURN_TABS = ["filtered", "not_interested", "archived"];
 // The one-click statuses in each tab's Status column; My jobs has a menu instead.
-export const QUICK_STATUSES = { inbox: ["interested", "not_interested"], filtered: ["interested", "not_interested"],
-  not_interested: ["interested"], archived: ["interested"] };
+export const QUICK_STATUSES = { inbox: ["interested", "not_interested"],
+  filtered: ["interested", "not_interested"], not_interested: ["interested"],
+  archived: ["interested"] };
 
 // ---- Helpers -------------------------------------------------------------------------
 export function el(tag, attrs = {}, ...children) {
@@ -77,14 +76,20 @@ export async function api(path, options = {}) {
   return data;
 }
 export function remember() {
-  try { localStorage.setItem("jobflow.filters", JSON.stringify({ statuses: [...state.statuses],
-    sort: sortInput.value, sites: state.sites && [...state.sites], view: state.view, pageSize: state.pageSize })); } catch (e) { /* optional */ }
+  try {
+    localStorage.setItem("jobflow.filters", JSON.stringify({ statuses: [...state.statuses],
+      sort: sortInput.value, sites: state.sites && [...state.sites], view: state.view,
+      pageSize: state.pageSize }));
+  } catch (e) { /* optional */ }
 }
+// The filters remembered from your last visit; call once state.summary is loaded.
 export function recall() {
   try {
     const saved = JSON.parse(localStorage.getItem("jobflow.filters") || "null");
     if (!saved) return;
-    const statuses = Array.isArray(saved.statuses) ? saved.statuses.filter((s) => !NOT_MY_JOBS.includes(s)) : [];
+    // My jobs holds only jobs you picked as Interested and what followed.
+    const statuses = Array.isArray(saved.statuses)
+      ? saved.statuses.filter((s) => !state.summary.untriaged.includes(s)) : [];
     if (Array.isArray(saved.statuses)) state.statuses = new Set(statuses);
     if (saved.sort) sortInput.value = saved.sort;
     if (Array.isArray(saved.sites)) state.sites = new Set(saved.sites.filter((s) => s in SITE_NAMES));
@@ -99,12 +104,15 @@ export function statusSelect(job) {
   const value = current(job, "status");
   // A new, not interested, filtered, or archived job can only be triaged (or go back to
   // the Inbox); any other doesn't go back to New.
-  const choices = UNTRIAGED_STATUSES.includes(job.status) ? TRIAGE_STATUSES
-    : state.summary.editable.filter((s) => s !== "new");
+  const { untriaged, triage_choices: triage, editable } = state.summary;
+  const choices = untriaged.includes(job.status) ? triage : editable.filter((s) => s !== "new");
   const options = choices.map((s) => el("option", { value: s, selected: s === value }, label(s)));
   // Statuses only jobflow sets: shown, but not a choice.
-  if (!choices.includes(value)) options.unshift(el("option", { value, selected: true, disabled: true }, label(value)));
-  return el("select", { "aria-label": "Status", onchange: (event) => setPending(job, "status", event.target.value) }, options);
+  if (!choices.includes(value)) {
+    options.unshift(el("option", { value, selected: true, disabled: true }, label(value)));
+  }
+  return el("select", { "aria-label": "Status",
+    onchange: (event) => setPending(job, "status", event.target.value) }, options);
 }
 // Where each page starts in state.jobs: every pageSize rows, except that similar jobs, and
 // the same ad in other countries, stay together on one page (so a page can run longer).
@@ -147,8 +155,11 @@ export function stagePending(job, field, value) {
 }
 export function renderSaveBar() {
   const n = state.pending.size;
-  const loaded = state.loadedAt ? `Updated ${state.loadedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
-  document.getElementById("unsaved").textContent = n ? `${n} unsaved change${n > 1 ? "s" : ""}` : loaded;
+  const time = state.loadedAt
+    && state.loadedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const loaded = time ? `Updated ${time}` : "";
+  document.getElementById("unsaved").textContent =
+    n ? `${n} unsaved change${n > 1 ? "s" : ""}` : loaded;
   document.getElementById("save").disabled = !n;
   document.getElementById("discard").disabled = !n;
   // The detail panel covers the header, so it has its own Save button.
@@ -192,10 +203,12 @@ async function resolveConflicts(conflicts) {
   const lines = conflicts.map((c) => `• #${c.id} ${c.title}${c.company ? ` (${c.company})` : ""}: `
     + `now ${label(c.status)}${c.follow_up_on ? `, follow up ${fmtDate(c.follow_up_on)}` : ""}`
     + (c.changed_via ? `, last changed via ${c.changed_via}` : ""));
-  const overwrite = confirm(`${conflicts.length === 1 ? "This job has" : "These jobs have"} changed since you `
-    + `loaded ${conflicts.length === 1 ? "it" : "them"}, so nothing was saved:\n\n${lines.join("\n")}\n\n`
+  const one = conflicts.length === 1;
+  const overwrite = confirm(`${one ? "This job has" : "These jobs have"} changed since you `
+    + `loaded ${one ? "it" : "them"}, so nothing was saved:\n\n${lines.join("\n")}\n\n`
     + "OK: save your changes anyway (replacing the status and follow-up; notes are added).\n"
-    + "Cancel: keep your drafts and load the latest data to review; Save again to save them over it.");
+    + "Cancel: keep your drafts and load the latest data to review; Save again to save "
+    + "them over it.");
   if (overwrite) return save(true);
   // You've now seen these changes: the next Save goes over them, not into this conflict again.
   conflicts.forEach((c) => { if (state.versions.has(c.id)) state.versions.set(c.id, c.version); });

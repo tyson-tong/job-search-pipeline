@@ -92,7 +92,7 @@ def test_linkedin_and_indeed_inputs_cover_each_term_and_place():
     assert len(urls) == 2 * 5 and linkedin.run_input["limitPerSource"] == 40
     assert parse_qs(urlsplit(urls[0]).query) == {
         "keywords": ["data analyst"], "location": ["Sydney, Australia"],
-        "f_TPR": ["r108000"], "distance": ["12"]}
+        "f_TPR": ["r90000"], "distance": ["12"]}
     assert parse_qs(urlsplit(urls[2]).query)["location"] == ["New Zealand"]
     # Indeed: a run per term and place.
     indeed = plan(searches(), "analyst", "indeed")
@@ -308,40 +308,53 @@ def test_a_run_that_returns_all_it_may_is_flagged():
     assert not linkedin.hit_cap([{"inputUrl": first}] * 39 + [{"inputUrl": second}] * 39)
 
 
-@pytest.mark.parametrize("result, message", [
-    (_run("FAILED", message="bad input"), "ended with FAILED: bad input"),
-    (_run("RUNNING"), "still running after"),  # partial results must not be imported
-])
-def test_unsuccessful_runs_are_recorded_not_imported(monkeypatch, result, message):
-    # Importing a failed or partial run's results would save an incomplete set as if it were
-    # complete; not recording it hides the failure.
+def test_a_failed_run_is_recorded_not_imported(monkeypatch):
+    # Not recording a failed run hides the failure; its search and input say what to fix.
     import jobflow.ingest.store as store
     recorded = []
-    monkeypatch.setattr(store, "record_failed_run", lambda **k: recorded.append(k))
+    monkeypatch.setattr(store, "record_failed_run",
+                        lambda record, **k: recorded.append((record, k["status"])))
     monkeypatch.setattr(store, "save_run", lambda *a, **k: pytest.fail("imported"))
     planned = plan(searches(), "counsel")[0]
-    client = FakeClient(result)
-    with pytest.raises(RuntimeError, match=message):
-        apify.run_search(client, planned, timedelta(minutes=5))
-    assert (recorded[0]["search_name"], recorded[0]["run_input"]) == ("counsel",
-                                                                  planned.run_input)
-    # A run still going would keep charging for results never imported: it is stopped.
-    assert client.aborted == (["r1"] if result.status == "RUNNING" else [])
+    with pytest.raises(RuntimeError, match="ended with FAILED: bad input"):
+        apify.run_search(FakeClient(_run("FAILED", message="bad input")), planned,
+                         timedelta(minutes=5))
+    (record, status), = recorded
+    assert (record.search_name, record.run_input, status) == ("counsel", planned.run_input,
+                                                              "FAILED")
+
+
+@pytest.mark.parametrize("status", ["RUNNING", "TIMED-OUT"])
+def test_a_run_stopped_part_way_has_its_results_imported_and_is_flagged(monkeypatch, status):
+    # What a run found before max_wait is paid for: it was thrown away. Recorded as
+    # succeeded, the jobs it left behind would go unseen.
+    import jobflow.ingest.store as store
+    saved = []
+    monkeypatch.setattr(store, "save_run", lambda record, items, **k: saved.append(
+        (record, items)) or 1)
+    client = FakeClient(_run(status), [{"viewJobLink": "/viewjob?jk=1", "title": "x"}])
+    with pytest.raises(apify.StoppedEarly, match="1 result it found were imported"):
+        apify.run_search(client, plan(searches(), "counsel")[0], timedelta(minutes=5))
+    (record, items), = saved
+    assert record.partial and len(items) == 1
+    # One still going would keep charging after it: it is stopped.
+    assert client.aborted == (["r1"] if status == "RUNNING" else [])
 
 
 def test_a_run_whose_import_fails_is_not_recorded_as_succeeded(monkeypatch):
     # A run recorded as succeeded though its jobs were never saved hides the loss of a paid run.
     import jobflow.ingest.store as store
     recorded = []
-    monkeypatch.setattr(store, "record_failed_run", lambda **k: recorded.append(k))
+    monkeypatch.setattr(store, "record_failed_run",
+                        lambda record, **k: recorded.append((record, k["status"])))
 
     def save_run(*args, **kwargs):
         raise RuntimeError("numeric field overflow")
     monkeypatch.setattr(store, "save_run", save_run)
     with pytest.raises(RuntimeError, match="overflow"):
         apify.run_search(FakeClient(_run()), plan(searches(), "counsel")[0], timedelta(minutes=5))
-    assert (recorded[0]["run_id"], recorded[0]["dataset_id"], recorded[0]["status"]) == (
-        "r1", "d1", "IMPORT_FAILED")
+    (record, status), = recorded
+    assert (record.run_id, record.dataset_id, status) == ("r1", "d1", "IMPORT_FAILED")
 
 
 def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
@@ -358,7 +371,7 @@ def test_one_failed_run_does_not_stop_the_rest(monkeypatch, capsys):
     monkeypatch.setattr(apify, "run_search", fake_run)
     import jobflow.ingest.store as store
     import jobflow.ingest.upkeep as upkeep
-    monkeypatch.setattr(store, "failed_imports", lambda: [])
+    monkeypatch.setattr(store, "failed_imports", lambda *args: [])
     monkeypatch.setattr(upkeep, "archive_old_jobs", lambda: 0)
     monkeypatch.setattr(upkeep, "prune_sightings", lambda: 0)
     monkeypatch.setattr(upkeep, "prune_archived_jobs", lambda: 0)
@@ -447,6 +460,25 @@ def test_excluded_titles_and_employers_keep_jobs_out_of_the_inbox():
     assert judged("Quant Analyst", "Acmera") is None and judged("Quant Analyst", None) is None
 
 
+def test_titles_in_any_script_keep_their_words():
+    # Titles were cut to the letters a-z: a Chinese title had none at all, so it could never
+    # merge with another copy or show similar jobs, a Chinese term couldn't be excluded,
+    # and "Ingénieur" was "ing nieur".
+    from jobflow.ingest.dedupe import match_key, title_key
+
+    def posting(title):
+        return normalise({"title": title, "companyName": "Acme"})
+    analyst, intern = posting("數據分析師"), posting("數據分析實習生")
+    assert title_key(analyst.title) and title_key(analyst.title) != title_key(intern.title)
+    assert match_key(analyst) and match_key(analyst) != match_key(intern)
+    search = parse_config(CONFIG.replace("max_results = 40", "max_results = 40\n"
+                                         'exclude_title_terms = ["實習", "Ingénieur"]'))[0]
+    # Chinese is written without spaces: the term is found among the title's characters.
+    assert why(intern, search, "linkedin") == "title contains '實習'"
+    assert why(analyst, search, "linkedin") is None
+    assert why(posting("INGÉNIEUR Données"), search, "linkedin") == "title contains 'Ingénieur'"
+
+
 def test_a_term_or_city_listed_twice_is_searched_and_paid_for_once():
     # A term or city listed twice in other capitals would be searched, and paid for, twice.
     searches = parse_config('[[search]]\nname = "a"\nsites = ["indeed"]\n'
@@ -473,8 +505,9 @@ def test_runs_that_could_outlast_the_daily_job_are_not_started(monkeypatch):
     monkeypatch.setattr(apify, "run_search", slow_run)
     import jobflow.ingest.store as store
     import jobflow.ingest.upkeep as upkeep
-    monkeypatch.setattr(store, "record_failed_run", lambda **k: recorded.append(k["status"]))
-    monkeypatch.setattr(store, "failed_imports", lambda: [])
+    monkeypatch.setattr(store, "record_failed_run",
+                        lambda record, **k: recorded.append(k["status"]))
+    monkeypatch.setattr(store, "failed_imports", lambda *args: [])
     upkept = []
     monkeypatch.setattr(upkeep, "archive_old_jobs", lambda: upkept.append(1) or 0)
     monkeypatch.setattr(upkeep, "prune_sightings", lambda: 0)

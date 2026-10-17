@@ -55,6 +55,22 @@ NOT_PLACE_WORDS = ({"nsw", "vic", "qld", "tas", "act", "wa", "sa", "nt", "area",
                     "england", "scotland"}
                    | {word for name in LINKEDIN_COUNTRIES.values()
                       for word in name.casefold().split()})
+# Words many different places' names share ("North Sydney" and "North Melbourne", "Port
+# Melbourne" and "Port Adelaide", "San Francisco" and "San Jose"): shared, they don't make two
+# locations one place, or one employer's ad for two such offices would merge. A location named
+# by these alone ("Central") still counts as a place.
+GENERIC_PLACE_WORDS = {"north", "south", "east", "west", "upper", "lower", "inner", "outer",
+                       "port", "park", "hill", "hills", "mount", "beach", "bay", "point",
+                       "heights", "valley", "island", "lake", "river", "creek", "harbour",
+                       "harbor", "gardens", "grove", "springs", "ridge", "village", "san",
+                       "santa", "saint", "fort", "old"}
+# Australian states and territories, by their codes and names: two locations in different
+# ones are two places, even when their suburbs share a name (Richmond VIC and Richmond NSW).
+AU_STATES = {"nsw": "nsw", "new south wales": "nsw", "vic": "vic", "victoria": "vic",
+             "qld": "qld", "queensland": "qld", "tas": "tas", "tasmania": "tas", "act": "act",
+             "australian capital territory": "act", "wa": "wa", "western australia": "wa",
+             "sa": "sa", "south australia": "sa", "nt": "nt", "northern territory": "nt"}
+_AU_STATE = re.compile(r"\b(" + "|".join(sorted(AU_STATES, key=len, reverse=True)) + r")\b")
 
 
 def canonical_url(value: str | None) -> str | None:
@@ -179,14 +195,26 @@ def similarity_level(title: float, description: float) -> str:
 
 
 def place_words(location: str | None) -> set[str]:
-    """City and suburb words in a location, e.g. {"sydney"} for "Sydney NSW 2000"."""
-    return {w for w in re.findall(r"[a-z]{3,}", (location or "").casefold())
-            if w not in NOT_PLACE_WORDS}
+    """City and suburb words in a location, e.g. {"sydney"} for "Sydney NSW 2000" and for
+    "North Sydney NSW": generic words such as "north" only when the location has no other."""
+    found = {w for w in re.findall(r"[a-z]{3,}", (location or "").casefold())
+             if w not in NOT_PLACE_WORDS}
+    return found - GENERIC_PLACE_WORDS or found
+
+
+def au_states(location: str | None) -> set[str]:
+    """The Australian states a location names, by code: {"vic"} for "Richmond VIC"."""
+    return {AU_STATES[m] for m in _AU_STATE.findall((location or "").casefold())}
 
 
 def same_place(a: str | None, b: str | None) -> bool:
-    """False only when both locations name places and none are shared (e.g. Sydney vs
-    Melbourne). Unknown or country-only locations never block a match."""
+    """False only when both locations name places and none are shared (Sydney vs
+    Melbourne, North Sydney vs North Melbourne), or both name Australian states and they
+    differ (Richmond VIC vs Richmond NSW). Unknown or country-only locations never block a
+    match."""
+    states_a, states_b = au_states(a), au_states(b)
+    if states_a and states_b and not states_a & states_b:
+        return False
     words_a, words_b = place_words(a), place_words(b)
     return not words_a or not words_b or bool(words_a & words_b)
 

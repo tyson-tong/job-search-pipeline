@@ -89,3 +89,10 @@ UPDATE jobs SET filter_kind = CASE
 -- Never read: the first copy's site ID is in canonical_key (as each copy's is in
 -- job_sources.source_key).
 ALTER TABLE jobs DROP COLUMN IF EXISTS source_job_id;
+
+-- Migration ID: 12
+-- Titles keep every script's letters now (text.words), so a Chinese title has a title at
+-- all and "Ingénieur" stays one word: the keys of jobs whose title has a letter outside a-z
+-- are worked out again, in the follow-up.
+-- Then: backfill_unicode_title_keys
+SELECT 1;

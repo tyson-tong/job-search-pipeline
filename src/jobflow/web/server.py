@@ -116,7 +116,9 @@ def make_handler(token: str, port: int):
                     return self._json(queries.list_jobs(queries.parse_filters(query)))
                 if url.path == "/api/export.csv":
                     # With id=..., only those jobs: the rows on the page being viewed.
-                    ids = ({int(i) for i in query["id"] if i.isdigit()} if "id" in query else None)
+                    # isascii too: "²" passes isdecimal() alone, and int() can't read it.
+                    ids = ({int(i) for i in query["id"] if i.isascii() and i.isdecimal()}
+                           if "id" in query else None)
                     body = export.export_csv(queries.parse_filters(query), ids).encode()
                     name = f"jobs-{'page-' if ids is not None else ''}{today()}.csv"
                     return self._send(200, body, "text/csv; charset=utf-8",

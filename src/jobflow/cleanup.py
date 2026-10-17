@@ -6,13 +6,11 @@ import shutil
 from . import db, settings
 from .text import plural
 
-# The statuses whose jobs' output folders clean-up deletes, with how it names them. Only a
-# job moved to Not interested from My jobs has a folder: Inbox jobs are never worked on.
-# Such a job is archived 2 weeks later, still with its folder. A job you applied for keeps
-# its folder whatever its status: it holds the CV and letter you sent, for a follow-up or
-# for applying again. (Rejected and Declined jobs always count as applied for.)
-CLEAN_UP_STATUSES = {"not_interested": "Not interested", "withdrawn": "Withdrawn",
-                     "archived": "Archived"}
+# Of the statuses whose jobs' folders clean-up deletes (db.CLEAN_UP_STATUSES), only a job
+# moved to Not interested from My jobs has a folder: Inbox jobs are never worked on. Such a
+# job is archived 2 weeks later, still with its folder. A job you applied for keeps its
+# folder whatever its status: it holds the CV and letter you sent, for a follow-up or for
+# applying again. (Rejected and Declined jobs always count as applied for.)
 
 
 def clean_up() -> None:
@@ -28,7 +26,7 @@ def clean_up() -> None:
                 "AND NOT EXISTS (SELECT 1 FROM applications a "
                 "                WHERE a.job_id = j.id AND a.applied_at IS NOT NULL) "
                 "AND (%s::bigint[] IS NULL OR id = ANY(%s)) ORDER BY id",
-                (list(CLEAN_UP_STATUSES), ids, ids)).fetchall()
+                (list(db.CLEAN_UP_STATUSES), ids, ids)).fetchall()
 
     # A job's folder is output/<company>/<role>-<job id>, found by its id, so a folder is
     # still found if the company or title has changed since it was written.
@@ -39,7 +37,7 @@ def clean_up() -> None:
               f"applied for has a folder in {root}")
         return
     for folder, _, status in folders:
-        print(f"  {CLEAN_UP_STATUSES[status]:<14}  {folder.relative_to(root)}")
+        print(f"  {status.replace('_', ' ').capitalize():<14}  {folder.relative_to(root)}")
     try:
         answer = input(f"Delete these {plural(len(folders), 'folder')} "
                        "and everything in them? This can't be undone. (Y/N) ")

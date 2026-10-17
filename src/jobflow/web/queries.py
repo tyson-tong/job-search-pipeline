@@ -9,17 +9,30 @@ from datetime import datetime, timedelta
 from psycopg.rows import dict_row
 
 from .. import db
-from ..candidate.matching import ASSESSMENT_FORMAT, PURSUING, score_sql, score_weights
-from ..db import CLOSED_STATUSES, STATUSES
+from ..candidate.matching import (
+    ASSESSMENT_FORMAT,
+    count_needing_match,
+    current_digests,
+    outdated_scores,
+    score_sql,
+    score_weights,
+)
+from ..db import (
+    CLOSED_STATUSES,
+    DEFAULT_MY_JOBS,
+    EDITABLE_STATUSES,
+    IN_PROGRESS,
+    PURSUING,
+    STATUSES,
+    TRIAGE_CHOICES,
+    UNTRIAGED,
+)
 from ..ingest.options import CURRENCIES, LINKEDIN_COUNTRIES, USD_PER_UNIT
-from ..ingest.similar import IN_PROGRESS, similar_jobs
+from ..ingest.similar import similar_jobs
 from ..ingest.store import RECENT_RUNS, recent_capped_runs, recent_failed_runs
 from ..settings import DEFAULT_WEIGHTS, today
 from .grouping import group_duplicates
 
-DEFAULT_STATUSES = ["interested", "applied", "interviewing", "offered", "accepted"]
-# Statuses a person can choose; "filtered" and "archived" are only set by jobflow itself.
-EDITABLE_STATUSES = [s for s in STATUSES if s not in ("filtered", "archived")]
 # The date the Posted column shows: the posted date, else the date first seen.
 POSTED_DATE = "coalesce(j.posted_at, j.first_seen_at::date)"
 SORTS = {
@@ -55,7 +68,6 @@ VERSION_SQL = """(extract(epoch from greatest(j.status_updated_at,
 def _digests_now() -> dict[str, str]:
     """Each named CV's digest now, to tell which scores are from an earlier version of it;
     empty when the CVs can't be read (the page explains that problem separately)."""
-    from ..candidate.matching import current_digests
     try:
         return current_digests()
     except Exception:
@@ -104,7 +116,7 @@ POSTED_OLDER_THAN = 30
 
 def parse_filters(params: dict[str, list[str]]) -> dict:
     """Query-string filters -> validated values (unknown or malformed values are ignored)."""
-    statuses = [s for s in params.get("status", []) if s in STATUSES] or DEFAULT_STATUSES
+    statuses = [s for s in params.get("status", []) if s in STATUSES] or list(DEFAULT_MY_JOBS)
     sort = (params.get("sort") or ["score"])[0]
     posted = (params.get("posted") or [""])[0]
     try:
@@ -256,7 +268,6 @@ def summary() -> dict:
     # Scoring reads your CV files; a missing CV folder shouldn't break the rest of the page.
     # Only that is reported as a scoring problem: a database error fails the request, and
     # the page shows it as one.
-    from ..candidate.matching import count_needing_match, current_digests, outdated_scores
     digests: dict[str, str] | None = None
     scoring_problem: str | None = None
     try:
@@ -274,9 +285,11 @@ def summary() -> dict:
         outdated = {"jobs": len({job_id for job_id, _ in pairs}), "calls": len(pairs)}
     return {"counts": {s: counts.get(s, 0) for s in STATUSES}, "overdue": overdue,
             "last_import": last_import, "failed_runs": failed_runs, "capped_runs": capped_runs,
-            "statuses": list(STATUSES), "editable": EDITABLE_STATUSES,
-            "default_statuses": DEFAULT_STATUSES, "in_progress": list(IN_PROGRESS),
-            "pursuing": list(PURSUING),
+            # The status groups the page uses (see db.py).
+            "statuses": list(STATUSES), "editable": list(EDITABLE_STATUSES),
+            "default_statuses": list(DEFAULT_MY_JOBS), "in_progress": list(IN_PROGRESS),
+            "pursuing": list(PURSUING), "untriaged": list(UNTRIAGED),
+            "triage_choices": list(TRIAGE_CHOICES),
             "cv_variants": variants, "unscored": unscored,
             "outdated": outdated,
             "scoring_problem": scoring_problem, "max_rows": MAX_ROWS, "max_note": MAX_NOTE,

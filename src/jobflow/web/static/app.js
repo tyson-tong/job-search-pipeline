@@ -2,7 +2,7 @@
 // paging, then the page's wiring and start. Ticking rows is in selection.js, scoring in
 // scoring.js, the job panel in detail.js, and the Searches tab in searches.js.
 import {
-  api, AUTO_REFRESH_MS, current, el, fill, NOT_MY_JOBS, page, pageStarts, QUICK_STATUSES, recall,
+  api, AUTO_REFRESH_MS, current, el, fill, page, pageStarts, QUICK_STATUSES, recall,
   remember, renderSaveBar, RETURN_TABS, save, setPending, sortInput, state, statusSelect,
   TAB_STATUS, toast, TOKEN,
 } from "./common.js";
@@ -142,7 +142,7 @@ function tabTotal(view) {
 }
 function renderStatusMenu() {
   const menu = document.getElementById("status-menu");
-  const all = state.summary.statuses.filter((s) => !NOT_MY_JOBS.includes(s));
+  const all = state.summary.statuses.filter((s) => !state.summary.untriaged.includes(s));
   fill(menu, [
     ...all.map((s) => el("label", {},
       el("input", { type: "checkbox", checked: state.statuses.has(s), onchange: (event) => {
@@ -431,11 +431,11 @@ document.addEventListener("click", (event) => {
     if (!menu.contains(event.target)) menu.open = false; });
 });
 (async () => {
+  // The summary first: the remembered filters are checked against its status groups.
+  try { state.summary = await api("/api/summary"); }
+  catch (error) { toast(error.message, true); return; }
   recall();
-  if (!state.statuses) {
-    try { state.statuses = new Set((await api("/api/summary")).default_statuses); }
-    catch (error) { toast(error.message, true); return; }
-  }
+  if (!state.statuses) state.statuses = new Set(state.summary.default_statuses);
   await refresh();
   try { state.scoring = await api("/api/scoring"); } catch (error) { return; }
   renderScoring();

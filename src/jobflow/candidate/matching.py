@@ -5,7 +5,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import db
-from ..db import fetch_job
+from ..db import PURSUING, SCORABLE, fetch_job
 from ..llm import complete, parse_json
 from ..settings import matching_weights
 from ..text import words
@@ -14,14 +14,6 @@ from .cvs import check_cv_length, chosen_sources, cv_digest, job_prompt
 # Bump when the stored assessment shape changes.
 ASSESSMENT_FORMAT = 2
 CREDIT = {"matched": 1.0, "partial": 0.5, "not_evidenced": 0.0}
-# The jobs you're pursuing: Score all jobs scores each against any CV it has no score for
-# (a CV added later too), Rescore edited CVs rescores them (skill-gaps reads their scores),
-# and tailor-cv and cover-letter score one they're named for. Each score is one LLM call
-# per CV.
-PURSUING = ("interested", "applied", "interviewing", "offered")
-# Every status a job can be scored in: those, and the Inbox's, which you can pick to score
-# to help you triage.
-SCORABLE = ("new", *PURSUING)
 
 MATCH_INSTRUCTIONS = (
     "List the job's requirements (skills, experience, qualifications). Mark each as "

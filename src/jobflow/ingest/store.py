@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -32,6 +32,44 @@ from .runs import country_from_location, search_url_country
 from .sources import Posting, normalise, seek_url
 
 JobFilter = Callable[[Posting], "Filtered | None"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class RunRecord:
+    """One Apify run as scraper_runs records it, whether it succeeded, failed, or was never
+    started: built once per run and passed whole, since several of its fields are IDs or
+    times that are easily swapped when written out one by one, storing a run that can't be
+    retried. posted_within_days is the window its search ran with (ingest
+    --posted-within-days may have widened it); partial, that Apify stopped the run before it
+    finished, so it may have left jobs behind."""
+    actor_id: str   # "site:actor"
+    run_id: str | None = None
+    dataset_id: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    cost_usd: float | None = None
+    search_name: str | None = None
+    run_input: dict | None = None
+    posted_within_days: int | None = None
+    partial: bool = False
+
+    @property
+    def site(self) -> str:
+        return self.actor_id.split(":", 1)[0]
+
+    def _row(self) -> dict:
+        """The record as query parameters, for the INSERTs below."""
+        return {"actor_id": self.actor_id, "run_id": self.run_id, "dataset_id": self.dataset_id,
+                "started_at": self.started_at, "finished_at": self.finished_at,
+                "cost_usd": self.cost_usd, "search_name": self.search_name,
+                "input": psycopg.types.json.Jsonb(self.run_input) if self.run_input else None,
+                "posted_within_days": self.posted_within_days, "partial": self.partial}
+
+
+# What scraper_runs.error says about a run Apify stopped before it finished, whose results
+# were imported (status PARTIAL): the tracker's header and jobflow status show it.
+PARTIAL_ERROR = ("stopped before it finished (it ran past APIFY_MAX_WAIT_MINUTES), so it may "
+                 "have left jobs behind; the results it found were imported")
 
 
 def wait_for_imports(conn) -> None:
@@ -215,27 +253,30 @@ def record_source(conn, job_pk: int, key: str, posting: Posting, url: str | None
         (key, job_pk, posting.source, url))
 
 
-def save_run(actor_id: str, run_id: str, dataset_id: str | None, jobs: list[dict], *,
-             started_at: datetime | None = None, finished_at: datetime | None = None,
-             cost_usd: float | None = None, search_name: str | None = None,
-             run_input: dict | None = None, job_filter: JobFilter | None = None,
+def save_run(record: RunRecord, jobs: list[dict], *, job_filter: JobFilter | None = None,
              country: str | None = None, hit_cap: bool = False) -> int:
+    """Save a run's postings (see save_job) and record the run: SUCCEEDED, or PARTIAL if
+    Apify stopped it before it finished. Returns how many jobs were new."""
     with db.connect() as conn:
         # Sites run in parallel, and a manual jobflow ingest may overlap the daily one.
         wait_for_imports(conn)
         run_pk = conn.execute(
-            """INSERT INTO scraper_runs(actor_id, apify_run_id, dataset_id, status,
-                   started_at, finished_at, items_seen, cost_usd, search_name, input, hit_cap)
-               VALUES (%s, %s, %s, 'SUCCEEDED', coalesce(%s, now()), coalesce(%s, now()),
-                       %s, %s, %s, %s, %s)
+            """INSERT INTO scraper_runs(actor_id, apify_run_id, dataset_id, status, error,
+                   started_at, finished_at, items_seen, cost_usd, search_name, input, hit_cap,
+                   posted_within_days, partial)
+               VALUES (%(actor_id)s, %(run_id)s, %(dataset_id)s, %(status)s, %(error)s,
+                       coalesce(%(started_at)s, now()), coalesce(%(finished_at)s, now()),
+                       %(items)s, %(cost_usd)s, %(search_name)s, %(input)s, %(hit_cap)s,
+                       %(posted_within_days)s, %(partial)s)
                ON CONFLICT (apify_run_id) DO UPDATE SET dataset_id=EXCLUDED.dataset_id,
-                   status='SUCCEEDED', started_at=EXCLUDED.started_at,
-                   finished_at=EXCLUDED.finished_at, items_seen=EXCLUDED.items_seen,
-                   cost_usd=EXCLUDED.cost_usd, error=NULL, hit_cap=EXCLUDED.hit_cap
+                   status=EXCLUDED.status, error=EXCLUDED.error,
+                   started_at=EXCLUDED.started_at, finished_at=EXCLUDED.finished_at,
+                   items_seen=EXCLUDED.items_seen, cost_usd=EXCLUDED.cost_usd,
+                   hit_cap=EXCLUDED.hit_cap, partial=EXCLUDED.partial
                RETURNING id""",
-            (actor_id, run_id, dataset_id, started_at, finished_at, len(jobs), cost_usd,
-             search_name, psycopg.types.json.Jsonb(run_input) if run_input else None, hit_cap)
-        ).fetchone()[0]
+            {**record._row(), "status": "PARTIAL" if record.partial else "SUCCEEDED",
+             "error": PARTIAL_ERROR if record.partial else None, "items": len(jobs),
+             "hit_cap": hit_cap}).fetchone()[0]
         added, skipped = 0, 0
         for job in jobs:
             # The run is paid for: a posting that can't be read or that the database rejects
@@ -291,34 +332,46 @@ def recent_capped_runs(conn) -> list[dict]:
            ORDER BY 1""", (RECENT_RUNS,)).fetchall()
 
 
-def failed_imports() -> list[dict]:
-    """The runs that succeeded on Apify but whose results couldn't be saved (IMPORT_FAILED),
-    oldest first, with what retry_imports needs to save them as they would have been."""
+# A run whose results couldn't be saved is IMPORT_FAILED; once importing them has failed
+# this often (the first import included) it is GAVE_UP, which imports no longer retry, as a
+# failure that repeats (a bug, say) would otherwise fail every daily import until Apify
+# deleted the results. jobflow ingest --retry-imports still tries those.
+IMPORT_FAILED, GAVE_UP = "IMPORT_FAILED", "GAVE_UP"
+MAX_IMPORT_ATTEMPTS = 3
+
+
+def failed_imports(include_given_up: bool = False) -> list[tuple[RunRecord, int]]:
+    """The runs that succeeded on Apify (or were stopped part-way) but whose results
+    couldn't be saved, oldest first: each run's record, to save it as it would have been,
+    and how many times importing it has failed. With include_given_up, those GAVE_UP too."""
+    statuses = [IMPORT_FAILED, GAVE_UP] if include_given_up else [IMPORT_FAILED]
     with db.connect() as conn:
-        return conn.cursor(row_factory=dict_row).execute(
-            """SELECT actor_id, apify_run_id, dataset_id, search_name, input, started_at,
-                      finished_at, cost_usd
+        rows = conn.cursor(row_factory=dict_row).execute(
+            """SELECT actor_id, apify_run_id AS run_id, dataset_id, search_name,
+                      input AS run_input, started_at, finished_at, cost_usd,
+                      posted_within_days, partial, import_attempts
                FROM scraper_runs
-               WHERE status = 'IMPORT_FAILED' AND apify_run_id IS NOT NULL
-                 AND dataset_id IS NOT NULL
-               ORDER BY created_at""").fetchall()
+               WHERE status = ANY(%s) AND apify_run_id IS NOT NULL AND dataset_id IS NOT NULL
+               ORDER BY created_at""", (statuses,)).fetchall()
+    return [(RunRecord(**{k: v for k, v in row.items() if k != "import_attempts"}),
+             row["import_attempts"]) for row in rows]
 
 
-def record_failed_run(*, actor_id: str, run_id: str | None, dataset_id: str | None,
-                      status: str, error: str, started_at: datetime | None = None,
-                      finished_at: datetime | None = None, cost_usd: float | None = None,
-                      search_name: str | None = None, run_input: dict | None = None) -> None:
-    """Record a run that failed, wasn't started, or whose results couldn't be saved. Keyword
-    arguments only: several of the ten are IDs or times, which positionally are easily swapped,
-    storing a run that can't be retried."""
+def record_failed_run(record: RunRecord, *, status: str, error: str) -> None:
+    """Record a run that failed, wasn't started, or whose results couldn't be saved (each
+    of those counts as an attempt at importing them, see failed_imports)."""
     with db.connect() as conn:
         conn.execute(
             """INSERT INTO scraper_runs(actor_id, apify_run_id, dataset_id, status,
-                   started_at, finished_at, error, cost_usd, search_name, input)
-               VALUES (%s, %s, %s, %s, %s, coalesce(%s, now()), %s, %s, %s, %s)
+                   started_at, finished_at, error, cost_usd, search_name, input,
+                   posted_within_days, partial, import_attempts)
+               VALUES (%(actor_id)s, %(run_id)s, %(dataset_id)s, %(status)s, %(started_at)s,
+                       coalesce(%(finished_at)s, now()), %(error)s, %(cost_usd)s,
+                       %(search_name)s, %(input)s, %(posted_within_days)s, %(partial)s,
+                       %(attempt)s)
                ON CONFLICT (apify_run_id) DO UPDATE SET status=EXCLUDED.status,
                    finished_at=EXCLUDED.finished_at, error=EXCLUDED.error,
-                   cost_usd=EXCLUDED.cost_usd""",
-            (actor_id, run_id, dataset_id, status, started_at, finished_at, error[:4000],
-             cost_usd, search_name,
-             psycopg.types.json.Jsonb(run_input) if run_input else None))
+                   cost_usd=EXCLUDED.cost_usd,
+                   import_attempts=scraper_runs.import_attempts + EXCLUDED.import_attempts""",
+            {**record._row(), "status": status, "error": error[:4000],
+             "attempt": int(status in (IMPORT_FAILED, GAVE_UP))})

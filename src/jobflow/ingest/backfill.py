@@ -52,11 +52,25 @@ def backfill_countries(conn) -> int:
 def backfill_title_keys(conn) -> int:
     """Work out match_key and fingerprint again for jobs whose title has a + or #, which
     titles once lost ("C++ Developer" and "C# Developer" were one title): run once, when
-    titles began keeping them (dedupe.title_key). Only these jobs' keys change. The
-    fingerprint is made, as when the job was saved, from its first copy's record; a job
-    whose record was already cleared keeps the one it has."""
+    titles began keeping them (dedupe.title_key). Only these jobs' keys change."""
+    return _recompute_title_keys(conn, lambda title: "+" in title or "#" in title)
+
+
+def backfill_unicode_title_keys(conn) -> int:
+    """Work out match_key and fingerprint again for jobs whose title has a letter outside
+    a-z, which titles once lost ("數據分析師" had no title at all, "Ingénieur" was "ing
+    nieur"): run once, when titles began keeping every script's letters (text.words)."""
+    return _recompute_title_keys(conn, lambda title: not title.isascii())
+
+
+def _recompute_title_keys(conn, changed) -> int:
+    """match_key and fingerprint again, as dedupe makes them now, for the jobs whose title
+    `changed` picks; the fingerprint from the job's first copy's record, as when the job was
+    saved (one whose record was already cleared keeps the one it has)."""
+    ids = [pk for pk, title in conn.execute("SELECT id, title FROM jobs").fetchall()
+           if changed(title)]
     rows = conn.execute("""SELECT id, title, company, location, raw_json, country FROM jobs
-                           WHERE title ~ '[+#]'""").fetchall()
+                           WHERE id = ANY(%s)""", (ids,)).fetchall()
     for job_pk, title, company, location, raw, country in rows:
         key = match_key(Posting(source="", source_id=None, url=None, title=title,
                                 company=company, location=location, posted_at=None,
@@ -82,4 +96,5 @@ def backfill_salary_estimates(conn) -> int:
 
 # The follow-ups by the name a migration gives them.
 FOLLOW_UPS: dict[str, Callable] = {f.__name__: f for f in (
-    backfill_sources, backfill_countries, backfill_salary_estimates, backfill_title_keys)}
+    backfill_sources, backfill_countries, backfill_salary_estimates, backfill_title_keys,
+    backfill_unicode_title_keys)}

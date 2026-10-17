@@ -3,12 +3,19 @@ from __future__ import annotations
 
 import re
 
+# Chinese characters and Japanese kana: written without spaces between words, so each is
+# a word of its own, and "實習" (internship) is found in "數據分析實習生" as whole words.
+_UNSPACED = re.compile(r"([\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff])")
+
 
 def words(text: object) -> str:
     """Lower-case words separated by single spaces, ignoring punctuation other than + and #,
-    so "C++" and "C#" stay themselves rather than the word "c". Used to compare titles,
-    search terms, and CV text regardless of case, punctuation, or markup."""
-    return re.sub(r"[^a-z0-9+#]+", " ", str(text or "").casefold()).strip()
+    so "C++" and "C#" stay themselves rather than the word "c". Letters of any script count
+    ("Ingénieur" is one word, not "ing nieur"), and each Chinese character or kana is a word.
+    Used to compare titles, search terms, and CV text regardless of case, punctuation, or
+    markup."""
+    text = _UNSPACED.sub(r" \1 ", str(text or "").casefold())
+    return " ".join(re.sub(r"[^\w+#]|_", " ", text).split())
 
 
 def plural(count: int, word: str, suffix: str = "s") -> str:

@@ -169,7 +169,14 @@ def _print_recent_runs() -> None:
     import psycopg
 
     from .db import connect
-    from .ingest.store import RECENT_RUNS, recent_capped_runs, recent_failed_runs
+    from .ingest.store import (
+        GAVE_UP,
+        IMPORT_FAILED,
+        MAX_IMPORT_ATTEMPTS,
+        RECENT_RUNS,
+        recent_capped_runs,
+        recent_failed_runs,
+    )
     from .settings import timezone
 
     try:
@@ -177,9 +184,10 @@ def _print_recent_runs() -> None:
             last = conn.execute("SELECT max(finished_at) FROM scraper_runs "
                                 "WHERE status = 'SUCCEEDED'").fetchone()[0]
             failed = recent_failed_runs(conn)
-            unsaved = conn.execute("""SELECT count(*) FROM scraper_runs
-                                      WHERE status = 'IMPORT_FAILED'
-                                        AND dataset_id IS NOT NULL""").fetchone()[0]
+            unsaved = dict(conn.execute("""SELECT status, count(*) FROM scraper_runs
+                                           WHERE status = ANY(%s) AND dataset_id IS NOT NULL
+                                           GROUP BY status""",
+                                        ([IMPORT_FAILED, GAVE_UP],)).fetchall())
             try:
                 with conn.transaction():
                     capped = recent_capped_runs(conn)
@@ -195,10 +203,14 @@ def _print_recent_runs() -> None:
     for f in failed:
         print(f"  {f['site']:<9} {f['failed']} of {plural(f['total'], 'run')} failed in the last "
               f"{hours} hours: {f['error'] or 'no error recorded'}")
-    if unsaved:
-        print(f"  {plural(unsaved, 'run')} succeeded on Apify but couldn't be saved: run "
-              "`uv run jobflow ingest --retry-imports` to import their results now (the next "
-              "import does it first anyway)")
+    if unsaved.get(IMPORT_FAILED):
+        print(f"  {plural(unsaved[IMPORT_FAILED], 'run')} succeeded on Apify but couldn't be "
+              "saved: run `uv run jobflow ingest --retry-imports` to import their results now "
+              "(the next import does it first anyway)")
+    if unsaved.get(GAVE_UP):
+        print(f"  {plural(unsaved[GAVE_UP], 'run')} couldn't be saved {MAX_IMPORT_ATTEMPTS} "
+              "times, so imports no longer try them: once you've fixed the cause, run "
+              "`uv run jobflow ingest --retry-imports` (their results stay on Apify for a while)")
     for c in capped:
         print(f"  {c['site']:<9} {c['capped']} of {plural(c['total'], 'run')} hit max_results in "
               f"the last {hours} hours, so probably left jobs behind: raise max_results, or "

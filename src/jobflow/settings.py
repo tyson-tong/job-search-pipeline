@@ -69,12 +69,14 @@ def load_env(path: Path | None = None) -> None:
         key, value = line.removeprefix("export ").split("=", 1)
         key, value = key.strip(), value.strip()
         # A quoted value is what's inside the quotes, so it may hold " #" and be followed
-        # by a comment; an unquoted one ends at a " #" comment.
-        closing = value.find(value[0], 1) if value[:1] in ("'", '"') else -1
+        # by a comment; an unquoted one ends at a " #" comment. A quote never closed is a
+        # typo: the value is what follows it, not the quote too (a key starting with ").
+        quoted = value[:1] in ("'", '"')
+        closing = value.find(value[0], 1) if quoted else -1
         if closing > 0:
             value = value[1:closing]
         else:
-            value = value.split(" #", 1)[0].strip()
+            value = value[int(quoted):].split(" #", 1)[0].strip()
         if key and value and key not in os.environ:
             os.environ[key] = value
 

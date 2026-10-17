@@ -102,7 +102,6 @@ def to_date(value: object) -> date | None:
         return None
 
 
-
 def _as_list(value: object) -> list:
     return value if isinstance(value, list) else [] if value is None else [value]
 

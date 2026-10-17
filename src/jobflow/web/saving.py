@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import date
 
 from .. import db
-from ..db import set_job_state
-from .queries import EDITABLE_STATUSES, MAX_NOTE, VERSION_SQL
+from ..db import EDITABLE_STATUSES, set_job_state
+from .queries import MAX_NOTE, VERSION_SQL
 
 
 class InvalidChange(ValueError):
@@ -39,7 +39,8 @@ def validate_changes(raw: object) -> list[dict]:
         change: dict = {"id": job_id}
         if "status" in item:
             if item["status"] not in EDITABLE_STATUSES:
-                raise InvalidChange(f"Job {job_id}: status must be one of {EDITABLE_STATUSES}")
+                raise InvalidChange(f"Job {job_id}: status must be one of "
+                                    f"{', '.join(EDITABLE_STATUSES)}")
             change["status"] = item["status"]
         if "note" in item:
             note = item["note"]

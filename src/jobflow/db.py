@@ -20,6 +20,26 @@ from .text import plural
 # lists them too: a new one needs a migration changing it.
 STATUSES = ("new", "interested", "not_interested", "applied", "interviewing", "offered",
             "accepted", "declined", "rejected", "withdrawn", "filtered", "archived")
+# The groups of statuses the rules use, in one place; the tracker gets the ones it needs from
+# /api/summary (web/queries.summary).
+# Statuses you can choose; "filtered" and "archived" are only set by jobflow itself.
+EDITABLE_STATUSES = tuple(s for s in STATUSES if s not in ("filtered", "archived"))
+# The jobs you're pursuing: scored by Score all jobs (and rescored, after a CV is edited),
+# worked on by tailor-cv and cover-letter, and counted in skill-gaps.
+PURSUING = ("interested", "applied", "interviewing", "offered")
+# Every status a job can be scored in: those, and the Inbox's, which you can pick to score
+# to help you triage.
+SCORABLE = ("new", *PURSUING)
+# Jobs not (or no longer) picked as Interested: never shown in My jobs, and only triaged
+# there, to TRIAGE_CHOICES, or moved back to the Inbox.
+UNTRIAGED = ("new", "not_interested", "filtered", "archived")
+TRIAGE_CHOICES = ("new", "interested", "not_interested")
+# My jobs' statuses until you choose others: those you're pursuing, and accepted.
+DEFAULT_MY_JOBS = (*PURSUING, "accepted")
+# A similar job at one of these may be a role you've already applied for.
+IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
+# The jobs whose output folders clean-up deletes, if you never applied for them.
+CLEAN_UP_STATUSES = ("not_interested", "withdrawn", "archived")
 # Finished with, so no follow-up is due. "filtered" is set on import, or by
 # update-searches, when a job fails a search's local filters (see jobs.filter_reason);
 # "archived" when a filtered, not interested, or untriaged Inbox job is old enough (see

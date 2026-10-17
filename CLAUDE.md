@@ -43,10 +43,10 @@ Ask first.
   migrations, status changes), `llm.py` (OpenAI-compatible chat completions), `batch.py`
   (per-job commands, two jobs at a time), `github.py` (`gh` for update-searches and
   status), `cleanup.py`, `text.py`.
-- `ingest/`: searches config to Apify runs (`searches`, `options`, `runs`, `apify`),
-  normalising scraped records (`sources`, `salary`), filtering, merging, and storing (`filters`,
-  `dedupe`, `store`), and later passes (`refilter`, `upkeep`, `similar`, `backfill`,
-  `report`).
+- `ingest/`: searches config to Apify runs (`searches`, `options`, `runs`, `apify`, and
+  `retry` for runs whose results couldn't be saved), normalising scraped records
+  (`sources`, `salary`), filtering, merging, and storing (`filters`, `dedupe`, `store`), and
+  later passes (`refilter`, `upkeep`, `similar`, `backfill`, `report`).
 - `candidate/`: CV files (`cvs`), scoring (`matching`), tailoring (`tailoring`,
   `render`, `documents`, `factcheck`, `review`, `research`), `cover_letter`, `interview`,
   `skill_gaps`, and what several share: `paths` (a job's output folder) and `pages` (the
@@ -88,7 +88,8 @@ Ask first.
 - A block that needs existing rows filled in names a function with `-- Then: NAME`; it lives
   in `ingest/backfill.py` (`FOLLOW_UPS`) and runs once, after all new blocks.
 - A new job status needs `db.STATUSES`, a migration replacing `jobs_status_check`, and the
-  labels in `web/static/format.js`.
+  labels in `web/static/format.js`. The groups of statuses (pursuing, closed, untriaged, ...)
+  are all in `db.py`; the page gets the ones it uses from `/api/summary`, never its own list.
 - `jobs.status` is the single source of truth. Status changes you make go through
   `db.set_job_state`; changes jobflow makes (update-searches) through `db.move_job`; both
   record `status_history`, which update-searches reads (via `'web'` vs `'update-searches'`).

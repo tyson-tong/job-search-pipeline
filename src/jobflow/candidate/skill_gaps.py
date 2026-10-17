@@ -1,7 +1,7 @@
 """The skills your CVs don't show that scored jobs ask for most, with a plan to close them.
 
 Built from stored match scores, so it costs one LLM call and no rescoring. Each scored job
-you're pursuing (matching.PURSUING) contributes the requirements its best-matching CV didn't fully
+you're pursuing (db.PURSUING) contributes the requirements its best-matching CV didn't fully
 evidence. The LLM only groups those requirements into skills and suggests how to close each
 gap; the counts and the ranking are computed here, from the stored requirements.
 """
@@ -16,7 +16,7 @@ from ..llm import complete, parse_json
 from ..settings import matching_weights, now, output_directory
 from ..text import plural, whole_number
 from .cvs import chosen_files
-from .matching import PURSUING, best_variant, current_digests, stored_assessments
+from .matching import best_variant, current_digests, stored_assessments
 from .pages import html_page
 
 # How much one unmet requirement counts towards a skill's rank.
@@ -47,7 +47,7 @@ def collect_gaps() -> tuple[list[dict], int, int]:
             """SELECT j.id, j.title, j.company FROM jobs j
                WHERE j.status = ANY(%s)
                  AND EXISTS (SELECT 1 FROM match_assessments m WHERE m.job_id = j.id)
-               ORDER BY j.id DESC""", (list(PURSUING),)).fetchall()
+               ORDER BY j.id DESC""", (list(db.PURSUING),)).fetchall()
         scored = 0
         for job_id, title, company in jobs:
             stored = [r for r in stored_assessments(conn, job_id, weights)

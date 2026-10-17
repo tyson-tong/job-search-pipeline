@@ -19,8 +19,6 @@ from .dedupe import (
 
 # Similar jobs are looked for among jobs first seen this recently.
 POSSIBLE_WINDOW_DAYS = 180
-# A similar job at one of these may be a role you've already applied for.
-IN_PROGRESS = ("applied", "interviewing", "offered", "accepted")
 # Each ad's words, by job id, with the ad's length when they were read: the tracker asks
 # for similar jobs on every refresh, and fetching every ad each time is slow from a
 # database far away. An ad changes only by being replaced with a longer one, or cleared.

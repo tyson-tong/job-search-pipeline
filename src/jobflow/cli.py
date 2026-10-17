@@ -87,7 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "days), for this import only")
     ingest.add_argument("--retry-imports", action="store_true",
                         help="Instead of searching, import the results of runs whose import "
-                        "failed (already paid for, and kept on Apify for a while)")
+                        "failed, including ones imports gave up on (already paid for, and kept "
+                        "on Apify for a while)")
     update = command("update-searches", run_update_searches, "After editing "
                      "config/searches.toml: check it, update your jobs, and publish it to the "
                      "daily import")
@@ -223,7 +224,8 @@ def run_init(args: argparse.Namespace) -> None:
 
 def run_ingest(args: argparse.Namespace) -> None:
     from .db import migrate
-    from .ingest.apify import ingest_searches, retry_imports
+    from .ingest.apify import ingest_searches
+    from .ingest.retry import retry_imports
     if args.retry_imports and (args.search or args.site or args.posted_within_days):
         raise RuntimeError("--retry-imports runs no searches, so it takes no other option")
     migrate()
@@ -275,9 +277,8 @@ def check_redo(args: argparse.Namespace) -> None:
 
 def run_tailor_cv(args: argparse.Namespace) -> None:
     from .batch import JobCommand, for_jobs
-    from .candidate.matching import PURSUING
     from .candidate.tailoring import add_format, cv_fixed_by_hand, cv_written, tailor_cv
-    from .db import migrate
+    from .db import PURSUING, migrate
     check_redo(args)
     variant = check_variant(args.cv, yaml_only=True)
     check_keys(reviewer=True)
@@ -313,8 +314,7 @@ def run_tailor_cv(args: argparse.Namespace) -> None:
 def run_cover_letter(args: argparse.Namespace) -> None:
     from .batch import JobCommand, for_jobs
     from .candidate.cover_letter import letter_fixed_by_hand, write_letter
-    from .candidate.matching import PURSUING
-    from .db import migrate
+    from .db import PURSUING, migrate
     check_redo(args)
     variant = check_variant(args.cv, yaml_only=False)
     check_keys(reviewer=True)

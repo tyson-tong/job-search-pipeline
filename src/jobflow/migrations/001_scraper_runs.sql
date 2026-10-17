@@ -20,3 +20,14 @@ CREATE TABLE IF NOT EXISTS scraper_runs (
 -- A run that returned as many results as it was allowed probably left jobs behind; the
 -- tracker's header and jobflow status flag it.
 ALTER TABLE scraper_runs ADD COLUMN IF NOT EXISTS hit_cap BOOLEAN NOT NULL DEFAULT false;
+
+-- Migration ID: 03
+-- What retrying a failed import needs, to save its results as they would have been and to
+-- stop after a few tries (ingest/retry.py): the posted-date window its search ran with
+-- (ingest --posted-within-days may have widened it), whether Apify stopped the run before
+-- it finished (its results are imported, but it may have left jobs behind), and how many
+-- times importing its results has failed (the first import counts as one).
+ALTER TABLE scraper_runs ADD COLUMN IF NOT EXISTS posted_within_days SMALLINT,
+    ADD COLUMN IF NOT EXISTS partial BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS import_attempts SMALLINT NOT NULL DEFAULT 0;
+UPDATE scraper_runs SET import_attempts = 1 WHERE status = 'IMPORT_FAILED';

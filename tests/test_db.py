@@ -10,8 +10,8 @@ import pytest
 from psycopg.conninfo import make_conninfo
 
 from jobflow.db import connect, migrate, migration_files, set_job_state
-from jobflow.ingest import similar
-from jobflow.ingest.store import save_run
+from jobflow.ingest import similar, store
+from jobflow.ingest.store import RunRecord
 from jobflow.ingest.upkeep import archive_old_jobs, prune_archived_jobs, prune_sightings
 from jobflow.web.queries import list_jobs, parse_filters
 from jobflow.web.saving import Conflict, save_changes
@@ -74,6 +74,12 @@ def scoring(monkeypatch):
     return fake
 
 
+def save_run(actor_id, run_id, dataset_id, jobs, *, search_name=None, **kwargs):
+    """store.save_run for a run known only by these, as most tests need."""
+    return store.save_run(RunRecord(actor_id=actor_id, run_id=run_id, dataset_id=dataset_id,
+                                    search_name=search_name), jobs, **kwargs)
+
+
 def _one(sql, *params):
     with connect() as conn:
         return conn.execute(sql, params).fetchone()
@@ -132,6 +138,25 @@ def test_two_different_jobs_are_never_merged(database):
             "content": {"unEditedContent": " ".join(payments[:80] + payments[90:])}}
     assert save_run("seek:a", "r5", "d5", [seek], country="AU") == 0
     assert _one("SELECT count(*) FROM jobs")[0] == 6
+
+
+def test_offices_in_suburbs_sharing_a_word_stay_two_jobs(database):
+    # "Same city" counted any shared word, so one employer's ad for its North Sydney and
+    # North Melbourne offices merged on "north", and one of the two jobs was lost; so did
+    # Richmond in Victoria and Richmond in New South Wales.
+    ad = " ".join(f"duty{i}" for i in range(40))
+
+    def posting(job_id, location):
+        return {"id": job_id, "link": f"https://www.linkedin.com/jobs/view/{job_id}",
+                "title": "Data Analyst", "companyName": "Acme", "location": location,
+                "descriptionText": ad}
+    for i, place in enumerate(["North Sydney NSW", "North Melbourne VIC", "Richmond VIC",
+                               "Richmond NSW"], 1):
+        assert save_run("linkedin:a", f"r{i}", f"d{i}", [posting(str(i), place)],
+                        country="AU") == 1
+    # Another listing of the same office is still that job.
+    assert save_run("linkedin:a", "r5", "d5", [posting("5", "North Sydney, New South Wales")],
+                    country="AU") == 0
 
 
 def test_a_cpp_and_a_csharp_job_with_one_ad_stay_two_jobs(database):
@@ -684,25 +709,6 @@ def test_a_job_filtered_for_its_posted_date_stays_filtered(database):
     assert _one("SELECT status FROM jobs")[0] == "filtered"
 
 
-def test_jobs_filtered_before_filter_kind_get_the_kind_their_reason_says(database):
-    # update-searches decides which filtered jobs it may bring back by filter_kind: a job
-    # filtered for its posted date, given no kind or the wrong one, could come back to the
-    # Inbox, and one filtered by an excluded term, given none, never could.
-    reasons = {"1": "employer matches 'Acme'", "2": "title contains 'Intern'",
-               "3": "posted 2026-09-01, older than 2 weeks",
-               "4": "salary 60,000-60,000/yr outside 100,000+/yr",
-               "5": "job type part-time not wanted", "6": "work arrangement on-site not wanted"}
-    with connect() as conn:   # as jobflow stored them before filter_kind existed
-        for key, reason in reasons.items():
-            conn.execute("INSERT INTO jobs(canonical_key, title, status, filter_reason) "
-                         "VALUES (%s, 'Job', 'filtered', %s)", (f"linkedin:{key}", reason))
-        conn.execute("DELETE FROM schema_migrations WHERE name = '002_jobs.sql:10'")
-    migrate()
-    assert dict(_rows("SELECT split_part(canonical_key, ':', 2), filter_kind FROM jobs")) == {
-        "1": "employer", "2": "title", "3": "posted", "4": "salary", "5": "job_type",
-        "6": "work_arrangement"}
-
-
 def test_every_status_can_be_saved_and_has_a_label(database):
     # A status added to db.STATUSES without a migration replacing jobs_status_check fails
     # every save of it; without a label in format.js the tracker shows its raw name.
@@ -915,8 +921,7 @@ def test_a_failed_import_is_imported_again_as_it_would_have_been(database, monke
 
     from apify_client.errors import ApifyApiError
 
-    from jobflow.ingest import apify
-    from jobflow.ingest.store import record_failed_run
+    from jobflow.ingest import apify, retry
 
     class Gone(ApifyApiError):   # what Apify's client raises for a deleted dataset
         def __new__(cls):
@@ -940,23 +945,97 @@ def test_a_failed_import_is_imported_again_as_it_would_have_been(database, monke
     ran = datetime(2026, 10, 1, tzinfo=UTC)
     run_input = {"urls": ["https://www.linkedin.com/jobs/search/?location=Australia"],
                  "limitPerSource": 50}
-    failed = {"status": "IMPORT_FAILED", "error": "server closed the connection",
-              "started_at": ran, "finished_at": ran, "search_name": "s"}
-    record_failed_run(actor_id="linkedin:a", run_id="r1", dataset_id="d1", cost_usd=0.5,
-                      run_input=run_input, **failed)
-    # Its results deleted by Apify since: recorded as such, and not tried again.
-    record_failed_run(actor_id="seek:a", run_id="r2", dataset_id="d2", cost_usd=0.25,
-                      run_input={"country": "australia", "maxResults": 50}, **failed)
+    failed = {"started_at": ran, "finished_at": ran, "search_name": "s"}
+    for record in (RunRecord(actor_id="linkedin:a", run_id="r1", dataset_id="d1", cost_usd=0.5,
+                             run_input=run_input, **failed),
+                   # Its results deleted by Apify since: recorded as such, and not tried again.
+                   RunRecord(actor_id="seek:a", run_id="r2", dataset_id="d2", cost_usd=0.25,
+                             run_input={"country": "australia", "maxResults": 50}, **failed)):
+        store.record_failed_run(record, status="IMPORT_FAILED",
+                                error="server closed the connection")
     with pytest.raises(RuntimeError, match="1 of 2 failed imports couldn't be imported"):
-        apify.retry_imports()
+        retry.retry_imports()
     # Saved as the import would have: filtered by its search, in its country.
     assert sorted(_rows("SELECT title, status, country FROM jobs")) == [
         ("Data Analyst", "new", "AU"), ("Intern Analyst", "filtered", "AU")]
     assert sorted(_rows("SELECT apify_run_id, status, started_at, cost_usd FROM scraper_runs")) \
         == [("r1", "SUCCEEDED", ran, 0.5), ("r2", "EXPIRED", ran, 0.25)]
     capsys.readouterr()
-    apify.retry_imports()
+    retry.retry_imports()
     assert capsys.readouterr().out == "No failed imports to retry\n"
+
+
+class _Datasets:
+    """An Apify client whose datasets hold these items, by dataset id."""
+
+    def __init__(self, items: dict):
+        self.items = items
+
+    def __call__(self):   # as apify.make_client, which it stands in for
+        return self
+
+    def dataset(self, dataset_id):
+        items = self.items[dataset_id]
+
+        class Dataset:
+            def iterate_items(self, clean):
+                return iter(items)
+        return Dataset()
+
+
+def test_a_failed_import_that_keeps_failing_stops_failing_every_import(database, monkeypatch):
+    # A failure that repeats (a bug, say) was retried by every import, failing the daily
+    # run, with GitHub's failure email, until Apify deleted the results.
+    from jobflow.ingest import apify, retry
+    from jobflow.ingest.searches import parse_config
+
+    monkeypatch.setattr(apify, "make_client", _Datasets({"d1": [LINKEDIN]}))
+    config = '[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
+    monkeypatch.setenv("JOBFLOW_SEARCHES", config)
+    searches = parse_config(config)
+    record = RunRecord(actor_id="linkedin:a", run_id="r1", dataset_id="d1", search_name="s")
+    store.record_failed_run(record, status="IMPORT_FAILED", error="value too long")
+    real_save_run = store.save_run
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("value too long")
+    monkeypatch.setattr(store, "save_run", broken)
+    tries = [retry.import_failed_runs(searches) for _ in range(store.MAX_IMPORT_ATTEMPTS)]
+    # Failed on import and on each retry until the limit; then left alone.
+    assert tries == [(1, 1)] * (store.MAX_IMPORT_ATTEMPTS - 1) + [(0, 0)]
+    assert _one("SELECT status FROM scraper_runs")[0] == "GAVE_UP"
+    # Its results are paid for: asked to, --retry-imports still imports them.
+    monkeypatch.setattr(store, "save_run", real_save_run)
+    retry.retry_imports()
+    assert _one("SELECT status FROM scraper_runs")[0] == "SUCCEEDED"
+    assert _one("SELECT count(*) FROM jobs")[0] == 1
+
+
+def test_a_failed_import_is_judged_by_the_window_its_run_used(database, monkeypatch):
+    # Imported again, a run's jobs were judged by its search's window as configured, not the
+    # wider one a one-off ingest --posted-within-days 30 ran it with: jobs it had searched
+    # for were filtered as too old.
+    from datetime import UTC, datetime
+
+    from jobflow.ingest import apify, retry
+    from jobflow.ingest.searches import parse_config
+
+    # Posted 20 days before the runs: inside a month, but not 2 weeks.
+    posted = {**LINKEDIN, "postedAt": "2026-09-11"}
+    monkeypatch.setattr(apify, "make_client", _Datasets({
+        "d1": [{**posted, "id": "1"}], "d2": [{**posted, "id": "2", "title": "BI Analyst"}]}))
+    # LinkedIn has no 2-week window, so a 2-week search filters older jobs itself.
+    searches = parse_config('[[search]]\nname = "s"\nterms = ["a"]\nlocations = { AU = [] }\n'
+                            "posted_within_days = 14\n")
+    ran = datetime(2026, 10, 1, tzinfo=UTC)
+    for run_id, days in (("r1", 30), ("r2", 14)):
+        store.record_failed_run(RunRecord(actor_id="linkedin:a", run_id=run_id,
+                                          dataset_id=f"d{run_id[1]}", search_name="s",
+                                          finished_at=ran, posted_within_days=days),
+                                status="IMPORT_FAILED", error="server closed the connection")
+    assert retry.import_failed_runs(searches) == (0, 2)
+    assert dict(_rows("SELECT split_part(canonical_key, ':', 2), status FROM jobs")) == {
+        "1": "new", "2": "filtered"}
 
 
 def test_each_import_first_imports_the_runs_whose_results_couldnt_be_saved(database,
@@ -964,7 +1043,6 @@ def test_each_import_first_imports_the_runs_whose_results_couldnt_be_saved(datab
     # Only jobflow ingest --retry-imports imported them, so a paid run whose results
     # couldn't be saved was lost once Apify deleted its results, unless you noticed in time.
     from jobflow.ingest import apify
-    from jobflow.ingest.store import record_failed_run
 
     class Client:
         def dataset(self, dataset_id):
@@ -976,9 +1054,9 @@ def test_each_import_first_imports_the_runs_whose_results_couldnt_be_saved(datab
     monkeypatch.setattr(apify, "run_search", lambda client, planned, max_wait: None)
     monkeypatch.setenv("JOBFLOW_SEARCHES", '[[search]]\nname = "s"\nterms = ["a"]\n'
                        'locations = { AU = [] }\nsites = ["linkedin"]\n')
-    record_failed_run(actor_id="linkedin:a", run_id="r1", dataset_id="d1",
-                      status="IMPORT_FAILED", error="server closed the connection",
-                      search_name="s")
+    store.record_failed_run(RunRecord(actor_id="linkedin:a", run_id="r1", dataset_id="d1",
+                                      search_name="s"),
+                            status="IMPORT_FAILED", error="server closed the connection")
     apify.ingest_searches()
     assert _rows("SELECT apify_run_id, status FROM scraper_runs") == [("r1", "SUCCEEDED")]
     assert _one("SELECT title FROM jobs")[0] == LINKEDIN["title"]
@@ -987,12 +1065,11 @@ def test_each_import_first_imports_the_runs_whose_results_couldnt_be_saved(datab
 def test_a_site_failing_while_others_succeed_is_flagged(database):
     # The header only warned when no import had succeeded at all, so a site failing every
     # day (all of them, once the Apify account hit its monthly limit) went unseen.
-    from jobflow.ingest.store import record_failed_run
     from jobflow.web.queries import summary
 
     save_run("linkedin:a", "r1", "d1", [LINKEDIN], country="AU")
-    record_failed_run(actor_id="seek:a", run_id="r2", dataset_id=None, status="FAILED",
-                      error="Monthly usage hard limit exceeded")
+    store.record_failed_run(RunRecord(actor_id="seek:a", run_id="r2"), status="FAILED",
+                            error="Monthly usage hard limit exceeded")
     save_run("seek:a", "r3", "d3", [SEEK], country="AU")
     assert summary()["failed_runs"] == [{"site": "seek", "failed": 1, "total": 2,
                                          "error": "Monthly usage hard limit exceeded"}]

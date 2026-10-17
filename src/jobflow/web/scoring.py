@@ -31,7 +31,7 @@ def status() -> dict:
 
 def start(job_ids: list[int] | None = None, rescore: bool = False) -> dict:
     """Score the given jobs (Inbox ones, or ones you're pursuing), or every job you're
-    pursuing (matching.PURSUING), against each CV it has no score for yet; with rescore,
+    pursuing (db.PURSUING), against each CV it has no score for yet; with rescore,
     also against each CV edited since the job was scored against it. Checks the LLM
     settings and CV files first, so a configuration problem fails now rather than on every
     job."""

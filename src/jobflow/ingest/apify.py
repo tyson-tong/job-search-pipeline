@@ -1,6 +1,7 @@
 """Running the planned searches on Apify (jobflow ingest and the daily import): the sites
 side by side, each site's runs one after another, saving what each found, within the time
-GitHub allows; then archiving and pruning old jobs."""
+GitHub allows; then archiving and pruning old jobs. retry.py imports again the results of
+earlier runs that couldn't be saved, before each import's own runs."""
 from __future__ import annotations
 
 import math
@@ -11,15 +12,15 @@ import time
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from decimal import Decimal
-from functools import partial
 
 from apify_client import ApifyClient
 
-from .. import settings
 from ..text import plural
-from .filters import filter_reason
-from .runs import PlannedRun, plan, run_country, run_hit_cap
-from .searches import Search, load_searches
+from . import store
+from .filters import search_filter
+from .runs import PlannedRun, plan
+from .searches import load_searches
+from .store import RunRecord
 
 # The longest APIFY_MAX_WAIT_MINUTES may be, and its default. Each site's runs go one after
 # another in a daily GitHub job stopped at 180 minutes, where a run cut off keeps charging
@@ -29,6 +30,11 @@ MAX_WAIT_MINUTES = 30
 # in .github/workflows/daily-ingest.yml), which would lose the runs not yet started and skip
 # the upkeep after them: a run is started only if it can end within this, wait included.
 INGEST_MINUTES = 150
+# Apify run statuses: still going after max_wait (we stop it), or stopped before it finished
+# by its own timeout (max_wait) or by us. What such a run found is paid for, so it's imported,
+# and the run recorded as PARTIAL: it may have left jobs behind.
+STILL_GOING = ("READY", "RUNNING")
+STOPPED_EARLY = ("TIMING-OUT", "TIMED-OUT", "ABORTING", "ABORTED")
 
 
 def make_client() -> ApifyClient:
@@ -38,15 +44,33 @@ def make_client() -> ApifyClient:
     return ApifyClient(token)
 
 
+def run_record(planned: PlannedRun, run=None) -> RunRecord:
+    """The run as scraper_runs records it: the planned search, and once Apify has run it,
+    its ID, dataset, times, and cost, and whether it was stopped before it finished."""
+    record = RunRecord(actor_id=f"{planned.site}:{planned.actor}",
+                       search_name=planned.search.name, run_input=planned.run_input,
+                       posted_within_days=planned.search.posted_within_days)
+    if run is None:
+        return record
+    return replace(record, run_id=run.id, dataset_id=run.default_dataset_id,
+                   started_at=run.started_at, finished_at=run.finished_at,
+                   cost_usd=run.usage_total_usd,
+                   partial=run.status in (*STILL_GOING, *STOPPED_EARLY))
+
+
+class StoppedEarly(RuntimeError):
+    """A run stopped before it finished, whose results were imported and recorded as
+    PARTIAL: raised so the import still counts it as failed."""
+
+
 def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) -> None:
     """Run one actor for one search, import its dataset, and record the run.
 
     Any failure is recorded in scraper_runs and re-raised: with Apify's status, or
-    IMPORT_FAILED for a run that succeeded but whose results couldn't be saved.
+    IMPORT_FAILED for a run whose results couldn't be saved. A run still going after
+    max_wait is stopped; what it found is imported, recorded as PARTIAL, and StoppedEarly
+    raised.
     """
-    from .store import record_failed_run, save_run
-
-    actor_id = f"{planned.site}:{planned.actor}"
     name = f"{planned.search.name}/{planned.site} {planned.label}"
     cap = planned.search.max_cost_usd
     run = None
@@ -61,46 +85,44 @@ def run_search(client: ApifyClient, planned: PlannedRun, max_wait: timedelta) ->
             max_total_charge_usd=Decimal(str(cap)) if cap else None)
         if run is None:
             raise RuntimeError("Apify returned no run")
-        if run.status != "SUCCEEDED":
-            detail = f": {run.status_message}" if run.status_message else ""
-            if run.status in ("READY", "RUNNING"):
-                # Left alone it would keep scraping, and charging, for results never imported.
-                try:
-                    client.run(run.id).abort()
-                    stopped = "stopped"
-                except Exception as exc:
-                    stopped = f"stopping it failed ({exc}); abort it in the Apify Console"
-                detail += (f" (still running after {max_wait}, so {stopped}; results were not "
-                           "imported)")
+        detail = f": {run.status_message}" if run.status_message else ""
+        if run.status in STILL_GOING:
+            # Left alone it would keep scraping, and charging, for results never imported.
+            try:
+                client.run(run.id).abort()
+                stopped = "stopped"
+            except Exception as exc:
+                stopped = f"stopping it failed ({exc}); abort it in the Apify Console"
+            detail += f" (still running after {max_wait}, so {stopped})"
+        elif run.status != "SUCCEEDED" and run.status not in STOPPED_EARLY:
             raise RuntimeError(f"Apify run {run.id} ended with {run.status}{detail}")
+        record = run_record(planned, run)
         items = list(client.dataset(run.default_dataset_id).iterate_items(clean=True))
-        job_filter = partial(filter_reason, search=planned.search, site=planned.site)
         capped = planned.hit_cap(items)
         # Sites run at the same time; save_run makes their imports take turns.
-        added = save_run(actor_id, run.id, run.default_dataset_id, items,
-                         started_at=run.started_at, finished_at=run.finished_at,
-                         cost_usd=run.usage_total_usd, search_name=planned.search.name,
-                         run_input=planned.run_input, job_filter=job_filter,
-                         country=planned.country, hit_cap=capped)
+        added = store.save_run(record, items, country=planned.country, hit_cap=capped,
+                               job_filter=search_filter(planned.search, planned.site))
         cost = f", ${run.usage_total_usd:.2f}" if run.usage_total_usd is not None else ""
         print(f"{name}: {len(items)} items, {added} new jobs{cost}")
         if capped:
             print(f"{name}: warning: it returned as many results as max_results allows, so "
                   "more jobs were probably posted: raise max_results, or narrow the search",
                   file=sys.stderr)
+        if record.partial:
+            raise StoppedEarly(f"Apify run {run.id} ended with {run.status}{detail}: the "
+                               f"{plural(len(items), 'result')} it found were imported, but it "
+                               "may have left jobs behind")
+    except StoppedEarly:
+        raise
     except Exception as exc:
-        # A run that succeeded on Apify failed here, importing its results; they stay in
-        # its dataset on Apify.
-        status = "FAILED" if run is None else "IMPORT_FAILED" if run.status == "SUCCEEDED" \
-            else run.status
+        # A run that finished on Apify, or was stopped part-way, failed here, importing its
+        # results; they stay in its dataset on Apify, to be imported again (retry.py).
+        importable = run is not None and run.status in ("SUCCEEDED", *STILL_GOING,
+                                                        *STOPPED_EARLY)
+        status = ("FAILED" if run is None else store.IMPORT_FAILED if importable
+                  else run.status)
         try:
-            record_failed_run(actor_id=actor_id, run_id=run.id if run else None,
-                              dataset_id=run.default_dataset_id if run else None,
-                              status=status, error=str(exc),
-                              started_at=run.started_at if run else None,
-                              finished_at=run.finished_at if run else None,
-                              cost_usd=run.usage_total_usd if run else None,
-                              search_name=planned.search.name, run_input=planned.run_input)
+            store.record_failed_run(run_record(planned, run), status=status, error=str(exc))
         except Exception as record_exc:
             print(f"{name}: could not record failure: {record_exc}", file=sys.stderr)
         raise
@@ -143,8 +165,6 @@ class _Outcome:
 def _run_site(client: ApifyClient, site_runs: list[PlannedRun], max_wait: timedelta,
               deadline: float, outcome: _Outcome) -> None:
     """One site's runs, one after another, so at most one Apify run per site at a time."""
-    from .store import record_failed_run
-
     for planned in site_runs:
         run_name = f"{planned.search.name}/{planned.site} {planned.label}"
         if outcome.stop.is_set():
@@ -153,12 +173,9 @@ def _run_site(client: ApifyClient, site_runs: list[PlannedRun], max_wait: timede
         if time.monotonic() + max_wait.total_seconds() > deadline:
             outcome.late.append(run_name)
             try:   # recorded, so the tracker's header and jobflow status show it
-                record_failed_run(actor_id=f"{planned.site}:{planned.actor}", run_id=None,
-                                  dataset_id=None, status="NOT_STARTED",
-                                  error="not started: the import could have run past its "
-                                  f"{INGEST_MINUTES}-minute limit",
-                                  search_name=planned.search.name,
-                                  run_input=planned.run_input)
+                store.record_failed_run(run_record(planned), status="NOT_STARTED",
+                                        error="not started: the import could have run past "
+                                        f"its {INGEST_MINUTES}-minute limit")
             except Exception as exc:
                 print(f"{run_name}: could not record it as not started: {exc}",
                       file=sys.stderr)
@@ -189,6 +206,8 @@ def _upkeep() -> None:
 
 def ingest_searches(only_search: str | None = None, only_site: str | None = None,
                     posted_within_days: int | None = None) -> None:
+    from .retry import import_failed_runs
+
     configured = searches = load_searches()
     if posted_within_days is not None:   # one of options.POSTED_WITHIN_DAYS
         # This is a one-off override. Keep the saved local file and published Actions
@@ -238,78 +257,3 @@ def ingest_searches(only_search: str | None = None, only_site: str | None = None
         raise RuntimeError(f"Every Apify run succeeded, but {plural(not_imported, 'earlier run')} "
                            "whose results couldn't be saved still couldn't be imported (see "
                            "above)")
-
-
-def retry_imports() -> None:
-    """jobflow ingest --retry-imports: import_failed_runs alone, without new runs."""
-    not_imported, total = import_failed_runs(load_searches())
-    if not total:
-        print("No failed imports to retry")
-    elif not_imported:
-        raise RuntimeError(f"{not_imported} of {plural(total, 'failed import')} couldn't be "
-                           "imported (see above)")
-
-
-def import_failed_runs(configured: list[Search]) -> tuple[int, int]:
-    """Import again the results of each run recorded as IMPORT_FAILED: they're in the run's
-    dataset on Apify (already paid for) until Apify deletes it. Each is saved as its import
-    would have been: filtered by the search that ran it (from `configured`), as on the day it
-    ran, so a posted-date window doesn't filter jobs that have merely aged since. A run whose
-    dataset Apify has deleted is recorded as EXPIRED, so it isn't tried again. Returns how
-    many couldn't be imported, of how many tried."""
-    from apify_client.errors import ApifyApiError
-
-    from .store import failed_imports, record_failed_run, save_run
-
-    runs = failed_imports()
-    if not runs:
-        return 0, 0
-    print(f"Importing the results of {plural(len(runs), 'earlier run')} that couldn't be saved")
-    searches = {search.name: search for search in configured}
-    client = make_client()
-    failed = 0
-    for run in runs:
-        site = run["actor_id"].split(":", 1)[0]
-        name = f"{run['search_name']}/{site} run {run['apify_run_id']}"
-        search, run_input = searches.get(run["search_name"]), run["input"] or {}
-        ran_on = (run["finished_at"].astimezone(settings.timezone()).date()
-                  if run["finished_at"] else None)
-
-        def record(status: str, error: str, run=run) -> None:
-            record_failed_run(actor_id=run["actor_id"], run_id=run["apify_run_id"],
-                              dataset_id=run["dataset_id"], status=status, error=error,
-                              started_at=run["started_at"], finished_at=run["finished_at"],
-                              cost_usd=run["cost_usd"], search_name=run["search_name"],
-                              run_input=run["input"])
-        try:
-            items = list(client.dataset(run["dataset_id"]).iterate_items(clean=True))
-        except Exception as exc:
-            if isinstance(exc, ApifyApiError) and exc.status_code == 404:
-                gone = "its results are no longer on Apify, so they can't be imported"
-                record("EXPIRED", gone)
-                print(f"{name}: {gone}", file=sys.stderr)
-            else:   # left as it is, to try again
-                print(f"{name}: couldn't read its results from Apify — {exc}", file=sys.stderr)
-            failed += 1
-            continue
-        job_filter = (partial(filter_reason, search=search, site=site, today=ran_on)
-                      if search else None)
-        try:
-            added = save_run(
-                run["actor_id"], run["apify_run_id"], run["dataset_id"], items,
-                started_at=run["started_at"], finished_at=run["finished_at"],
-                cost_usd=run["cost_usd"], search_name=run["search_name"],
-                run_input=run["input"], country=run_country(site, run_input),
-                hit_cap=bool(run_input) and run_hit_cap(run_input, items),
-                job_filter=job_filter)
-        except Exception as exc:
-            record("IMPORT_FAILED", str(exc))
-            print(f"{name}: FAILED again — {exc}", file=sys.stderr)
-            failed += 1
-            continue
-        print(f"{name}: {len(items)} items, {added} new jobs")
-        if not search:
-            print(f"{name}: its search {run['search_name']!r} is no longer in your searches, "
-                  "so its jobs weren't filtered: run `uv run jobflow update-searches` to judge "
-                  "them by [defaults]", file=sys.stderr)
-    return failed, len(runs)
