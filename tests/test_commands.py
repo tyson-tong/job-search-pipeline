@@ -101,3 +101,15 @@ def test_a_big_batch_in_a_terminal_asks_before_spending(monkeypatch, capsys):
     monkeypatch.setattr("builtins.input", lambda prompt: "y")
     batch._run_jobs(command)
     assert sorted(ran) == [job_id for job_id, _, _ in todo]
+
+
+def test_a_job_in_chinese_keeps_the_folder_its_drafts_are_in(tmp_path):
+    # Named only in Chinese, every such job's folder was output/unknown/unknown-<id>. Kept
+    # names would move a job already tailored to a new folder, where its drafts aren't, and
+    # tailor-cv would pay to draft it again.
+    from jobflow.candidate.paths import job_directory
+
+    job = {"company": "滙豐銀行", "title": "數據分析師"}
+    assert job_directory(7, job, tmp_path) == tmp_path / "滙豐銀行" / "數據分析師-7"
+    (tmp_path / "unknown" / "unknown-8").mkdir(parents=True)
+    assert job_directory(8, job, tmp_path) == tmp_path / "unknown" / "unknown-8"
