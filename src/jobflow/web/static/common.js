@@ -93,7 +93,6 @@ export function recall() {
     if (Array.isArray(saved.statuses)) state.statuses = new Set(statuses);
     if (saved.sort) sortInput.value = saved.sort;
     if (Array.isArray(saved.sites)) state.sites = new Set(saved.sites.filter((s) => s in SITE_NAMES));
-    else if (saved.site in SITE_NAMES) state.sites = new Set([saved.site]);  // saved when one site was picked
     if (saved.view) state.view = saved.view;
     if (PAGE_SIZES.includes(saved.pageSize)) state.pageSize = saved.pageSize;
   } catch (e) { /* optional */ }

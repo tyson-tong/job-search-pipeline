@@ -107,8 +107,8 @@ Ask first.
 - GitHub stops it at 180 minutes; `apify.INGEST_MINUTES` (150) keeps runs inside that.
 - A cron service the user sets up starts it each night through `workflow_dispatch` (Seek's
   1-day search is "today" only); GitHub's schedule runs hours late, so it is a fallback whose
-  `check` job skips the import after a dispatched run finished (succeeded or failed) in the
-  last 20 hours.
+  `check` job skips the import after a dispatched run started in the last 20 hours has
+  finished (succeeded or failed).
 - Actions are pinned to commit SHAs, with the version in a comment.
 
 ### LLM work

@@ -260,6 +260,13 @@ def test_letter_check_flags_numbers_and_terms_from_nowhere():
                         "it's true): Kubernetes."]
     assert ("A [placeholder] is left in; fill it in or remove it."
             in check_letter("Dear [Name], I built dashboards.", SOURCE_CV, JOB, [])[1])
+    # The ad's skills, claimed as yours, passed unnoticed: only terms found nowhere warned.
+    # The job's own title and employer are how a letter names the job, not a claim.
+    claimed = ("Dear Hiring Manager,\nI have used Snowflake daily, and would bring it to the "
+               "Data Analyst role at Acme.\nAlex Example")
+    assert check_letter(claimed, SOURCE_CV, JOB, research)[1] == [
+        "Term from the job ad or company research, not your CV (make sure the letter doesn't "
+        "claim it as yours): Snowflake."]
 
 
 @pytest.fixture

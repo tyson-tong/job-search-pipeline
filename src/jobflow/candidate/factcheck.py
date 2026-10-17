@@ -221,21 +221,39 @@ LETTER_WORDS = {"i", "i'd", "i'm", "i've", "i'll", "dear", "hiring", "manager", 
 def check_letter(letter: str, source_cv: dict | str, job: dict,
                  sources: list[dict]) -> Checked:
     """Check a cover letter against what it may draw on: the source CV, the job ad, and
-    the company research. Errors are numbers found in none of them; warnings are new
-    capitalised or technical terms, and placeholders left in."""
-    allowed = [source_cv, job.get("title"), job.get("company"), job.get("description"),
-               [s.get("title") for s in sources], [s.get("content") for s in sources]]
+    the company research. Errors are numbers found in none of them; warnings are
+    capitalised or technical terms the CV doesn't have (found nowhere, or taken from the ad
+    or research, which the letter may claim as the candidate's), and placeholders left in."""
+    # How a letter names the job itself, never a claim about the candidate.
+    role = [job.get("title"), job.get("company"), job.get("location")]
+    elsewhere = [job.get("description"), [s.get("title") for s in sources],
+                 [s.get("content") for s in sources]]
     errors, warnings = [], []
-    new_numbers = sorted(_numbers(letter) - _numbers(allowed))
+    new_numbers = sorted(_numbers(letter) - _numbers([source_cv, role, elsewhere]))
     if new_numbers:
         errors.append("Numbers not in your CV, the job ad, or the company research: "
                       + ", ".join(new_numbers) + ".")
-    vocab = {t.casefold() for t in _terms(_strings(allowed), skip_first=False)} | LETTER_WORDS
-    allowed_words = set(words(" ".join(_strings(allowed))).split())
-    new_terms = sorted(t for t in _terms([letter], skip_first=True)
-                       if t.casefold() not in vocab and not set(words(t).split()) <= allowed_words)
-    warnings += [f"New term not in your CV, the job ad, or the company research (check it's "
-                 f"true): {term}." for term in new_terms]
+
+    def vocabulary(parts: list) -> tuple[set[str], set[str]]:
+        """The capitalised or technical terms in these parts (casefolded), and their words."""
+        texts = list(_strings(parts))
+        return ({t.casefold() for t in _terms(texts, skip_first=False)},
+                set(words(" ".join(texts)).split()))
+
+    own_vocab, own_words = vocabulary([source_cv, role])
+    own_vocab |= LETTER_WORDS
+    other_vocab, other_words = vocabulary(elsewhere)
+    for term in sorted(_terms([letter], skip_first=True)):
+        term_words = set(words(term).split())
+        if term.casefold() in own_vocab or term_words <= own_words:
+            continue
+        if term.casefold() in other_vocab or term_words <= other_words:
+            # The likeliest slip: the ad's skills claimed as the candidate's.
+            warnings.append(f"Term from the job ad or company research, not your CV (make sure "
+                            f"the letter doesn't claim it as yours): {term}.")
+        else:
+            warnings.append(f"New term not in your CV, the job ad, or the company research "
+                            f"(check it's true): {term}.")
     if re.search(r"\[[^\]]*\]", letter):
         warnings.append("A [placeholder] is left in; fill it in or remove it.")
     return Checked(errors, warnings)

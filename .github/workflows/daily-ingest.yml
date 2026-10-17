@@ -8,7 +8,7 @@ on:
   schedule:
     # The fallback for a day the outside service missed, or a copy without one: 00:17 daily
     # in Sydney standard time, 01:17 during daylight time. GitHub starts scheduled runs late
-    # whatever the time (4 to 8 hours in October 2026, a different amount each day), so such
+    # whatever the time, by a different amount each day (docs/setup.md, section 6), so such
     # a run misses some hours on LinkedIn, whose 24-hour window is searched as 25 hours
     # (ingest/options.py), and most of the day before on Seek.
     - cron: "17 14 * * *"
@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # A scheduled run imports nothing when a run started on time finished in the last 20 hours,
+  # A scheduled run imports nothing when a run started on time in the last 20 hours has finished,
   # even one that failed: it would pay Apify again for the same jobs, every run that worked
   # included, when one run failing (or stopped early) fails the whole import. A failed run
   # is recorded, shown in the tracker, and its results imported by the next import. Only a
@@ -47,7 +47,7 @@ jobs:
             --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")]
                   | .[0].createdAt // ""')
           if [ -n "$last" ] && [ $(( $(date +%s) - $(date -d "$last" +%s) )) -lt 72000 ]; then
-            echo "A run started on time finished at $last, so this scheduled run imports nothing."
+            echo "A run started on time at $last has finished, so this scheduled run imports nothing."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 

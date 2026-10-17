@@ -165,7 +165,8 @@ def init() -> None:
         return
     print("""
 Next:
-  1. config/.env           DATABASE_URL, APIFY_TOKEN, LLM_API_KEY, LLM_MODEL, WEB_SEARCH_API_KEY
+  1. config/.env           DATABASE_URL, APIFY_TOKEN, LLM_API_KEY, LLM_MODEL; optionally
+                           WEB_SEARCH_API_KEY, for company research
   2. cv/                   your CVs (.yaml, .tex, .docx, or .pdf); name 1 or 2 with cvs
                            in profile.toml
   3. config/searches.toml  your job searches (it starts with an example search: replace it)
